@@ -1,0 +1,20 @@
+# vrclt - VRChat Live Translator (Python 3.12; proc-tap wheels are cp310-cp313)
+google-genai>=1.0
+websockets>=12.0
+sounddevice>=0.4.6
+numpy>=1.26
+soxr>=0.5
+pyyaml>=6.0
+psutil>=5.9
+python-osc>=1.8
+proc-tap==1.0.3
+onnxruntime>=1.17    # Silero VAD (inbound music gating)
+openvr==2.12.1401
+pillow>=10.0
+# M4 (tray + web UI)
+fastapi>=0.110
+uvicorn>=0.29
+pystray>=0.19
+PyOpenGL>=3.1
+glfw>=2.7
+PyOpenGL-accelerate>=3.1

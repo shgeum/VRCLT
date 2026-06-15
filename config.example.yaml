@@ -1,0 +1,88 @@
+# vrclt configuration example
+# Copy this file to config.yaml, then adjust local devices and languages.
+# Leave api_key empty to use the GEMINI_API_KEY environment variable instead.
+api_key: ""
+model: gemini-3.5-live-translate-preview
+
+outbound:                 # my voice -> others (VRChat hears the translation)
+  enabled: true
+  target_language: ja     # BCP-47: ja, en, ko, zh-Hans, ...
+  echo_target_language: false
+  mic_device: ""          # substring of device name; "" = default input
+  tts_device: CABLE Input # VB-Cable playback side (VRChat mic = CABLE Output)
+  monitor_device: ""      # also hear the translation myself ("" = off)
+  chatbox: true
+
+inbound:                  # others' voices -> me (subtitles)
+  enabled: true
+  target_language: ko
+  languages: [ko, en, ja] # wrist menu cycles subtitle language through these
+  process: VRChat.exe
+  play_audio: false       # also speak the translation into my headphones
+  audio_device: ""
+  vad_enabled: true       # Silero VAD: send only speech to Gemini
+  vad_threshold: 0.5      # 0-1; raise toward 0.7 to reject more music
+  vad_hangover_sec: 0.6   # keep capturing this long after speech stops
+
+overlay:                  # inbound subtitle overlay (SteamVR, HMD-locked)
+  enabled: true
+  width_m: 0.9
+  distance_m: 1.2
+  below_m: 0.35
+  tilt_deg: -15.0
+  font: C:/Windows/Fonts/malgun.ttf
+  font_size: 44
+  display_sec: 7.0        # how long finalized lines stay visible
+  lines: 3                # recent finalized lines kept on screen
+  show_source: false      # also show the original text
+
+osc:
+  ip: 127.0.0.1
+  port: 9000
+  throttle_sec: 1.5
+  notification_sfx: false
+  show_source: true       # chatbox: source on top, translation below
+  chunk_display_sec: 4.0  # per-part display time when long text is split
+
+audio:
+  send_interval_ms: 100       # how often mic audio is flushed to the API
+  finalize_silence_sec: 2.0   # flush a segment after transcription silence
+  mic_idle_disconnect_sec: 15.0
+  voice_rms_threshold: 90.0   # raise if noise opens sessions, lower if speech is missed
+  voice_hangover_sec: 2.5     # keep the turn open this long through pauses
+  echo_guard_multiplier: 4.0  # gate boost while game audio plays; 1.0 = off
+
+control:                      # in-VR control via avatar parameters (OSC radial menu)
+  enabled: true
+  osc_listen_port: 9001
+  param_enabled: VRCLT_Enabled
+  param_lang: VRCLT_Lang
+  languages: [ja, en, ko, zh-Hans, zh-Hant, yue, es, ru, fr, de]
+  feedback_chatbox: true
+
+web:                          # localhost control + settings page (http://127.0.0.1:8765)
+  enabled: true
+  port: 8765
+  tray: true
+  auto_open: true
+
+ui:
+  mode: auto                  # auto | vr | desktop
+  lang: ""                    # ""=auto | en | ko | ja | zh
+
+desktop:                      # PC mode: always-on-top subtitle window + control bar
+  subtitle_font_size: 30
+  subtitle_width: 900
+  opacity: 0.85
+
+wrist_ui:                     # SteamVR wrist watch menu
+  enabled: true
+  hand: left
+  width_m: 0.12
+  offset: [0.0, 0.02, 0.12]
+  tilt_deg: 0.0
+  roll_deg: null
+  pointer_tilt_deg: 50.0
+  font: C:/Windows/Fonts/malgunbd.ttf
+
+log_level: INFO

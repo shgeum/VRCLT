@@ -1,0 +1,50 @@
+# Local environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python caches and tooling
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+pip-wheel-metadata/
+
+# Local configuration and secrets
+config.yaml
+config.local.yaml
+*.local.yaml
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Runtime logs and state
+*.log
+build_log.txt
+logs/
+_verify_*.py
+*.tmp
+*.bak
+
+# Build and packaging output
+build/
+dist/
+release/
+*.manifest
+
+# OS and editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+PLAN.md

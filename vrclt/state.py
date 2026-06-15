@@ -1,0 +1,122 @@
+"""Runtime app state, mutable from the OSC control listener / UI threads."""
+import logging
+import threading
+
+log = logging.getLogger(__name__)
+
+
+class AppState:
+    def __init__(self, translation_on: bool = True, target_language: str = "en",
+                 subtitles_on: bool = True, inbound_language: str = "ko",
+                 ui_lang: str = "en"):
+        self._lock = threading.Lock()
+        self._translation_on = translation_on
+        self._target_language = target_language
+        self._subtitles_on = subtitles_on
+        self._inbound_language = inbound_language
+        self._ui_lang = ui_lang
+        self._edit_mode = False
+        self._listeners = []
+
+    def subscribe(self, fn) -> None:
+        """fn(field_name, new_value) - called from the mutating thread."""
+        self._listeners.append(fn)
+
+    def _notify(self, field: str, value) -> None:
+        for fn in self._listeners:
+            try:
+                fn(field, value)
+            except Exception:
+                log.exception("state listener failed")
+
+    @property
+    def translation_on(self) -> bool:
+        with self._lock:
+            return self._translation_on
+
+    @translation_on.setter
+    def translation_on(self, value: bool) -> None:
+        value = bool(value)
+        with self._lock:
+            changed = value != self._translation_on
+            self._translation_on = value
+        if changed:
+            log.info("state: translation %s", "ON" if value else "OFF (passthrough)")
+            self._notify("translation_on", value)
+
+    @property
+    def target_language(self) -> str:
+        with self._lock:
+            return self._target_language
+
+    @target_language.setter
+    def target_language(self, value: str) -> None:
+        with self._lock:
+            changed = value != self._target_language
+            self._target_language = value
+        if changed:
+            log.info("state: target language -> %s", value)
+            self._notify("target_language", value)
+
+    @property
+    def subtitles_on(self) -> bool:
+        with self._lock:
+            return self._subtitles_on
+
+    @subtitles_on.setter
+    def subtitles_on(self, value: bool) -> None:
+        value = bool(value)
+        with self._lock:
+            changed = value != self._subtitles_on
+            self._subtitles_on = value
+        if changed:
+            log.info("state: subtitles %s", "ON" if value else "OFF")
+            self._notify("subtitles_on", value)
+
+    @property
+    def edit_mode(self) -> bool:
+        with self._lock:
+            return self._edit_mode
+
+    @edit_mode.setter
+    def edit_mode(self, value: bool) -> None:
+        value = bool(value)
+        with self._lock:
+            changed = value != getattr(self, "_edit_mode", False)
+            self._edit_mode = value
+        if changed:
+            log.info("state: edit (move) mode %s", "ON" if value else "OFF")
+            self._notify("edit_mode", value)
+
+    def request_position_reset(self) -> None:
+        """Reset all overlay positions (wrist panel + subtitles) to defaults."""
+        log.info("state: overlay position reset requested")
+        self._notify("reset_positions", True)
+
+    @property
+    def inbound_language(self) -> str:
+        with self._lock:
+            return self._inbound_language
+
+    @inbound_language.setter
+    def inbound_language(self, value: str) -> None:
+        with self._lock:
+            changed = value != self._inbound_language
+            self._inbound_language = value
+        if changed:
+            log.info("state: inbound (subtitle) language -> %s", value)
+            self._notify("inbound_language", value)
+
+    @property
+    def ui_lang(self) -> str:
+        with self._lock:
+            return self._ui_lang
+
+    @ui_lang.setter
+    def ui_lang(self, value: str) -> None:
+        with self._lock:
+            changed = value != self._ui_lang
+            self._ui_lang = value
+        if changed:
+            log.info("state: UI display language -> %s", value)
+            self._notify("ui_lang", value)
