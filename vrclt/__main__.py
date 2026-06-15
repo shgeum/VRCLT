@@ -5,7 +5,7 @@
   python -m vrclt miccheck [SUBSTR]    capture 2s from the mic, report level
   python -m vrclt livetest             connect a Gemini Live session once
   python -m vrclt wristtest            wrist menu only (SteamVR; no API key needed)
-  python -m vrclt run                  run the outbound pipeline (M1)
+    python -m vrclt run [--app MODE]     run the translator (vrchat or discord)
 """
 import argparse
 import asyncio
@@ -59,7 +59,7 @@ def cmd_miccheck(args) -> None:
 
 
 def cmd_livetest(args) -> None:
-    cfg = config_mod.load()
+    cfg = _load_runtime_config(args)
     key = config_mod.api_key(cfg)
     if not key:
         print("no API key: set api_key in config.yaml or GEMINI_API_KEY env var")
@@ -140,7 +140,7 @@ def cmd_overlaytest(_args) -> None:
     from .state import AppState
     from .subtitles import SubtitleStore
     from .vr.render import VrRenderer
-    cfg = config_mod.load()
+    cfg = _load_runtime_config(_args)
     o = cfg.get("overlay", {})
     store = SubtitleStore(max_lines=o.get("lines", 3), display_sec=o.get("display_sec", 7.0))
     state = AppState(subtitles_on=True, inbound_language=cfg["inbound"]["target_language"])
@@ -168,7 +168,7 @@ def cmd_overlaytest(_args) -> None:
 def cmd_wristtest(_args) -> None:
     from .state import AppState
     from .vr.render import VrRenderer
-    cfg = config_mod.load()
+    cfg = _load_runtime_config(_args)
     state = AppState(translation_on=True,
                      target_language=cfg["outbound"]["target_language"],
                      inbound_language=cfg["inbound"]["target_language"],
@@ -204,7 +204,7 @@ def cmd_desktoptest(_args) -> None:
     from .state import AppState
     from .subtitles import SubtitleStore
     from .desktop.ui import DesktopUI
-    cfg = config_mod.load()
+    cfg = _load_runtime_config(_args)
     state = AppState(target_language=cfg["outbound"]["target_language"],
                      inbound_language=cfg["inbound"]["target_language"],
                      ui_lang=i18n.detect(cfg.get("ui", {}).get("lang", "")))
@@ -251,6 +251,11 @@ def _resolve_ui_mode(cfg) -> str:
     if mode == "auto":
         return "vr" if _steamvr_running() else "desktop"
     return mode if mode in ("vr", "desktop") else "vr"
+
+
+def _load_runtime_config(args=None) -> dict:
+    cfg = config_mod.load()
+    return config_mod.apply_app_profile(cfg, getattr(args, "app", None))
 
 
 async def _gather_pipelines(stop, pipeline, inbound) -> None:
@@ -336,14 +341,20 @@ def _build_core(cfg, key, state):
     return pipeline, inbound, control, store
 
 
-def cmd_run(_args) -> None:
-    cfg = config_mod.load()
+def cmd_run(args) -> None:
+    try:
+        cfg = _load_runtime_config(args)
+    except ValueError as e:
+        print(e)
+        sys.exit(2)
     key = config_mod.api_key(cfg)
     if not key:
         print("no API key: set api_key in config.yaml or GEMINI_API_KEY env var")
         sys.exit(1)
     ui_mode = _resolve_ui_mode(cfg)
-    log.info("UI mode: %s", ui_mode)
+    app_mode = cfg.get("app", {}).get("mode", "vrchat")
+    log.info("app mode: %s; UI mode: %s; inbound process: %s",
+             app_mode, ui_mode, cfg.get("inbound", {}).get("process"))
     if ui_mode == "desktop":
         _run_desktop_mode(cfg, key)
     else:
@@ -486,17 +497,17 @@ def _run_desktop_mode(cfg, key) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="vrclt", description="VRChat Live Translator")
+    parser = argparse.ArgumentParser(prog="vrclt", description="VRChat / Discord Live Translator")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("devices")
     p = sub.add_parser("sinetest"); p.add_argument("device", nargs="?", default=None)
     p = sub.add_parser("miccheck"); p.add_argument("device", nargs="?", default=None)
-    sub.add_parser("livetest")
-    sub.add_parser("wristtest")
-    sub.add_parser("overlaytest")
-    sub.add_parser("desktoptest")
+    p = sub.add_parser("livetest"); p.add_argument("--app", choices=config_mod.APP_MODES)
+    p = sub.add_parser("wristtest"); p.add_argument("--app", choices=config_mod.APP_MODES)
+    p = sub.add_parser("overlaytest"); p.add_argument("--app", choices=config_mod.APP_MODES)
+    p = sub.add_parser("desktoptest"); p.add_argument("--app", choices=config_mod.APP_MODES)
     sub.add_parser("resetpos")
-    sub.add_parser("run")
+    p = sub.add_parser("run"); p.add_argument("--app", choices=config_mod.APP_MODES)
     # no subcommand (e.g. double-clicked exe) -> run
     argv = sys.argv[1:] or ["run"]
     args = parser.parse_args(argv)

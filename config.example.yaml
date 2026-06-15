@@ -4,6 +4,24 @@
 api_key: ""
 model: gemini-3.5-live-translate-preview
 
+app:
+  mode: vrchat                 # vrchat | discord; can also be overridden with: python -m vrclt run --app discord
+  profiles:
+    vrchat:
+      process: VRChat.exe      # process captured for inbound subtitles
+      ui_mode: auto            # auto | vr | desktop
+      chatbox: true            # send outbound translated text to VRChat chatbox via OSC
+      osc_control: true        # listen for VRChat avatar OSC controls
+      vr_overlay: true         # SteamVR subtitle overlay
+      wrist_ui: true           # SteamVR wrist menu
+    discord:
+      process: Discord.exe     # use DiscordCanary.exe or DiscordPTB.exe if needed
+      ui_mode: desktop         # Discord mode uses the PC subtitle/control overlay
+      chatbox: false           # Discord has no VRChat OSC chatbox
+      osc_control: false
+      vr_overlay: false
+      wrist_ui: false
+
 outbound:                 # my voice -> others (VRChat hears the translation)
   enabled: true
   target_language: ja     # BCP-47: ja, en, ko, zh-Hans, ...

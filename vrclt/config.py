@@ -6,6 +6,8 @@ from pathlib import Path
 
 import yaml
 
+APP_MODES = ("vrchat", "discord")
+
 # frozen (PyInstaller) exe -> config.yaml next to the exe; otherwise repo root
 if getattr(sys, "frozen", False):
     _BASE = Path(sys.executable).resolve().parent
@@ -16,6 +18,27 @@ CONFIG_PATH = Path(os.environ.get("VRCLT_CONFIG", _BASE / "config.yaml"))
 DEFAULTS = {
     "api_key": "",                      # empty -> use GEMINI_API_KEY env var
     "model": "gemini-3.5-live-translate-preview",
+    "app": {
+        "mode": "vrchat",              # vrchat | discord
+        "profiles": {
+            "vrchat": {
+                "process": "VRChat.exe",
+                "ui_mode": "auto",
+                "chatbox": True,
+                "osc_control": True,
+                "vr_overlay": True,
+                "wrist_ui": True,
+            },
+            "discord": {
+                "process": "Discord.exe",
+                "ui_mode": "desktop",
+                "chatbox": False,
+                "osc_control": False,
+                "vr_overlay": False,
+                "wrist_ui": False,
+            },
+        },
+    },
     "outbound": {                       # pipeline A: my voice -> others
         "enabled": True,
         "target_language": "ja",        # BCP-47
@@ -120,6 +143,32 @@ def load() -> dict:
     if CONFIG_PATH.exists():
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             cfg = _merge(cfg, yaml.safe_load(f) or {})
+    return cfg
+
+
+def apply_app_profile(cfg: dict, mode: str | None = None) -> dict:
+    cfg = copy.deepcopy(cfg)
+    app = cfg.setdefault("app", {})
+    selected = (mode or app.get("mode") or "vrchat").strip().lower()
+    profiles = app.get("profiles", {})
+    profile = profiles.get(selected)
+    if profile is None:
+        valid = ", ".join(sorted(profiles or APP_MODES))
+        raise ValueError(f"unknown app mode: {selected!r} (valid: {valid})")
+
+    app["mode"] = selected
+    if profile.get("process"):
+        cfg.setdefault("inbound", {})["process"] = profile["process"]
+    if profile.get("ui_mode"):
+        cfg.setdefault("ui", {})["mode"] = profile["ui_mode"]
+    if "chatbox" in profile:
+        cfg.setdefault("outbound", {})["chatbox"] = bool(profile["chatbox"])
+    if "osc_control" in profile:
+        cfg.setdefault("control", {})["enabled"] = bool(profile["osc_control"])
+    if "vr_overlay" in profile:
+        cfg.setdefault("overlay", {})["enabled"] = bool(profile["vr_overlay"])
+    if "wrist_ui" in profile:
+        cfg.setdefault("wrist_ui", {})["enabled"] = bool(profile["wrist_ui"])
     return cfg
 
 

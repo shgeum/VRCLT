@@ -65,6 +65,7 @@ STRINGS = {
                    "ja": "言語コード (例: en, ja)", "zh": "语言代码 (例: en, ja)"},
     "btn_add": {"ko": "추가", "en": "Add", "ja": "追加", "zh": "添加"},
     "grp_api": {"ko": "기본 / API", "en": "General / API", "ja": "基本 / API", "zh": "基本 / API"},
+    "grp_app": {"ko": "앱 모드", "en": "App mode", "ja": "アプリモード", "zh": "应用模式"},
     "grp_dev": {"ko": "장치", "en": "Devices", "ja": "デバイス", "zh": "设备"},
     "grp_audio": {"ko": "오디오 / 게이팅", "en": "Audio / gating",
                   "ja": "オーディオ / ゲーティング", "zh": "音频 / 门控"},
@@ -79,6 +80,10 @@ STRINGS = {
     # ---- web settings field labels ----
     "f.api_key": {"ko": "API 키", "en": "API key", "ja": "APIキー", "zh": "API 密钥"},
     "f.model": {"ko": "모델", "en": "Model", "ja": "モデル", "zh": "模型"},
+    "f.app.mode": {"ko": "기본 실행 대상", "en": "Default app target",
+                   "ja": "既定の実行対象", "zh": "默认应用目标"},
+    "f.app.profiles.discord.process": {"ko": "Discord 캡처 프로세스", "en": "Discord capture process",
+                                        "ja": "Discordキャプチャプロセス", "zh": "Discord 捕获进程"},
     "f.outbound.target_language": {"ko": "기본 출력 언어", "en": "Default output language",
                                    "ja": "既定の出力言語", "zh": "默认输出语言"},
     "f.inbound.target_language": {"ko": "기본 자막 언어", "en": "Default subtitle language",

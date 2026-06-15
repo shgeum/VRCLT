@@ -81,6 +81,7 @@
         <button class="sm" data-i18n="btn_add" onclick="addLang('sub')"></button></div>
 
       <div class="grp" data-i18n="grp_api"></div><div class="grid" id="gApi"></div>
+      <div class="grp" data-i18n="grp_app"></div><div class="grid" id="gApp"></div>
       <div class="grp" data-i18n="grp_dev"></div><div class="grid" id="gDev"></div>
       <div class="grp" data-i18n="grp_audio"></div><div class="grid" id="gAudio"></div>
       <div class="grp" data-i18n="grp_inbound"></div><div class="grid" id="gInbound"></div>
@@ -190,6 +191,7 @@ function addLang(which){
 const GROUPS={
   gApi:[["api_key","pass"],["model","text"],
         ["outbound.target_language","text"],["inbound.target_language","text"]],
+  gApp:[["app.mode","appmode"],["app.profiles.discord.process","text"]],
   gDev:[["outbound.mic_device","din"],["outbound.tts_device","dout"],
         ["outbound.monitor_device","dout"],["inbound.audio_device","dout"]],
   gAudio:[["audio.voice_rms_threshold","num"],["audio.voice_hangover_sec","num"],
@@ -215,6 +217,12 @@ function deviceSelect(type,v){
   if(!matched&&v){const o=document.createElement('option');o.value=v;o.textContent=v+' (?)';o.selected=true;sel.appendChild(o);}
   return sel;
 }
+function appModeSelect(v){
+  const sel=document.createElement('select');
+  ['vrchat','discord'].forEach(c=>{const o=document.createElement('option');o.value=c;o.textContent=c;
+    if(v===c)o.selected=true;sel.appendChild(o);});
+  return sel;
+}
 function buildFields(){
   for(const [gid,fields] of Object.entries(GROUPS)){
     const g=document.getElementById(gid);g.innerHTML='';
@@ -223,6 +231,7 @@ function buildFields(){
       const s=document.createElement('span');s.textContent=t('f.'+path);f.appendChild(s);
       let i;const v=getP(CFG,path);
       if(type==='bool'){i=document.createElement('input');i.type='checkbox';i.checked=!!v;}
+      else if(type==='appmode'){i=appModeSelect(v);}
       else if(type==='din'||type==='dout'){i=deviceSelect(type,v);}
       else{i=document.createElement('input');i.type=type==='pass'?'password':(type==='num'?'number':'text');
         if(type==='num')i.step='any';i.value=v==null?'':v;}
