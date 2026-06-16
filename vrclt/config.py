@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-APP_MODES = ("vrchat", "vrc_text", "discord")
+APP_MODES = ("vrchat", "discord")
 APPDATA_DIR = Path(os.environ.get("LOCALAPPDATA", ".")) / "vrclt"
 
 if os.environ.get("VRCLT_CONFIG"):
@@ -20,23 +20,13 @@ DEFAULTS = {
     "api_key": "",                      # empty -> use GEMINI_API_KEY env var
     "model": "gemini-3.5-live-translate-preview",
     "app": {
-        "mode": "vrchat",              # vrchat | vrc_text | discord
+        "mode": "vrchat",              # vrchat | discord
         "profiles": {
             "vrchat": {
                 "process": "VRChat.exe",
                 "ui_mode": "auto",
                 "voice_output": True,
                 "passthrough_while_translating": False,
-                "chatbox": True,
-                "osc_control": True,
-                "vr_overlay": True,
-                "wrist_ui": True,
-            },
-            "vrc_text": {
-                "process": "VRChat.exe",
-                "ui_mode": "auto",
-                "voice_output": False,
-                "passthrough_while_translating": True,
                 "chatbox": True,
                 "osc_control": True,
                 "vr_overlay": True,
@@ -61,6 +51,7 @@ DEFAULTS = {
         "mic_device": "",               # substring; empty = default input device
         "tts_device": "CABLE Input",    # translated voice -> VB-Cable -> VRChat mic
         "monitor_device": "",           # also play translated voice here ("" = off)
+        "text_only": False,              # True = original mic + translated OSC text only
         "voice_output": True,            # False = no translated TTS output
         "passthrough_while_translating": False,  # True = raw mic always -> tts_device
         "chatbox": True,                # send translated text to VRChat chatbox
@@ -156,7 +147,12 @@ def apply_app_profile(cfg: dict, mode: str | None = None) -> dict:
     cfg = copy.deepcopy(cfg)
     app = cfg.setdefault("app", {})
     selected = (mode or app.get("mode") or "vrchat").strip().lower()
-    profiles = app.get("profiles", {})
+    legacy_text_only = selected == "vrc_text"
+    if legacy_text_only:
+        selected = "vrchat"
+        cfg.setdefault("outbound", {})["text_only"] = True
+    profiles = _merge(DEFAULTS["app"]["profiles"], app.get("profiles", {}))
+    app["profiles"] = profiles
     profile = profiles.get(selected)
     if profile is None:
         valid = ", ".join(sorted(profiles or APP_MODES))
@@ -180,7 +176,21 @@ def apply_app_profile(cfg: dict, mode: str | None = None) -> dict:
         cfg.setdefault("overlay", {})["enabled"] = bool(profile["vr_overlay"])
     if "wrist_ui" in profile:
         cfg.setdefault("wrist_ui", {})["enabled"] = bool(profile["wrist_ui"])
+    if selected != "vrchat":
+        cfg.setdefault("outbound", {})["text_only"] = False
+    _apply_outbound_output_mode(cfg)
     return cfg
+
+
+def _apply_outbound_output_mode(cfg: dict) -> None:
+    ob = cfg.setdefault("outbound", {})
+    if ob.get("text_only", False):
+        ob["voice_output"] = False
+        ob["passthrough_while_translating"] = True
+        ob["chatbox"] = True
+    else:
+        ob["voice_output"] = True
+        ob["passthrough_while_translating"] = False
 
 
 def save(cfg: dict) -> None:

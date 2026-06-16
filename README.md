@@ -91,16 +91,18 @@ Copy-Item config.example.yaml config.yaml
 | Mode | Use for | Behavior |
 | --- | --- | --- |
 | `vrchat` | VRChat | Captures `VRChat.exe`, enables OSC chatbox, avatar OSC control, SteamVR subtitles, and wrist UI |
-| `vrc_text` | VRChat text only | Passes your original voice through to VRChat while sending Gemini-translated OSC chatbox text; no translated voice output |
 | `discord` | Discord | Captures `Discord.exe`, disables VRChat OSC/SteamVR features, keeps the native app UI active |
 
 Choose a mode in Settings or pass it for one launch:
 
 ```powershell
 .\vrclt.exe run --app vrchat
-.\vrclt.exe run --app vrc_text
 .\vrclt.exe run --app discord
 ```
+
+For VRChat text-only behavior, enable **Text only** in the Dashboard or
+Settings. Your original microphone passes through to VRChat while Gemini sends
+translated text to the OSC chatbox without translated voice output.
 
 For Discord Canary or PTB, change the Discord process name in Settings or in
 `app.profiles.discord.process`.
@@ -110,9 +112,11 @@ For Discord Canary or PTB, change the Discord process name in Settings or in
 Dashboard:
 
 - Runtime status and connection state
+- VRChat/Discord mode toggle and VRChat text-only toggle
 - Translation ON/OFF
 - Subtitles ON/OFF
 - Output language and subtitle language
+- PC subtitle position controls and font size
 - Live subtitle preview
 
 Settings:
@@ -150,8 +154,9 @@ target app process audio -> ProcTap -> Gemini Live -> subtitles
 ```
 
 When translation is OFF, the microphone bypasses Gemini and is sent directly to
-`CABLE Input`. In `vrc_text`, the original microphone is always passed through;
-the translation toggle only controls Gemini text translation and chatbox output.
+`CABLE Input`. In VRChat **Text only**, the original microphone is always passed
+through; the translation toggle controls Gemini text translation and chatbox
+output.
 
 ## VRChat Features
 

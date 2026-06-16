@@ -6,7 +6,7 @@ api_key: ""
 model: gemini-3.5-live-translate-preview
 
 app:
-  mode: vrchat                 # vrchat | vrc_text | discord; override with: python -m vrclt run --app vrc_text
+  mode: vrchat                 # vrchat | discord; override with: python -m vrclt run --app vrchat
   profiles:
     vrchat:
       process: VRChat.exe      # process captured for inbound subtitles
@@ -17,15 +17,6 @@ app:
       osc_control: true        # listen for VRChat avatar OSC controls
       vr_overlay: true         # SteamVR subtitle overlay
       wrist_ui: true           # SteamVR wrist menu
-    vrc_text:
-      process: VRChat.exe      # text-only: mic -> Gemini -> OSC chatbox
-      ui_mode: auto
-      voice_output: false      # no translated voice
-      passthrough_while_translating: true  # raw mic still goes to CABLE Input
-      chatbox: true
-      osc_control: true
-      vr_overlay: true
-      wrist_ui: true
     discord:
       process: Discord.exe     # use DiscordCanary.exe or DiscordPTB.exe if needed
       ui_mode: desktop         # Discord mode keeps SteamVR overlays off
@@ -43,6 +34,7 @@ outbound:                 # my voice -> others (VRChat hears the translation)
   mic_device: ""          # substring of device name; "" = default input
   tts_device: CABLE Input # VB-Cable playback side (VRChat mic = CABLE Output)
   monitor_device: ""      # also hear the translation myself ("" = off)
+  text_only: false        # true = original mic passthrough + translated OSC text only
   voice_output: true      # false = no translated TTS output
   passthrough_while_translating: false  # true = raw mic always -> tts_device
   chatbox: true

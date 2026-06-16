@@ -89,16 +89,18 @@ Copy-Item config.example.yaml config.yaml
 | 모드 | 대상 | 동작 |
 | --- | --- | --- |
 | `vrchat` | VRChat | `VRChat.exe` 오디오 캡처, OSC 챗박스, 아바타 OSC 제어, SteamVR 자막, 손목 UI 활성화 |
-| `vrc_text` | VRChat 텍스트 전용 | 원래 목소리는 VRChat으로 passthrough하고, Gemini 번역 결과는 OSC 챗박스 텍스트로만 전송. 번역 음성 출력 없음 |
 | `discord` | Discord | `Discord.exe` 오디오 캡처, VRChat OSC/SteamVR 기능 비활성화, 자체 UI 유지 |
 
 Settings에서 모드를 고르거나 실행 한 번에만 인자로 지정할 수 있습니다.
 
 ```powershell
 .\vrclt.exe run --app vrchat
-.\vrclt.exe run --app vrc_text
 .\vrclt.exe run --app discord
 ```
+
+VRChat에서 텍스트 전용으로 쓰려면 Dashboard 또는 Settings의 **텍스트 온리**를
+켭니다. 원래 마이크 음성은 VRChat으로 그대로 passthrough되고, Gemini 번역 결과는
+번역 음성 없이 OSC 챗박스 텍스트로만 전송됩니다.
 
 Discord Canary 또는 PTB를 사용한다면 Settings 또는 `app.profiles.discord.process`에서
 프로세스 이름을 바꿉니다.
@@ -108,9 +110,11 @@ Discord Canary 또는 PTB를 사용한다면 Settings 또는 `app.profiles.disco
 Dashboard:
 
 - 런타임 상태와 연결 상태
+- VRChat/Discord 모드 토글과 VRChat 텍스트 온리 토글
 - 번역 ON/OFF
 - 자막 ON/OFF
 - 출력 언어와 자막 언어
+- PC 자막 위치 이동/리셋과 글자 크기 조절
 - 실시간 자막 미리보기
 
 Settings:
@@ -148,8 +152,8 @@ target app process audio -> ProcTap -> Gemini Live -> subtitles
 ```
 
 번역이 OFF이면 마이크는 Gemini를 거치지 않고 `CABLE Input`으로 바로 전달됩니다.
-`vrc_text`에서는 원래 목소리가 항상 passthrough되고, 번역 토글은 Gemini 텍스트
-번역과 챗박스 출력만 제어합니다.
+VRChat **텍스트 온리**에서는 원래 목소리가 항상 passthrough되고, 번역 토글은
+Gemini 텍스트 번역과 챗박스 출력만 제어합니다.
 
 ## VRChat 기능
 

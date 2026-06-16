@@ -10,6 +10,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from . import config as config_mod
 from . import i18n
+from .desktop_overlay import DesktopSubtitleOverlay
 
 log = logging.getLogger(__name__)
 
@@ -85,6 +86,7 @@ def _device_names() -> tuple[list[str], list[str]]:
 class _UiSignals(QtCore.QObject):
     refresh = QtCore.Signal()
     save_done = QtCore.Signal(bool)
+    mode_done = QtCore.Signal(bool)
 
 
 class _NoWheelComboBox(QtWidgets.QComboBox):
@@ -103,10 +105,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self._quitting = False
         self._fields = {}
         self._save_thread = None
+        self._mode_thread = None
+        self._app_mode_applying = False
+        self._app_mode_buttons = {}
         self._inputs, self._outputs = _device_names()
         self._signals = _UiSignals()
         self._signals.refresh.connect(self._refresh)
         self._signals.save_done.connect(self._save_done)
+        self._signals.mode_done.connect(self._mode_done)
 
         self.setWindowTitle("vrclt")
         self.resize(980, 720)
@@ -118,6 +124,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._build_logs()
         self._build_tray()
         self._apply_style()
+        self._desktop_overlay = DesktopSubtitleOverlay(controller)
 
         self._timer = QtCore.QTimer(self)
         self._timer.timeout.connect(self._refresh)
@@ -163,23 +170,70 @@ class MainWindow(QtWidgets.QMainWindow):
         self._out_lang.currentTextChanged.connect(self._pick_out_lang)
         self._sub_lang.currentTextChanged.connect(self._pick_sub_lang)
         self._ui_lang.currentTextChanged.connect(self._pick_ui_lang)
-        controls.addWidget(QtWidgets.QLabel("내 말 번역"), 0, 0)
-        controls.addWidget(self._btn_trans, 0, 1)
-        controls.addWidget(QtWidgets.QLabel("출력 언어"), 0, 2)
-        controls.addWidget(self._out_lang, 0, 3)
-        controls.addWidget(QtWidgets.QLabel("상대 말 자막"), 1, 0)
-        controls.addWidget(self._btn_sub, 1, 1)
-        controls.addWidget(QtWidgets.QLabel("자막 언어"), 1, 2)
-        controls.addWidget(self._sub_lang, 1, 3)
-        controls.addWidget(QtWidgets.QLabel("UI 언어"), 2, 0)
-        controls.addWidget(self._ui_lang, 2, 1)
+        app_mode_widget = self._build_app_mode_toggle()
+        self._text_only = QtWidgets.QCheckBox("텍스트 온리")
+        self._text_only.toggled.connect(self._apply_text_only)
+        self._overlay_font_size = QtWidgets.QSpinBox()
+        self._overlay_font_size.setRange(18, 72)
+        self._overlay_font_size.setSuffix(" px")
+        self._overlay_font_size.setValue(
+            int(self._controller.cfg.get("overlay", {}).get("font_size", 44)))
+        self._overlay_font_size.valueChanged.connect(self._set_overlay_font_size)
+        self._dashboard_note = QtWidgets.QLabel("")
+        self._dashboard_note.setObjectName("noteText")
+        self._btn_overlay_move = QtWidgets.QPushButton()
+        self._btn_overlay_move.clicked.connect(self._toggle_overlay_move)
+        self._btn_overlay_reset = QtWidgets.QPushButton("자막 위치 리셋")
+        self._btn_overlay_reset.clicked.connect(self._reset_overlay_position)
+        controls.addWidget(QtWidgets.QLabel("앱 모드"), 0, 0)
+        controls.addWidget(app_mode_widget, 0, 1, 1, 2)
+        controls.addWidget(self._text_only, 0, 3)
+        controls.addWidget(QtWidgets.QLabel("내 말 번역"), 1, 0)
+        controls.addWidget(self._btn_trans, 1, 1)
+        controls.addWidget(QtWidgets.QLabel("출력 언어"), 1, 2)
+        controls.addWidget(self._out_lang, 1, 3)
+        controls.addWidget(QtWidgets.QLabel("상대 말 자막"), 2, 0)
+        controls.addWidget(self._btn_sub, 2, 1)
+        controls.addWidget(QtWidgets.QLabel("자막 언어"), 2, 2)
+        controls.addWidget(self._sub_lang, 2, 3)
+        controls.addWidget(QtWidgets.QLabel("UI 언어"), 3, 0)
+        controls.addWidget(self._ui_lang, 3, 1)
+        controls.addWidget(QtWidgets.QLabel("PC 자막 크기"), 3, 2)
+        controls.addWidget(self._overlay_font_size, 3, 3)
+        controls.addWidget(self._btn_overlay_move, 4, 2)
+        controls.addWidget(self._btn_overlay_reset, 4, 3)
         root.addLayout(controls)
+        root.addWidget(self._dashboard_note)
 
         self._subtitle_view = QtWidgets.QPlainTextEdit()
         self._subtitle_view.setReadOnly(True)
         self._subtitle_view.setPlaceholderText("실시간 자막이 여기에 표시됩니다.")
         root.addWidget(self._subtitle_view, 1)
         self._tabs.addTab(page, "Dashboard")
+
+    def _build_app_mode_toggle(self) -> QtWidgets.QWidget:
+        wrap = QtWidgets.QWidget()
+        layout = QtWidgets.QHBoxLayout(wrap)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        self._app_mode_group = QtWidgets.QButtonGroup(self)
+        self._app_mode_group.setExclusive(True)
+        labels = {
+            "vrchat": "VRChat",
+            "discord": "Discord",
+        }
+        for mode in config_mod.APP_MODES:
+            btn = QtWidgets.QPushButton(labels.get(mode, mode))
+            btn.setCheckable(True)
+            btn.setProperty("modeButton", True)
+            btn.setMinimumSize(112, 52)
+            btn.clicked.connect(lambda _checked=False, m=mode: self._apply_app_mode(m))
+            self._app_mode_group.addButton(btn)
+            self._app_mode_buttons[mode] = btn
+            layout.addWidget(btn)
+        layout.addStretch(1)
+        self._set_app_mode_checked(self._controller.cfg.get("app", {}).get("mode", "vrchat"))
+        return wrap
 
     def _build_settings(self) -> None:
         page = QtWidgets.QWidget()
@@ -289,6 +343,14 @@ class MainWindow(QtWidgets.QMainWindow):
             #statusText { font-weight: 700; }
             #errorText { color: #ffb4a8; }
             #noteText { color: #9aa0ad; }
+            QPushButton[modeButton="true"] {
+                background: #1c1f29; border: 1px solid #303542; border-radius: 8px;
+                padding: 10px 14px; font-weight: 600;
+            }
+            QPushButton[modeButton="true"]:checked {
+                background: #f0f0f0; color: #12141a; border: 2px solid #8b949e;
+                font-weight: 800;
+            }
         """)
 
     # ---------------- settings form ----------------
@@ -314,8 +376,7 @@ class MainWindow(QtWidgets.QMainWindow):
         ], cfg)
         self._add_group("장치", [
             ("outbound.mic_device", "마이크 입력", "input_device"),
-            ("outbound.voice_output", "번역 음성 출력 사용", "bool"),
-            ("outbound.passthrough_while_translating", "번역 중 원음도 송출", "bool"),
+            ("outbound.text_only", "텍스트 온리(원음 패스스루 + 챗박스)", "bool"),
             ("outbound.tts_device", "번역 음성 출력", "output_device"),
             ("outbound.monitor_device", "번역 음성 모니터", "output_device"),
             ("inbound.audio_device", "인바운드 음성 출력", "output_device"),
@@ -477,6 +538,111 @@ class MainWindow(QtWidgets.QMainWindow):
         self._populate_settings()
         self._settings_note.setText("장치 목록을 새로고침했습니다.")
 
+    def _apply_app_mode(self, mode: str) -> None:
+        mode = (mode or "").strip()
+        current = self._controller.cfg.get("app", {}).get("mode", "vrchat")
+        if not mode or mode == current or self._app_mode_applying:
+            self._set_app_mode_checked(current)
+            return
+        try:
+            cfg = copy.deepcopy(self._controller.raw_cfg)
+            cfg.setdefault("app", {})["mode"] = mode
+            cfg = config_mod.apply_app_profile(cfg)
+            config_mod.save(cfg)
+        except Exception as e:
+            self._dashboard_note.setText(f"모드 적용 실패: {e}")
+            self._set_app_mode_checked(current)
+            return
+
+        self._dashboard_note.setText("앱 모드 적용 중...")
+        self._app_mode_applying = True
+        self._set_dashboard_apply_enabled(False)
+
+        def run():
+            ok = self._controller.restart(cfg)
+            self._signals.mode_done.emit(ok)
+
+        self._mode_thread = threading.Thread(target=run, daemon=True, name="vrclt-mode-restart")
+        self._mode_thread.start()
+
+    def _mode_done(self, ok: bool) -> None:
+        self._app_mode_applying = False
+        self._set_dashboard_apply_enabled(True)
+        self._set_app_mode_checked(self._controller.cfg.get("app", {}).get("mode", "vrchat"))
+        self._sync_text_only()
+        self._dashboard_note.setText("앱 모드 적용됨" if ok else "저장됨. 런타임 시작 실패")
+        self._populate_settings()
+
+    def _set_dashboard_apply_enabled(self, enabled: bool) -> None:
+        for btn in self._app_mode_buttons.values():
+            btn.setEnabled(enabled)
+        self._text_only.setEnabled(enabled)
+
+    def _set_app_mode_checked(self, mode: str) -> None:
+        for key, btn in self._app_mode_buttons.items():
+            btn.setChecked(key == mode)
+
+    def _apply_text_only(self, enabled: bool) -> None:
+        if self._app_mode_applying:
+            self._sync_text_only()
+            return
+        try:
+            cfg = copy.deepcopy(self._controller.raw_cfg)
+            if enabled:
+                cfg.setdefault("app", {})["mode"] = "vrchat"
+            cfg.setdefault("outbound", {})["text_only"] = bool(enabled)
+            cfg = config_mod.apply_app_profile(cfg)
+            config_mod.save(cfg)
+        except Exception as e:
+            self._dashboard_note.setText(f"텍스트 온리 적용 실패: {e}")
+            self._sync_text_only()
+            return
+
+        self._dashboard_note.setText("텍스트 온리 적용 중...")
+        self._app_mode_applying = True
+        self._set_dashboard_apply_enabled(False)
+
+        def run():
+            ok = self._controller.restart(cfg)
+            self._signals.mode_done.emit(ok)
+
+        self._mode_thread = threading.Thread(target=run, daemon=True, name="vrclt-text-only-restart")
+        self._mode_thread.start()
+
+    def _sync_text_only(self) -> None:
+        blocked = self._text_only.blockSignals(True)
+        try:
+            self._text_only.setChecked(self._is_text_only(self._controller.cfg))
+            self._text_only.setEnabled(
+                not self._app_mode_applying
+                and self._controller.cfg.get("app", {}).get("mode", "vrchat") == "vrchat")
+        finally:
+            self._text_only.blockSignals(blocked)
+
+    @staticmethod
+    def _is_text_only(cfg: dict) -> bool:
+        ob = cfg.get("outbound", {})
+        return bool(
+            ob.get("text_only", False)
+            or (not ob.get("voice_output", True)
+                and ob.get("passthrough_while_translating", False)
+                and ob.get("chatbox", False))
+        )
+
+    def _set_overlay_font_size(self, value: int) -> None:
+        self._controller.set_overlay_font_size(value)
+        self._desktop_overlay.refresh()
+
+    def _toggle_overlay_move(self) -> None:
+        st = self._controller.state
+        st.edit_mode = not st.edit_mode
+        if st.edit_mode:
+            self._desktop_overlay.show_for_edit()
+
+    def _reset_overlay_position(self) -> None:
+        self._desktop_overlay.reset_position()
+        self._controller.state.request_position_reset()
+
     def _pick_out_lang(self, label: str) -> None:
         code = self._code_for_label(label, self._controller.cfg.get("control", {}).get("languages", []))
         if code:
@@ -515,6 +681,19 @@ class MainWindow(QtWidgets.QMainWindow):
             "background:#2ea043;" if st.translation_on else "background:#78541e;")
         self._btn_sub.setText(i18n.tr(st.ui_lang, "btn_sub_on" if st.subtitles_on else "btn_sub_off"))
         self._btn_sub.setStyleSheet("background:#2870aa;" if st.subtitles_on else "")
+        self._btn_overlay_move.setText("자막 이동 완료" if st.edit_mode else "자막 위치 이동")
+        self._btn_overlay_move.setStyleSheet("background:#2870aa;" if st.edit_mode else "")
+
+        if not self._app_mode_applying:
+            self._set_app_mode_checked(self._controller.cfg.get("app", {}).get("mode", "vrchat"))
+            self._sync_text_only()
+
+        blocked = self._overlay_font_size.blockSignals(True)
+        try:
+            self._overlay_font_size.setValue(
+                int(self._controller.cfg.get("overlay", {}).get("font_size", 44)))
+        finally:
+            self._overlay_font_size.blockSignals(blocked)
 
         self._sync_combo(self._out_lang, [
             LANG_LABELS.get(c, c) for c in self._controller.cfg.get("control", {}).get("languages", ["en"])
@@ -579,6 +758,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _quit(self) -> None:
         self._quitting = True
+        self._desktop_overlay.close()
         self._tray.hide()
         self._controller.stop()
         QtWidgets.QApplication.quit()

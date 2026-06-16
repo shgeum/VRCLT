@@ -162,6 +162,17 @@ class AppController:
     def set_ui_lang(self, value: str) -> None:
         self.state.ui_lang = value
 
+    def set_overlay_font_size(self, value: int) -> None:
+        value = max(18, min(72, int(value)))
+        with self._lock:
+            self.raw_cfg.setdefault("overlay", {})["font_size"] = value
+            self.cfg.setdefault("overlay", {})["font_size"] = value
+        try:
+            config_mod.save(self.raw_cfg)
+        except Exception:
+            log.debug("failed to persist overlay font size", exc_info=True)
+        self._notify()
+
     def start(self) -> bool:
         return self.restart(self.raw_cfg)
 
