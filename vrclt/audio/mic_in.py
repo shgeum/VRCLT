@@ -47,6 +47,7 @@ class MicCapture:
         self._current_api: str | None = None
         # ~13 s of audio max; old chunks drop automatically while disconnected
         self.buffer: collections.deque[bytes] = collections.deque(maxlen=400)
+        self._raw_taps: list[collections.deque[bytes]] = []
         self._preroll: collections.deque[bytes] = collections.deque(maxlen=PREROLL_CHUNKS)
         self.last_voice_time = 0.0
         self._in_voice = False
@@ -61,11 +62,24 @@ class MicCapture:
     def set_gate_enabled(self, fn) -> None:
         self._gate_enabled = fn
 
+    def add_raw_tap(self, maxlen: int = 400) -> collections.deque[bytes]:
+        tap: collections.deque[bytes] = collections.deque(maxlen=maxlen)
+        self._raw_taps.append(tap)
+        return tap
+
+    def remove_raw_tap(self, tap: collections.deque[bytes]) -> None:
+        try:
+            self._raw_taps.remove(tap)
+        except ValueError:
+            pass
+
     # ---------------- audio callback ----------------
     def _callback(self, indata, frames, time_info, status):
         if status:
             log.debug("mic status: %s", status)
         data = bytes(indata)
+        for tap in list(self._raw_taps):
+            tap.append(data)
         now = time.time()
         if not self._gate_enabled():
             # passthrough / gate off: stream everything continuously
@@ -190,6 +204,15 @@ class MicCapture:
         while True:
             try:
                 chunks.append(self.buffer.popleft())
+            except IndexError:
+                return chunks
+
+    @staticmethod
+    def drain_tap(tap: collections.deque[bytes]) -> list[bytes]:
+        chunks = []
+        while True:
+            try:
+                chunks.append(tap.popleft())
             except IndexError:
                 return chunks
 

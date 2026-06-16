@@ -59,7 +59,7 @@ Run the lightweight checks first:
 Confirm that the public CLI only exposes `run` plus the optional app override:
 
 ```text
-vrclt [{run}] [--app {vrchat,discord}]
+vrclt [{run}] [--app {vrchat,vrc_text,discord}]
 ```
 
 Check source files for stale web stack references before tagging:
@@ -137,12 +137,15 @@ For app-mode smoke tests:
 
 ```powershell
 .\dist\vrclt.exe run --app vrchat
+.\dist\vrclt.exe run --app vrc_text
 .\dist\vrclt.exe run --app discord
 ```
 
 In `vrchat` mode, confirm OSC/chatbox, SteamVR subtitles, and wrist UI behavior
-on a VR-capable machine. In `discord` mode, confirm VRChat-only OSC/SteamVR
-features stay disabled while the native UI remains available.
+on a VR-capable machine. In `vrc_text` mode, confirm translated OSC chatbox text
+is sent, translated voice is not played, and the original microphone still
+passes through to `CABLE Input`. In `discord` mode, confirm VRChat-only
+OSC/SteamVR features stay disabled while the native UI remains available.
 
 ## 6. Audio And Runtime Checks
 
@@ -160,6 +163,8 @@ Minimum manual checks:
 - The target app is configured to use `CABLE Output` as its microphone input.
 - Translation ON sends translated voice to the target app.
 - Translation OFF passes the original microphone through to `CABLE Input`.
+- In `vrc_text`, original microphone audio always passes through to
+  `CABLE Input`; Translation ON/OFF controls only OSC chatbox translation.
 - Inbound subtitles appear for the selected process.
 - Language changes from Dashboard apply immediately.
 - Settings that require a rebuild restart the runtime without duplicate pipelines.
@@ -214,6 +219,8 @@ Include these points in the release body:
 - The app uses a native PySide6 UI and tray menu.
 - There is no web UI or local web server.
 - VRChat mode supports OSC chatbox, avatar OSC control, SteamVR subtitles, and wrist UI.
+- VRC Text Only mode passes original voice through and sends translated OSC
+  chatbox text without translated voice output.
 - Discord mode captures Discord process audio and disables VRChat-only features.
 - Target app microphone should be set to `CABLE Output`.
 

@@ -19,6 +19,7 @@ from . import config as config_mod
 from . import i18n
 from .control.osc_listener import OscControl
 from .gemini.pipeline import InboundPipeline, OutboundPipeline
+from .gemini.session import FatalSessionError
 from .state import AppState
 from .subtitles import SubtitleStore
 
@@ -183,6 +184,10 @@ class AppController:
             if not key:
                 self._set_status("API key required", "API key is empty.")
                 return False
+            key_error = config_mod.api_key_validation_error(key)
+            if key_error:
+                self._set_status("API key invalid", key_error)
+                return False
 
             return self._start_runtime(key)
         except Exception as e:
@@ -303,6 +308,10 @@ class AppController:
                 await coro
             except asyncio.CancelledError:
                 raise
+            except FatalSessionError as e:
+                log.error("%s pipeline stopped: %s", name, e)
+                self._set_status("API key invalid", str(e))
+                stop.set()
             except Exception as e:
                 log.exception("%s pipeline crashed", name)
                 self._set_status("Degraded", f"{name}: {e}")

@@ -16,6 +16,7 @@
 - 아웃바운드 번역: 내 마이크 -> Gemini Live -> 번역 음성 -> 대상 앱 마이크
 - 인바운드 자막: 대상 앱 오디오 -> Gemini Live -> 번역 자막
 - VRChat OSC 챗박스, 아바타 OSC 제어, SteamVR 자막, 손목 메뉴 지원
+- 원래 목소리는 그대로 보내고 OSC 챗박스 번역 텍스트만 추가하는 VRC Text Only 모드
 - Discord 프로세스 오디오 캡처와 VRChat 전용 기능 자동 비활성화
 - 단일 exe 빌드: `dist\vrclt.exe`
 - 사용자 설정 저장 위치: `%LOCALAPPDATA%\vrclt\config.yaml`
@@ -23,11 +24,28 @@
 ## 요구사항
 
 - Windows 11 권장
-- [Google AI Studio](https://aistudio.google.com/apikey)의 Gemini API 키
+- Google Gemini API 키 (아래 발급 방법 참고)
 - [VB-Audio Virtual Cable](https://vb-audio.com/Cable/)
 - VR 오버레이와 손목 UI를 사용할 경우 SteamVR
 - VRChat 챗박스/아바타 제어를 사용할 경우 VRChat OSC 활성화
 - 소스 실행 시 Python 3.12
+
+### Gemini API 키 발급 방법
+
+1. [Google AI Studio](https://aistudio.google.com/)에 접속합니다.
+   - Google 계정으로 로그인합니다. 계정이 없으면 새로 만듭니다.
+2. 왼쪽 사이드바 하단 또는 상단의 **Get API key** 버튼을 클릭합니다.
+   - 또는 직접 [https://aistudio.google.com/apikey](https://aistudio.google.com/apikey)로 이동합니다.
+3. **Create API key** 버튼을 클릭합니다.
+4. API 키를 사용할 Google Cloud 프로젝트를 선택합니다.
+   - 기존 프로젝트가 없다면 **Create API key in new project**를 선택하면 자동으로 생성됩니다.
+5. 생성된 API 키(`AIza...`로 시작하는 문자열)를 복사합니다.
+   - 키는 한 번만 표시되므로 안전한 곳에 보관합니다.
+6. 복사한 키를 `vrclt` Settings 탭의 **API Key** 항목에 붙여넣거나,
+   `config.yaml`의 `gemini.api_key` 값으로 설정합니다.
+
+> **참고**: Gemini API는 무료 티어(분당 요청 수 제한)가 있어 개인 사용에는 충분합니다.
+> API 키는 타인에게 공유하지 않습니다. `config.yaml`에 평문으로 저장되므로 파일을 공개 저장소에 올리지 마세요.
 
 ## 빠른 시작
 
@@ -71,12 +89,14 @@ Copy-Item config.example.yaml config.yaml
 | 모드 | 대상 | 동작 |
 | --- | --- | --- |
 | `vrchat` | VRChat | `VRChat.exe` 오디오 캡처, OSC 챗박스, 아바타 OSC 제어, SteamVR 자막, 손목 UI 활성화 |
+| `vrc_text` | VRChat 텍스트 전용 | 원래 목소리는 VRChat으로 passthrough하고, Gemini 번역 결과는 OSC 챗박스 텍스트로만 전송. 번역 음성 출력 없음 |
 | `discord` | Discord | `Discord.exe` 오디오 캡처, VRChat OSC/SteamVR 기능 비활성화, 자체 UI 유지 |
 
 Settings에서 모드를 고르거나 실행 한 번에만 인자로 지정할 수 있습니다.
 
 ```powershell
 .\vrclt.exe run --app vrchat
+.\vrclt.exe run --app vrc_text
 .\vrclt.exe run --app discord
 ```
 
@@ -128,6 +148,8 @@ target app process audio -> ProcTap -> Gemini Live -> subtitles
 ```
 
 번역이 OFF이면 마이크는 Gemini를 거치지 않고 `CABLE Input`으로 바로 전달됩니다.
+`vrc_text`에서는 원래 목소리가 항상 passthrough되고, 번역 토글은 Gemini 텍스트
+번역과 챗박스 출력만 제어합니다.
 
 ## VRChat 기능
 

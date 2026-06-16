@@ -4,6 +4,8 @@ OutboundPipeline: my voice -> translated voice into VB-Cable + chatbox text.
   Translation toggle: when state.translation_on is False the Gemini session is
   closed (enabled gate) and raw mic audio is routed straight to the VB-Cable
   player instead (passthrough mode) - others hear the real voice.
+  VRC text-only mode disables translated voice but keeps raw microphone
+  passthrough while sending translated chatbox text.
 
 InboundPipeline: VRChat's audio (process loopback) -> subtitles for me.
 """
@@ -93,14 +95,25 @@ class OutboundPipeline:
         ob = cfg["outbound"]
         au = cfg["audio"]
         self.state = state
+        self.voice_output = ob.get("voice_output", True)
+        self.passthrough_while_translating = ob.get("passthrough_while_translating", False)
         self.mic = MicCapture(ob["mic_device"], au.get("voice_rms_threshold", 200.0),
                               hangover_sec=au.get("voice_hangover_sec", 0.5))
-        # gate only while translating; passthrough sends raw audio continuously
-        self.mic.set_gate_enabled(lambda: state.translation_on)
-        self.tts_player = PcmPlayer(ob["tts_device"], name="tts", rate=24000)
+        # Voice mode: gate only while translating; passthrough sends raw audio
+        # continuously while translation is off. VRC text-only keeps the gate
+        # enabled for Gemini text translation and uses a raw tap for passthrough.
+        self.mic.set_gate_enabled(
+            lambda: state.translation_on
+            if self.voice_output and not self.passthrough_while_translating else True)
+        self.tts_player = PcmPlayer(ob["tts_device"], name="tts", rate=24000) \
+            if self.voice_output else None
         # passthrough: raw 16k mic audio straight to the cable when translation is off
-        self.passthrough = PcmPlayer(ob["tts_device"], name="passthrough", rate=MIC_RATE)
-        self.monitor = PcmPlayer(ob["monitor_device"], name="monitor") if ob["monitor_device"] else None
+        self.passthrough = PcmPlayer(ob["tts_device"], name="passthrough", rate=MIC_RATE) \
+            if self.voice_output or self.passthrough_while_translating else None
+        self._passthrough_tap = self.mic.add_raw_tap() \
+            if self.passthrough_while_translating else None
+        self.monitor = PcmPlayer(ob["monitor_device"], name="monitor") \
+            if self.voice_output and ob["monitor_device"] else None
         self.chatbox = None
         self._feedback_chatbox = cfg.get("control", {}).get("feedback_chatbox", True)
         self._chat_show_source = cfg["osc"].get("show_source", True)
@@ -123,7 +136,7 @@ class OutboundPipeline:
             idle_disconnect_sec=au["mic_idle_disconnect_sec"],
             on_src=self.segmenter.add_src,
             on_dst=self.segmenter.add_dst,
-            on_audio=self._on_audio,
+            on_audio=self._on_audio if self.voice_output else None,
             on_turn_complete=self.segmenter.turn_complete,
             on_interrupted=self._on_interrupted,
         )
@@ -138,18 +151,25 @@ class OutboundPipeline:
             self.mic.trim_to(0.5)
         if self.chatbox and self._feedback_chatbox:
             if field == "translation_on":
-                self.chatbox.send("[vrclt] 번역 ON" if value else "[vrclt] 번역 OFF (원음 송출)")
+                if value:
+                    self.chatbox.send("[vrclt] 번역 ON")
+                elif self.voice_output or self.passthrough_while_translating:
+                    self.chatbox.send("[vrclt] 번역 OFF (원음 송출)")
+                else:
+                    self.chatbox.send("[vrclt] 번역 OFF (텍스트 전송 중지)")
             elif field == "target_language":
                 self.chatbox.send(f"[vrclt] 번역 언어: {value}")
 
     # -- session callbacks (worker event loop) --
     def _on_audio(self, pcm: bytes) -> None:
-        self.tts_player.play(pcm)
+        if self.tts_player:
+            self.tts_player.play(pcm)
         if self.monitor:
             self.monitor.play(pcm)
 
     def _on_interrupted(self) -> None:
-        self.tts_player.interrupt()
+        if self.tts_player:
+            self.tts_player.interrupt()
         if self.monitor:
             self.monitor.interrupt()
 
@@ -169,21 +189,29 @@ class OutboundPipeline:
     # -- main --
     async def run(self, stop: asyncio.Event) -> None:
         self.mic.start()
-        self.tts_player.start()
-        self.passthrough.start()
+        if self.tts_player:
+            self.tts_player.start()
+        if self.passthrough:
+            self.passthrough.start()
         if self.monitor:
             self.monitor.start()
         tick_task = asyncio.ensure_future(self._segment_tick(stop))
-        route_task = asyncio.ensure_future(self._route_passthrough(stop))
+        route_task = asyncio.ensure_future(self._route_passthrough(stop)) \
+            if self.passthrough else None
         try:
             await self.session.run(stop)
         finally:
             tick_task.cancel()
-            route_task.cancel()
+            if route_task:
+                route_task.cancel()
             self.segmenter.flush()
             self.mic.stop()
-            self.tts_player.stop()
-            self.passthrough.stop()
+            if self.tts_player:
+                self.tts_player.stop()
+            if self.passthrough:
+                self.passthrough.stop()
+            if self._passthrough_tap is not None:
+                self.mic.remove_raw_tap(self._passthrough_tap)
             if self.monitor:
                 self.monitor.stop()
             if self.chatbox:
@@ -196,6 +224,13 @@ class OutboundPipeline:
 
     async def _route_passthrough(self, stop: asyncio.Event) -> None:
         """While translation is OFF, drain the mic straight to the cable."""
+        if self._passthrough_tap is not None:
+            while not stop.is_set():
+                await asyncio.sleep(0.1)
+                chunks = self.mic.drain_tap(self._passthrough_tap)
+                if chunks:
+                    self.passthrough.play(b"".join(chunks))
+            return
         was_off = False
         while not stop.is_set():
             await asyncio.sleep(0.1)

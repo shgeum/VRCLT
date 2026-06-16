@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-APP_MODES = ("vrchat", "discord")
+APP_MODES = ("vrchat", "vrc_text", "discord")
 APPDATA_DIR = Path(os.environ.get("LOCALAPPDATA", ".")) / "vrclt"
 
 if os.environ.get("VRCLT_CONFIG"):
@@ -20,11 +20,23 @@ DEFAULTS = {
     "api_key": "",                      # empty -> use GEMINI_API_KEY env var
     "model": "gemini-3.5-live-translate-preview",
     "app": {
-        "mode": "vrchat",              # vrchat | discord
+        "mode": "vrchat",              # vrchat | vrc_text | discord
         "profiles": {
             "vrchat": {
                 "process": "VRChat.exe",
                 "ui_mode": "auto",
+                "voice_output": True,
+                "passthrough_while_translating": False,
+                "chatbox": True,
+                "osc_control": True,
+                "vr_overlay": True,
+                "wrist_ui": True,
+            },
+            "vrc_text": {
+                "process": "VRChat.exe",
+                "ui_mode": "auto",
+                "voice_output": False,
+                "passthrough_while_translating": True,
                 "chatbox": True,
                 "osc_control": True,
                 "vr_overlay": True,
@@ -33,6 +45,8 @@ DEFAULTS = {
             "discord": {
                 "process": "Discord.exe",
                 "ui_mode": "desktop",
+                "voice_output": True,
+                "passthrough_while_translating": False,
                 "chatbox": False,
                 "osc_control": False,
                 "vr_overlay": False,
@@ -47,6 +61,8 @@ DEFAULTS = {
         "mic_device": "",               # substring; empty = default input device
         "tts_device": "CABLE Input",    # translated voice -> VB-Cable -> VRChat mic
         "monitor_device": "",           # also play translated voice here ("" = off)
+        "voice_output": True,            # False = no translated TTS output
+        "passthrough_while_translating": False,  # True = raw mic always -> tts_device
         "chatbox": True,                # send translated text to VRChat chatbox
     },
     "inbound": {                        # pipeline B: others' voices -> me (subtitles)
@@ -151,6 +167,11 @@ def apply_app_profile(cfg: dict, mode: str | None = None) -> dict:
         cfg.setdefault("inbound", {})["process"] = profile["process"]
     if profile.get("ui_mode"):
         cfg.setdefault("ui", {})["mode"] = profile["ui_mode"]
+    if "voice_output" in profile:
+        cfg.setdefault("outbound", {})["voice_output"] = bool(profile["voice_output"])
+    if "passthrough_while_translating" in profile:
+        cfg.setdefault("outbound", {})["passthrough_while_translating"] = bool(
+            profile["passthrough_while_translating"])
     if "chatbox" in profile:
         cfg.setdefault("outbound", {})["chatbox"] = bool(profile["chatbox"])
     if "osc_control" in profile:
@@ -170,3 +191,13 @@ def save(cfg: dict) -> None:
 
 def api_key(cfg: dict) -> str:
     return (cfg.get("api_key") or os.environ.get("GEMINI_API_KEY", "")).strip()
+
+
+def api_key_validation_error(key: str) -> str | None:
+    key = (key or "").strip()
+    if not key:
+        return None
+    lowered = key.lower()
+    if "://" in lowered or "github.com" in lowered:
+        return "API key must be a Gemini API key, not a URL."
+    return None

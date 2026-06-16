@@ -34,6 +34,16 @@ AGENT_INSTRUCTION = (
 )
 
 
+class FatalSessionError(RuntimeError):
+    """A non-retriable Live API session error."""
+
+
+def _is_invalid_api_key_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    return (str(code) == "1007" and "api key" in text) or "api key not valid" in text
+
+
 class AudioSource:
     """Interface the session pulls 16 kHz mono int16 PCM from."""
 
@@ -120,7 +130,11 @@ class LiveTranslateSession:
             self._restart = False
             try:
                 clean = await self._session_once(stop)
-            except Exception:
+            except Exception as e:
+                if _is_invalid_api_key_error(e):
+                    raise FatalSessionError(
+                        "Gemini API key is invalid. Update the API key in Settings."
+                    ) from e
                 clean = False
                 log.exception("[%s] session error", self.name)
             if stop.is_set():

@@ -87,6 +87,14 @@ class _UiSignals(QtCore.QObject):
     save_done = QtCore.Signal(bool)
 
 
+class _NoWheelComboBox(QtWidgets.QComboBox):
+    def wheelEvent(self, event: QtGui.QWheelEvent) -> None:
+        if self.view().isVisible():
+            super().wheelEvent(event)
+        else:
+            event.ignore()
+
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, controller, log_file: Path):
         super().__init__()
@@ -148,9 +156,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._btn_sub = QtWidgets.QPushButton()
         self._btn_sub.clicked.connect(
             lambda: self._controller.set_subtitles_on(not self._controller.state.subtitles_on))
-        self._out_lang = QtWidgets.QComboBox()
-        self._sub_lang = QtWidgets.QComboBox()
-        self._ui_lang = QtWidgets.QComboBox()
+        self._out_lang = _NoWheelComboBox()
+        self._sub_lang = _NoWheelComboBox()
+        self._ui_lang = _NoWheelComboBox()
         self._ui_lang.addItems([i18n.UI_LANG_LABELS[c] for c in i18n.LANGS])
         self._out_lang.currentTextChanged.connect(self._pick_out_lang)
         self._sub_lang.currentTextChanged.connect(self._pick_sub_lang)
@@ -306,6 +314,8 @@ class MainWindow(QtWidgets.QMainWindow):
         ], cfg)
         self._add_group("장치", [
             ("outbound.mic_device", "마이크 입력", "input_device"),
+            ("outbound.voice_output", "번역 음성 출력 사용", "bool"),
+            ("outbound.passthrough_while_translating", "번역 중 원음도 송출", "bool"),
             ("outbound.tts_device", "번역 음성 출력", "output_device"),
             ("outbound.monitor_device", "번역 음성 모니터", "output_device"),
             ("inbound.audio_device", "인바운드 음성 출력", "output_device"),
@@ -383,22 +393,22 @@ class MainWindow(QtWidgets.QMainWindow):
         if kind == "float_csv":
             return QtWidgets.QLineEdit(_as_float_list(value))
         if kind == "appmode":
-            w = QtWidgets.QComboBox()
-            w.addItems(["vrchat", "discord"])
+            w = _NoWheelComboBox()
+            w.addItems(list(config_mod.APP_MODES))
             w.setCurrentText(str(value or "vrchat"))
             return w
         if kind == "uimode":
-            w = QtWidgets.QComboBox()
+            w = _NoWheelComboBox()
             w.addItems(["auto", "vr", "desktop"])
             w.setCurrentText(str(value or "auto"))
             return w
         if kind == "hand":
-            w = QtWidgets.QComboBox()
+            w = _NoWheelComboBox()
             w.addItems(["left", "right"])
             w.setCurrentText(str(value or "left"))
             return w
         if kind in ("input_device", "output_device"):
-            w = QtWidgets.QComboBox()
+            w = _NoWheelComboBox()
             w.setEditable(True)
             names = self._inputs if kind == "input_device" else self._outputs
             w.addItems(names)
@@ -434,6 +444,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def _save_settings(self) -> None:
         try:
             cfg = self._settings_from_fields()
+            key_error = config_mod.api_key_validation_error(cfg.get("api_key", ""))
+            if key_error:
+                raise ValueError("API 키에는 URL이 아니라 Gemini API 키를 입력해야 합니다.")
+            cfg = config_mod.apply_app_profile(cfg)
             config_mod.save(cfg)
         except Exception as e:
             self._settings_note.setText(f"저장 실패: {e}")

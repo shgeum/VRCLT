@@ -17,6 +17,7 @@ server, and no config file required next to the release executable.
 - Outbound translation: your microphone -> Gemini Live -> translated voice -> target app mic
 - Inbound subtitles: target app audio -> Gemini Live -> translated subtitles
 - VRChat support for OSC chatbox output, avatar OSC controls, SteamVR subtitles, and the wrist menu
+- VRC Text Only mode for sending translated chatbox text while passing your original voice through
 - Discord mode with Discord process audio capture and VRChat-only features disabled
 - Single-file release build: `dist\vrclt.exe`
 - User settings stored in `%LOCALAPPDATA%\vrclt\config.yaml`
@@ -24,11 +25,28 @@ server, and no config file required next to the release executable.
 ## Requirements
 
 - Windows 11 recommended
-- Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey)
+- Google Gemini API key (see instructions below)
 - [VB-Audio Virtual Cable](https://vb-audio.com/Cable/)
 - SteamVR for VR overlays and wrist UI
 - VRChat OSC enabled for chatbox/avatar-control features
 - Python 3.12 only if running from source
+
+### How to Get a Gemini API Key
+
+1. Go to [Google AI Studio](https://aistudio.google.com/) and sign in with your Google account.
+   - If you do not have a Google account, create one first.
+2. Click the **Get API key** button in the left sidebar (or at the top of the page).
+   - You can also navigate directly to [https://aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+3. Click **Create API key**.
+4. Select a Google Cloud project to associate with the key.
+   - If you have no existing projects, choose **Create API key in new project** and one will be created automatically.
+5. Copy the generated key (it starts with `AIza...`).
+   - Store it somewhere safe — it is only shown in full once.
+6. Paste the key into the **API Key** field in the vrclt Settings tab,
+   or set it as `gemini.api_key` in `config.yaml`.
+
+> **Note**: The Gemini API has a free tier with per-minute request limits that is sufficient for personal use.
+> Do not share your API key. It is stored as plain text in `config.yaml`, so do not commit that file to a public repository.
 
 ## Quick Start
 
@@ -73,12 +91,14 @@ Copy-Item config.example.yaml config.yaml
 | Mode | Use for | Behavior |
 | --- | --- | --- |
 | `vrchat` | VRChat | Captures `VRChat.exe`, enables OSC chatbox, avatar OSC control, SteamVR subtitles, and wrist UI |
+| `vrc_text` | VRChat text only | Passes your original voice through to VRChat while sending Gemini-translated OSC chatbox text; no translated voice output |
 | `discord` | Discord | Captures `Discord.exe`, disables VRChat OSC/SteamVR features, keeps the native app UI active |
 
 Choose a mode in Settings or pass it for one launch:
 
 ```powershell
 .\vrclt.exe run --app vrchat
+.\vrclt.exe run --app vrc_text
 .\vrclt.exe run --app discord
 ```
 
@@ -130,7 +150,8 @@ target app process audio -> ProcTap -> Gemini Live -> subtitles
 ```
 
 When translation is OFF, the microphone bypasses Gemini and is sent directly to
-`CABLE Input`.
+`CABLE Input`. In `vrc_text`, the original microphone is always passed through;
+the translation toggle only controls Gemini text translation and chatbox output.
 
 ## VRChat Features
 

@@ -6,18 +6,31 @@ api_key: ""
 model: gemini-3.5-live-translate-preview
 
 app:
-  mode: vrchat                 # vrchat | discord; can also be overridden with: python -m vrclt run --app discord
+  mode: vrchat                 # vrchat | vrc_text | discord; override with: python -m vrclt run --app vrc_text
   profiles:
     vrchat:
       process: VRChat.exe      # process captured for inbound subtitles
       ui_mode: auto            # auto | vr | desktop
+      voice_output: true       # translated voice + passthrough to CABLE Input
+      passthrough_while_translating: false
       chatbox: true            # send outbound translated text to VRChat chatbox via OSC
       osc_control: true        # listen for VRChat avatar OSC controls
       vr_overlay: true         # SteamVR subtitle overlay
       wrist_ui: true           # SteamVR wrist menu
+    vrc_text:
+      process: VRChat.exe      # text-only: mic -> Gemini -> OSC chatbox
+      ui_mode: auto
+      voice_output: false      # no translated voice
+      passthrough_while_translating: true  # raw mic still goes to CABLE Input
+      chatbox: true
+      osc_control: true
+      vr_overlay: true
+      wrist_ui: true
     discord:
       process: Discord.exe     # use DiscordCanary.exe or DiscordPTB.exe if needed
       ui_mode: desktop         # Discord mode keeps SteamVR overlays off
+      voice_output: true
+      passthrough_while_translating: false
       chatbox: false           # Discord has no VRChat OSC chatbox
       osc_control: false
       vr_overlay: false
@@ -30,6 +43,8 @@ outbound:                 # my voice -> others (VRChat hears the translation)
   mic_device: ""          # substring of device name; "" = default input
   tts_device: CABLE Input # VB-Cable playback side (VRChat mic = CABLE Output)
   monitor_device: ""      # also hear the translation myself ("" = off)
+  voice_output: true      # false = no translated TTS output
+  passthrough_while_translating: false  # true = raw mic always -> tts_device
   chatbox: true
 
 inbound:                  # others' voices -> me (subtitles)
