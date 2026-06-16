@@ -7,13 +7,14 @@ from pathlib import Path
 import yaml
 
 APP_MODES = ("vrchat", "discord")
+APPDATA_DIR = Path(os.environ.get("LOCALAPPDATA", ".")) / "vrclt"
 
-# frozen (PyInstaller) exe -> config.yaml next to the exe; otherwise repo root
-if getattr(sys, "frozen", False):
-    _BASE = Path(sys.executable).resolve().parent
+if os.environ.get("VRCLT_CONFIG"):
+    CONFIG_PATH = Path(os.environ["VRCLT_CONFIG"])
+elif getattr(sys, "frozen", False):
+    CONFIG_PATH = APPDATA_DIR / "config.yaml"
 else:
-    _BASE = Path(__file__).resolve().parent.parent
-CONFIG_PATH = Path(os.environ.get("VRCLT_CONFIG", _BASE / "config.yaml"))
+    CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
 
 DEFAULTS = {
     "api_key": "",                      # empty -> use GEMINI_API_KEY env var
@@ -97,22 +98,11 @@ DEFAULTS = {
         "languages": ["ja", "en", "ko", "zh-Hans", "zh-Hant", "yue", "es", "ru", "fr", "de"],
         "feedback_chatbox": True,       # announce toggle/language changes in chatbox
     },
-    "web": {                            # localhost web control + settings page
-        "enabled": True,
-        "port": 8765,
-        "tray": True,                   # system tray icon (quick control + quit)
-        "auto_open": True,              # open the web UI in the browser on startup
-    },
     "ui": {
         "mode": "auto",                 # auto | vr | desktop
-                                        # auto: VR overlays if SteamVR is running, else desktop window
+                                        # auto: VR overlays if SteamVR is running
         "lang": "",                     # UI display language: ""=auto | en | ko | ja | zh
-                                        # applies to web, VR wrist menu and PC window labels
-    },
-    "desktop": {                        # PC mode: always-on-top tkinter windows
-        "subtitle_font_size": 30,
-        "subtitle_width": 900,
-        "opacity": 0.85,
+                                        # applies to Qt UI and VR wrist menu labels
     },
     "wrist_ui": {                       # SteamVR wrist watch menu (XSOverlay style)
         "enabled": True,
@@ -173,6 +163,7 @@ def apply_app_profile(cfg: dict, mode: str | None = None) -> dict:
 
 
 def save(cfg: dict) -> None:
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         yaml.safe_dump(cfg, f, allow_unicode=True, sort_keys=False)
 

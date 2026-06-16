@@ -1,15 +1,21 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for vrclt (onedir). Build: pyinstaller vrclt.spec --noconfirm"""
+"""PyInstaller spec for vrclt onefile build.
+
+Build: pyinstaller vrclt.spec --noconfirm
+Output: dist/vrclt.exe
+"""
 from PyInstaller.utils.hooks import collect_all
 
-datas = [("vrclt/web/static/index.html", "vrclt/web/static")]
+datas = []
 binaries = []
 hiddenimports = ["vrclt"]
 
 # native / data-heavy packages PyInstaller can't fully trace on its own
-for pkg in ["onnxruntime", "soxr", "proctap", "openvr", "sounddevice", "glfw",
-            "OpenGL", "pystray", "PIL", "uvicorn", "fastapi", "starlette",
-            "google.genai", "pythonosc", "yaml", "psutil", "soundfile"]:
+for pkg in [
+    "onnxruntime", "soxr", "proctap", "openvr", "sounddevice",
+    "glfw", "OpenGL", "PIL", "google.genai", "pythonosc", "yaml",
+    "psutil", "soundfile",
+]:
     try:
         d, b, h = collect_all(pkg)
         datas += d
@@ -26,15 +32,19 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],
-    excludes=["torch", "matplotlib", "tkinter.test", "test"],
+    excludes=["torch", "matplotlib", "tkinter", "tkinter.test", "test"],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
 exe = EXE(
-    pyz, a.scripts, [],
-    exclude_binaries=True,
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.datas,
+    [],
     name="vrclt",
-    console=True,        # keep the log console; set False for a silent tray app
+    console=False,
     icon=None,
+    strip=False,
+    upx=False,
 )
-coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name="vrclt")

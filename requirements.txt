@@ -11,10 +11,8 @@ proc-tap==1.0.3
 onnxruntime>=1.17    # Silero VAD (inbound music gating)
 openvr==2.12.1401
 pillow>=10.0
-# M4 (tray + web UI)
-fastapi>=0.110
-uvicorn>=0.29
-pystray>=0.19
+# Native app UI
+PySide6>=6.7
 PyOpenGL>=3.1
 glfw>=2.7
 PyOpenGL-accelerate>=3.1

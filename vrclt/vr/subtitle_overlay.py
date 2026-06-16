@@ -3,8 +3,7 @@
 - Fixed-size dark panel, newest lines at the bottom, live partial in grey.
   Hidden when empty or subtitles are OFF.
 - Reposition: LOOK at the panel (it brightens), hold GRIP on the pointer
-  hand to grab; release to drop (saved; reset via the wrist panel button or
-  `python -m vrclt resetpos`).
+  hand to grab; release to drop (saved; reset via the wrist panel button).
 - Texture is a persistent OpenGL texture (see vr/render.py for why), updated
   only when the visible content actually changes.
 """

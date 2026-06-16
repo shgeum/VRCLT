@@ -1,8 +1,7 @@
-"""Shared UI-language strings for all three UIs (web, VR wrist menu, PC window).
+"""Shared UI-language strings for the Qt app and VR wrist menu.
 
-One source of truth: the VR/PC code calls tr(lang, key); the web UI fetches the
-whole table from /api/i18n and does the same lookup in JS. Display language is
-held in AppState.ui_lang so a change in any UI propagates live to the others.
+Display language is held in AppState.ui_lang so a change in any UI propagates
+live to the others.
 
 This is the *display* language (chrome), separate from the translation target
 languages (those keep their native names via LANG_LABELS in each UI).
@@ -15,7 +14,7 @@ log = logging.getLogger(__name__)
 LANGS = ["en", "ko", "ja", "zh"]
 UI_LANG_LABELS = {"en": "English", "ko": "한국어", "ja": "日本語", "zh": "中文"}
 
-# key -> {lang: text}.  "f.*" keys are web settings-field labels.
+# key -> {lang: text}.  "f.*" keys are settings-field labels.
 STRINGS = {
     # ---- header / connection ----
     "app_subtitle": {"ko": "VRChat Live Translator — 제어 · 자막 · 설정",
@@ -50,11 +49,11 @@ STRINGS = {
     "ui_lang": {"ko": "UI 언어", "en": "UI lang", "ja": "UI言語", "zh": "界面语言"},
     "sub_placeholder": {"ko": "⠿ 자막 위치 (드래그)", "en": "⠿ subtitle area (drag)",
                         "ja": "⠿ 字幕の位置 (ドラッグ)", "zh": "⠿ 字幕位置 (拖动)"},
-    # ---- web settings ----
-    "settings_summary": {"ko": "설정 (저장 후 vrclt 재시작 필요)",
-                         "en": "Settings (restart vrclt after saving)",
-                         "ja": "設定 (保存後 vrclt の再起動が必要)",
-                         "zh": "设置 (保存后需重启 vrclt)"},
+    # ---- settings ----
+    "settings_summary": {"ko": "설정",
+                         "en": "Settings",
+                         "ja": "設定",
+                         "zh": "设置"},
     "grp_out_langs": {"ko": "출력 언어 목록 (내 말 번역)", "en": "Output languages (my speech)",
                       "ja": "出力言語リスト (自分の発話)", "zh": "输出语言列表 (我的发言)"},
     "grp_sub_langs": {"ko": "자막 언어 목록 (상대 말)", "en": "Subtitle languages (others)",
@@ -72,12 +71,10 @@ STRINGS = {
     "grp_inbound": {"ko": "자막 (인바운드)", "en": "Subtitles (inbound)",
                     "ja": "字幕 (受信)", "zh": "字幕 (接收)"},
     "grp_overlay": {"ko": "VR 오버레이", "en": "VR overlay", "ja": "VR オーバーレイ", "zh": "VR 叠加层"},
-    "grp_desktop": {"ko": "PC 자막 창", "en": "PC subtitle window",
-                    "ja": "PC字幕ウィンドウ", "zh": "PC 字幕窗口"},
     "grp_uilang": {"ko": "표시 언어", "en": "Display language", "ja": "表示言語", "zh": "显示语言"},
     "btn_save": {"ko": "설정 저장", "en": "Save settings", "ja": "設定を保存", "zh": "保存设置"},
     "default_device": {"ko": "(기본)", "en": "(default)", "ja": "(既定)", "zh": "(默认)"},
-    # ---- web settings field labels ----
+    # ---- settings field labels ----
     "f.api_key": {"ko": "API 키", "en": "API key", "ja": "APIキー", "zh": "API 密钥"},
     "f.model": {"ko": "모델", "en": "Model", "ja": "モデル", "zh": "模型"},
     "f.app.mode": {"ko": "기본 실행 대상", "en": "Default app target",
@@ -127,13 +124,6 @@ STRINGS = {
     "f.overlay.lines": {"ko": "표시 줄수", "en": "Lines shown", "ja": "表示行数", "zh": "显示行数"},
     "f.overlay.show_source": {"ko": "자막에 원문 표시", "en": "Show source in subtitles",
                               "ja": "字幕に原文表示", "zh": "字幕显示原文"},
-    "f.desktop.subtitle_font_size": {"ko": "PC 자막 글자크기", "en": "PC subtitle font size",
-                                     "ja": "PC字幕の文字サイズ", "zh": "PC 字幕字号"},
-    "f.desktop.opacity": {"ko": "PC 자막 투명도(0-1)", "en": "PC subtitle opacity (0-1)",
-                          "ja": "PC字幕の透明度 (0-1)", "zh": "PC 字幕不透明度 (0-1)"},
-    "f.desktop.subtitle_width": {"ko": "PC 자막 너비(px)", "en": "PC subtitle width (px)",
-                                 "ja": "PC字幕の幅 (px)", "zh": "PC 字幕宽度 (px)"},
-    "f.web.port": {"ko": "웹 포트", "en": "Web port", "ja": "Webポート", "zh": "Web 端口"},
 }
 
 

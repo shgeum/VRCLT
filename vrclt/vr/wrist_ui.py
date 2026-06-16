@@ -4,7 +4,7 @@ Interaction (no SteamVR input capture - the game keeps full control):
 - gaze gate: panel fades opaque + our own laser appears only while LOOKING
   at the watch up close
 - TRIGGER on a button: click; GRIP anywhere on the panel: grab & move
-  (release saves; [위치 리셋] button or `python -m vrclt resetpos` resets)
+  (release saves; [위치 리셋] button resets)
 - the laser points 'pointer_tilt_deg' below the controller's raw forward,
   matching the natural pistol-grip pointing direction
 
