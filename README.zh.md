@@ -242,7 +242,8 @@ VRChat 模式可使用:
 | `overlay.distance_m` | `1.2` | 字幕叠加层相对 HMD 的距离，单位米。 |
 | `overlay.below_m` | `0.35` | HMD 下方偏移，单位米。 |
 | `overlay.tilt_deg` | `-15.0` | 叠加层倾斜角度。 |
-| `overlay.font` | `bundled:NotoSansCJKsc-Regular.otf` | 字幕叠加层字体。 |
+| `overlay.transform` | `null` | 在 VR 中重新定位后自动保存的精确 3x4 字幕姿态。 |
+| `overlay.font` | `bundled:NotoSansCJKkr-Regular.otf` | 字幕叠加层字体。 |
 | `overlay.font_size` | `44` | 字幕字号。 |
 | `overlay.display_sec` | `7.0` | 已确认字幕行保留显示的时间。 |
 | `overlay.lines` | `3` | 屏幕上保留的最近确认字幕行数。 |
@@ -276,11 +277,12 @@ VRChat 模式可使用:
 | `wrist_ui.enabled` | `true` | 启用 SteamVR 手腕菜单。 |
 | `wrist_ui.hand` | `left` | 佩戴菜单的手: `left` 或 `right`。 |
 | `wrist_ui.width_m` | `0.16` | 手腕菜单宽度，单位米。 |
-| `wrist_ui.offset` | `[0.0, 0.02, 0.12]` | 控制器坐标系中的 x,y,z 偏移。 |
-| `wrist_ui.tilt_deg` | `0.0` | 朝向脸部的额外倾斜。 |
-| `wrist_ui.roll_deg` | `null` | 平面内旋转。`null` 时按左右手自动旋转。 |
+| `wrist_ui.offset` | `[-0.0557, -0.0265, 0.0952]` | 控制器坐标系中的 x,y,z 偏移。 |
+| `wrist_ui.tilt_deg` | `197.994` | 朝向脸部的额外倾斜。 |
+| `wrist_ui.roll_deg` | `-18.911` | 平面内旋转。`null` 时按左右手自动旋转。 |
+| `wrist_ui.transform` | saved 3x4 pose | 在 VR 中重新定位后自动保存的精确 3x4 手腕姿态。 |
 | `wrist_ui.pointer_tilt_deg` | `50.0` | 指针射线向下倾斜角度。 |
-| `wrist_ui.font` | `bundled:NotoSansCJKsc-Bold.otf` | 手腕菜单字体。 |
+| `wrist_ui.font` | `bundled:NotoSansCJKkr-Bold.otf` | 手腕菜单字体。 |
 
 ## 构建
 

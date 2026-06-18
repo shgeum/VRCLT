@@ -244,7 +244,8 @@ VR オーバーレイを強制的に有効にするには `ui.mode: vr`、無効
 | `overlay.distance_m` | `1.2` | HMD からの字幕オーバーレイ距離(m)。 |
 | `overlay.below_m` | `0.35` | HMD 下方向のオフセット(m)。 |
 | `overlay.tilt_deg` | `-15.0` | オーバーレイの傾き角度。 |
-| `overlay.font` | `bundled:NotoSansCJKsc-Regular.otf` | 字幕オーバーレイフォント。 |
+| `overlay.transform` | `null` | VR 内で位置を調整した後に自動保存される正確な 3x4 字幕ポーズ。 |
+| `overlay.font` | `bundled:NotoSansCJKkr-Regular.otf` | 字幕オーバーレイフォント。 |
 | `overlay.font_size` | `44` | 字幕の文字サイズ。 |
 | `overlay.display_sec` | `7.0` | 確定字幕行が表示される時間。 |
 | `overlay.lines` | `3` | 画面に保持する最近の確定字幕行数。 |
@@ -278,11 +279,12 @@ VR オーバーレイを強制的に有効にするには `ui.mode: vr`、無効
 | `wrist_ui.enabled` | `true` | SteamVR 手首メニューを有効にします。 |
 | `wrist_ui.hand` | `left` | メニューを装着する手: `left` または `right`。 |
 | `wrist_ui.width_m` | `0.16` | 手首メニュー幅(m)。 |
-| `wrist_ui.offset` | `[0.0, 0.02, 0.12]` | コントローラー座標での x,y,z オフセット。 |
-| `wrist_ui.tilt_deg` | `0.0` | 顔の方へ向ける追加の傾き。 |
-| `wrist_ui.roll_deg` | `null` | 平面内回転。`null` なら手に応じて自動回転。 |
+| `wrist_ui.offset` | `[-0.0557, -0.0265, 0.0952]` | コントローラー座標での x,y,z オフセット。 |
+| `wrist_ui.tilt_deg` | `197.994` | 顔の方へ向ける追加の傾き。 |
+| `wrist_ui.roll_deg` | `-18.911` | 平面内回転。`null` なら手に応じて自動回転。 |
+| `wrist_ui.transform` | saved 3x4 pose | VR 内で位置を調整した後に自動保存される正確な 3x4 手首ポーズ。 |
 | `wrist_ui.pointer_tilt_deg` | `50.0` | ポインターレイの下向き傾き角度。 |
-| `wrist_ui.font` | `bundled:NotoSansCJKsc-Bold.otf` | 手首メニューフォント。 |
+| `wrist_ui.font` | `bundled:NotoSansCJKkr-Bold.otf` | 手首メニューフォント。 |
 
 ## ビルド
 

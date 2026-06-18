@@ -88,7 +88,8 @@ DEFAULTS = {
         "distance_m": 1.2,
         "below_m": 0.35,
         "tilt_deg": -15.0,
-        "font": bundled_font("NotoSansCJKsc-Regular.otf"),
+        "transform": None,              # exact 3x4 pose, auto-managed after VR reposition
+        "font": bundled_font("NotoSansCJKkr-Regular.otf"),
         "font_size": 44,
         "display_sec": 7.0,
         "lines": 3,                     # recent finalized lines kept on screen
@@ -123,11 +124,16 @@ DEFAULTS = {
         "enabled": True,
         "hand": "left",                 # which wrist wears the watch
         "width_m": 0.16,
-        "offset": [0.0, 0.02, 0.12],    # x,y,z in controller space (meters)
-        "tilt_deg": 0.0,                # extra tilt toward the face
-        "roll_deg": None,               # in-plane rotation; None = auto (+90 left / -90 right)
+        "offset": [-0.0557, -0.0265, 0.0952],  # x,y,z in controller space (meters)
+        "tilt_deg": 197.994,            # extra tilt toward the face
+        "roll_deg": -18.911,            # in-plane rotation; None = auto (+90 left / -90 right)
+        "transform": [                  # exact 3x4 pose, auto-managed after VR reposition
+            [0.2492944230417404, 0.08540377681623953, -0.9646577521711427, -0.055683394775783907],
+            [-0.767839036478661, -0.5895811632634125, -0.25062930837523045, -0.026494291823405507],
+            [-0.590149570434288, 0.8031779822175874, -0.08140481802947214, 0.09520546515391112],
+        ],
         "pointer_tilt_deg": 50.0,       # laser tilts down from raw controller forward
-        "font": bundled_font("NotoSansCJKsc-Bold.otf"),
+        "font": bundled_font("NotoSansCJKkr-Bold.otf"),
     },
     "log_level": "INFO",
 }

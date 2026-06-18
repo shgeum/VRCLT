@@ -242,7 +242,8 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 | `overlay.distance_m` | `1.2` | HMD 기준 자막 오버레이 거리(m). |
 | `overlay.below_m` | `0.35` | HMD 아래쪽 오프셋(m). |
 | `overlay.tilt_deg` | `-15.0` | 오버레이 기울기 각도. |
-| `overlay.font` | `bundled:NotoSansCJKsc-Regular.otf` | 자막 오버레이 폰트. |
+| `overlay.transform` | `null` | VR에서 위치를 다시 잡으면 자동 저장되는 정확한 3x4 자막 위치. |
+| `overlay.font` | `bundled:NotoSansCJKkr-Regular.otf` | 자막 오버레이 폰트. |
 | `overlay.font_size` | `44` | 자막 글자 크기. |
 | `overlay.display_sec` | `7.0` | 확정된 자막 줄이 남아 있는 시간. |
 | `overlay.lines` | `3` | 화면에 유지할 최근 확정 자막 줄 수. |
@@ -276,11 +277,12 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 | `wrist_ui.enabled` | `true` | SteamVR 손목 메뉴를 켭니다. |
 | `wrist_ui.hand` | `left` | 메뉴를 착용할 손: `left` 또는 `right`. |
 | `wrist_ui.width_m` | `0.16` | 손목 메뉴 너비(m). |
-| `wrist_ui.offset` | `[0.0, 0.02, 0.12]` | 컨트롤러 좌표계의 x,y,z 오프셋. |
-| `wrist_ui.tilt_deg` | `0.0` | 얼굴 쪽으로 향하는 추가 기울기. |
-| `wrist_ui.roll_deg` | `null` | 평면 회전. `null`이면 손에 따라 자동 회전합니다. |
+| `wrist_ui.offset` | `[-0.0557, -0.0265, 0.0952]` | 컨트롤러 좌표계의 x,y,z 오프셋. |
+| `wrist_ui.tilt_deg` | `197.994` | 얼굴 쪽으로 향하는 추가 기울기. |
+| `wrist_ui.roll_deg` | `-18.911` | 평면 회전. `null`이면 손에 따라 자동 회전합니다. |
+| `wrist_ui.transform` | saved 3x4 pose | VR에서 위치를 다시 잡으면 자동 저장되는 정확한 3x4 손목 위치. |
 | `wrist_ui.pointer_tilt_deg` | `50.0` | 포인터 레이의 아래쪽 기울기 각도. |
-| `wrist_ui.font` | `bundled:NotoSansCJKsc-Bold.otf` | 손목 메뉴 폰트. |
+| `wrist_ui.font` | `bundled:NotoSansCJKkr-Bold.otf` | 손목 메뉴 폰트. |
 
 ## 빌드
 

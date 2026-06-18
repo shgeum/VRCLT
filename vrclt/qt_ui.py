@@ -15,6 +15,9 @@ from .resources import bundled_font, resolve_font_path
 
 log = logging.getLogger(__name__)
 
+APP_FONT_SIZE_PT = 11
+_APP_FONT_FAMILIES: dict[str, str] = {}
+
 LANG_LABELS = {
     "ja": "日本語", "en": "English", "ko": "한국어",
     "zh-Hans": "中文(简)", "zh-Hant": "中文(繁)", "yue": "廣東話",
@@ -84,12 +87,17 @@ def _device_names() -> tuple[list[str], list[str]]:
         return [""], [""]
 
 
-def _install_app_font(app: QtWidgets.QApplication) -> None:
-    preferred_family = ""
-    for token, fallback in (
-        (bundled_font("NotoSansCJKsc-Regular.otf"), "NotoSansCJKsc-Regular.otf"),
-        (bundled_font("PretendardJP-Regular.otf"), "PretendardJP-Regular.otf"),
+def _install_app_font(app: QtWidgets.QApplication, lang: str = "") -> None:
+    for key, filename in (
+        ("ko", "NotoSansCJKkr-Regular.otf"),
+        ("ko_bold", "NotoSansCJKkr-Bold.otf"),
+        ("zh", "NotoSansCJKsc-Regular.otf"),
+        ("zh_bold", "NotoSansCJKsc-Bold.otf"),
+        ("ja", "PretendardJP-Regular.otf"),
+        ("ja_bold", "PretendardJP-Bold.otf"),
     ):
+        token = bundled_font(filename)
+        fallback = filename
         path = resolve_font_path(token, fallback)
         font_id = QtGui.QFontDatabase.addApplicationFont(path)
         if font_id < 0:
@@ -97,9 +105,30 @@ def _install_app_font(app: QtWidgets.QApplication) -> None:
             continue
         families = QtGui.QFontDatabase.applicationFontFamilies(font_id)
         if families:
-            preferred_family = families[0]
-    if preferred_family:
-        app.setFont(QtGui.QFont(preferred_family, 10))
+            _APP_FONT_FAMILIES[key] = families[0]
+    _apply_app_font(app, lang)
+
+
+def _apply_app_font(app: QtWidgets.QApplication | None, lang: str = "") -> None:
+    if app is None:
+        return
+    lang = i18n.detect(lang)
+    family = (
+        _APP_FONT_FAMILIES.get(lang)
+        or _APP_FONT_FAMILIES.get("ko")
+        or _APP_FONT_FAMILIES.get("ja")
+        or _APP_FONT_FAMILIES.get("zh")
+        or app.font().family()
+    )
+    font = QtGui.QFont(family)
+    font.setPointSize(APP_FONT_SIZE_PT)
+    font.setStyleStrategy(
+        QtGui.QFont.StyleStrategy.PreferQuality
+        | QtGui.QFont.StyleStrategy.PreferAntialias
+        | QtGui.QFont.StyleStrategy.ContextFontMerging
+    )
+    font.setHintingPreference(QtGui.QFont.HintingPreference.PreferNoHinting)
+    app.setFont(font)
 
 
 class _UiSignals(QtCore.QObject):
@@ -129,6 +158,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._tab_logs_idx = -1
         self._tray_actions = {}
         self._last_ui_lang = ""
+        self._last_config_revision = getattr(controller, "config_revision", 0)
         self._save_thread = None
         self._mode_thread = None
         self._app_mode_applying = False
@@ -415,19 +445,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setStyleSheet("""
             QMainWindow, QWidget { background: #12141a; color: #f0f0f0; }
             QTabWidget::pane { border: 1px solid #303542; }
-            QTabBar::tab { padding: 8px 14px; background: #1c1f29; }
+            QTabBar::tab { padding: 10px 18px; background: #1c1f29; }
             QTabBar::tab:selected { background: #2a3040; }
             QGroupBox { border: 1px solid #303542; border-radius: 6px; margin-top: 10px; }
             QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; }
             QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit {
                 background: #1c1f29; color: #f0f0f0; border: 1px solid #303542;
-                border-radius: 4px; padding: 4px;
+                border-radius: 4px; padding: 6px 8px; min-height: 28px;
             }
-            QPushButton { background: #2a3040; color: #f0f0f0; border: 0; border-radius: 4px; padding: 7px 12px; }
+            QPushButton {
+                background: #2a3040; color: #f0f0f0; border: 0; border-radius: 4px;
+                padding: 8px 14px; min-height: 30px;
+            }
             QPushButton:hover { background: #384259; }
             QPushButton#primaryButton {
                 background: #1f8f4d; color: #ffffff; font-weight: 800;
-                padding: 8px 16px;
+                padding: 9px 18px;
             }
             QPushButton#primaryButton:hover { background: #26a85d; }
             QPushButton#primaryButton:disabled {
@@ -587,6 +620,29 @@ class MainWindow(QtWidgets.QMainWindow):
         if isinstance(widget, QtWidgets.QComboBox):
             return widget.currentText().strip()
         return widget.text()
+
+    def _sync_settings_from_config(self) -> None:
+        focus = QtWidgets.QApplication.focusWidget()
+        for path, (widget, kind) in self._fields.items():
+            if focus is not None and (focus is widget or widget.isAncestorOf(focus)):
+                continue
+            self._set_field_widget_value(widget, kind, _get_path(self._controller.raw_cfg, path))
+
+    def _set_field_widget_value(self, widget, kind: str, value) -> None:
+        blocked = widget.blockSignals(True)
+        try:
+            if kind == "bool":
+                widget.setChecked(bool(value))
+            elif isinstance(widget, QtWidgets.QComboBox):
+                widget.setCurrentText("" if value is None else str(value))
+            elif kind == "csv":
+                widget.setText(_as_csv(value))
+            elif kind == "float_csv":
+                widget.setText(_as_float_list(value))
+            else:
+                widget.setText("" if value is None else str(value))
+        finally:
+            widget.blockSignals(blocked)
 
     def _settings_from_fields(self) -> dict:
         cfg = copy.deepcopy(self._controller.raw_cfg)
@@ -783,8 +839,13 @@ class MainWindow(QtWidgets.QMainWindow):
         st = self._controller.state
         if st.ui_lang != self._last_ui_lang:
             self._last_ui_lang = st.ui_lang
+            _apply_app_font(QtWidgets.QApplication.instance(), st.ui_lang)
             self._apply_i18n()
             self._populate_settings()
+        revision = getattr(self._controller, "config_revision", 0)
+        if revision != self._last_config_revision:
+            self._last_config_revision = revision
+            self._sync_settings_from_config()
         connected = self._controller.connected()
         status = self._controller.status
         color = "#2ea043" if connected else ("#d29922" if status == "Running" else "#8b949e")
@@ -900,7 +961,7 @@ def run_qt_app(controller, log_file: Path) -> int:
     app = QtWidgets.QApplication([])
     app.setApplicationName("vrclt")
     app.setQuitOnLastWindowClosed(False)
-    _install_app_font(app)
+    _install_app_font(app, controller.state.ui_lang)
     win = MainWindow(controller, log_file)
     win.show()
     threading.Thread(target=controller.start, daemon=True, name="vrclt-start").start()

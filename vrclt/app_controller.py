@@ -42,7 +42,8 @@ def resolve_ui_mode(cfg: dict) -> str:
     return mode if mode in ("vr", "desktop") else "vr"
 
 
-def make_wrist_panel(cfg, state, get_status, on_text_only_toggle=lambda enabled: None):
+def make_wrist_panel(cfg, state, get_status, on_text_only_toggle=lambda enabled: None,
+                     on_transform_changed=lambda matrix, reset=False: None):
     from .vr.wrist_ui import WristPanel
     w = cfg.get("wrist_ui", {})
     return WristPanel(
@@ -53,14 +54,16 @@ def make_wrist_panel(cfg, state, get_status, on_text_only_toggle=lambda enabled:
         offset=w.get("offset", [0.0, 0.02, 0.12]),
         tilt_deg=w.get("tilt_deg", 0.0),
         roll_deg=w.get("roll_deg", None),
+        transform=w.get("transform"),
         pointer_tilt_deg=w.get("pointer_tilt_deg", 50.0),
-        font_path=resolve_font_path(w.get("font"), "NotoSansCJKsc-Bold.otf"),
+        font_path=resolve_font_path(w.get("font"), "NotoSansCJKkr-Bold.otf"),
         on_text_only_toggle=on_text_only_toggle,
+        on_transform_changed=on_transform_changed,
         get_status=get_status,
     )
 
 
-def make_subtitle_panel(cfg, store, state):
+def make_subtitle_panel(cfg, store, state, on_transform_changed=lambda matrix, reset=False: None):
     from .vr.subtitle_overlay import SubtitlePanel
     o = cfg.get("overlay", {})
     return SubtitlePanel(
@@ -70,10 +73,31 @@ def make_subtitle_panel(cfg, store, state):
         distance_m=o.get("distance_m", 1.2),
         below_m=o.get("below_m", 0.35),
         tilt_deg=o.get("tilt_deg", -15.0),
-        font_path=resolve_font_path(o.get("font"), "NotoSansCJKsc-Regular.otf"),
+        transform=o.get("transform"),
+        font_path=resolve_font_path(o.get("font"), "NotoSansCJKkr-Regular.otf"),
         font_size=o.get("font_size", 36),
         show_source=o.get("show_source", False),
+        on_transform_changed=on_transform_changed,
     )
+
+
+def _wrist_angles_from_matrix(rows) -> tuple[float, float]:
+    """Approximate wrist tilt/roll from the stored 3x4 OpenVR transform."""
+    import math
+
+    r00 = float(rows[0][0])
+    r01 = float(rows[0][1])
+    r12 = float(rows[1][2])
+    r22 = float(rows[2][2])
+    roll = math.degrees(math.atan2(-r01, r00))
+    tilt = math.degrees(math.atan2(-r12, r22)) + 90.0
+    return tilt, roll
+
+
+def _subtitle_tilt_from_matrix(rows) -> float:
+    import math
+
+    return math.degrees(math.atan2(float(rows[2][1]), float(rows[1][1])))
 
 
 class AppController:
@@ -84,6 +108,7 @@ class AppController:
         self.cfg = config_mod.apply_app_profile(self.raw_cfg)
         self.state = self._make_state(self.cfg)
         self.store = self._make_store(self.cfg)
+        self.config_revision = 0
         self.status = "Stopped"
         self.last_error = ""
         self.started_at = 0.0
@@ -146,8 +171,14 @@ class AppController:
             cfg = copy.deepcopy(self.raw_cfg)
         try:
             config_mod.save(cfg)
+            self._bump_config_revision()
         except Exception:
             log.debug("failed to persist runtime state", exc_info=True)
+
+    def _bump_config_revision(self) -> None:
+        with self._lock:
+            self.config_revision += 1
+        self._notify()
 
     def connected(self) -> bool:
         pipeline = self._pipeline
@@ -186,9 +217,9 @@ class AppController:
             cfg = copy.deepcopy(self.raw_cfg)
         try:
             config_mod.save(cfg)
+            self._bump_config_revision()
         except Exception:
             log.debug("failed to persist close action", exc_info=True)
-        self._notify()
 
     def set_overlay_font_size(self, value: int) -> None:
         value = max(18, min(72, int(value)))
@@ -197,9 +228,73 @@ class AppController:
             self.cfg.setdefault("overlay", {})["font_size"] = value
         try:
             config_mod.save(self.raw_cfg)
+            self._bump_config_revision()
         except Exception:
             log.debug("failed to persist overlay font size", exc_info=True)
-        self._notify()
+
+    def set_wrist_transform(self, matrix, reset: bool = False) -> None:
+        try:
+            rows = [[float(matrix[r][c]) for c in range(4)] for r in range(3)]
+            offset = [round(float(rows[r][3]), 4) for r in range(3)]
+            tilt, roll = _wrist_angles_from_matrix(rows)
+        except Exception:
+            log.debug("invalid wrist transform", exc_info=True)
+            return
+
+        with self._lock:
+            w = self.raw_cfg.setdefault("wrist_ui", {})
+            if reset:
+                defaults = config_mod.DEFAULTS["wrist_ui"]
+                w["offset"] = list(defaults["offset"])
+                w["tilt_deg"] = defaults["tilt_deg"]
+                w["roll_deg"] = defaults["roll_deg"]
+                if defaults.get("transform") is not None:
+                    w["transform"] = copy.deepcopy(defaults["transform"])
+                else:
+                    w.pop("transform", None)
+            else:
+                w["offset"] = offset
+                w["tilt_deg"] = round(tilt, 3)
+                w["roll_deg"] = round(roll, 3)
+                w["transform"] = rows
+            self.cfg = config_mod.apply_app_profile(self.raw_cfg)
+            cfg = copy.deepcopy(self.raw_cfg)
+        try:
+            config_mod.save(cfg)
+            self._bump_config_revision()
+        except Exception:
+            log.debug("failed to persist wrist transform", exc_info=True)
+
+    def set_subtitle_transform(self, matrix, reset: bool = False) -> None:
+        try:
+            rows = [[float(matrix[r][c]) for c in range(4)] for r in range(3)]
+            below = round(-float(rows[1][3]), 4)
+            distance = round(-float(rows[2][3]), 4)
+            tilt = round(_subtitle_tilt_from_matrix(rows), 3)
+        except Exception:
+            log.debug("invalid subtitle transform", exc_info=True)
+            return
+
+        with self._lock:
+            o = self.raw_cfg.setdefault("overlay", {})
+            if reset:
+                defaults = config_mod.DEFAULTS["overlay"]
+                o["distance_m"] = defaults["distance_m"]
+                o["below_m"] = defaults["below_m"]
+                o["tilt_deg"] = defaults["tilt_deg"]
+                o.pop("transform", None)
+            else:
+                o["distance_m"] = distance
+                o["below_m"] = below
+                o["tilt_deg"] = tilt
+                o["transform"] = rows
+            self.cfg = config_mod.apply_app_profile(self.raw_cfg)
+            cfg = copy.deepcopy(self.raw_cfg)
+        try:
+            config_mod.save(cfg)
+            self._bump_config_revision()
+        except Exception:
+            log.debug("failed to persist subtitle transform", exc_info=True)
 
     def set_text_only(self, value: bool) -> None:
         value = bool(value)
@@ -317,12 +412,15 @@ class AppController:
             panels = []
             o = cfg.get("overlay", {})
             if inbound and o.get("enabled", True):
-                panels.append(make_subtitle_panel(cfg, store, state))
+                panels.append(make_subtitle_panel(
+                    cfg, store, state,
+                    on_transform_changed=self.set_subtitle_transform))
             if cfg.get("wrist_ui", {}).get("enabled", True):
                 panels.insert(0, make_wrist_panel(
                     cfg, state,
                     get_status=lambda: pipeline.session.connected,
-                    on_text_only_toggle=self.set_text_only))
+                    on_text_only_toggle=self.set_text_only,
+                    on_transform_changed=self.set_wrist_transform))
             if panels:
                 from .vr.render import VrRenderer
                 renderer = VrRenderer(panels)

@@ -82,9 +82,11 @@ class WristPanel:
                  hand: str = "left", width_m: float = 0.16,
                  offset=(0.0, 0.02, 0.12), tilt_deg: float = 0.0,
                  roll_deg: float | None = None,
+                 transform=None,
                  pointer_tilt_deg: float = 50.0,
-                 font_path: str = bundled_font("NotoSansCJKsc-Bold.otf"),
+                 font_path: str = bundled_font("NotoSansCJKkr-Bold.otf"),
                  on_text_only_toggle=lambda enabled: None,
+                 on_transform_changed=lambda matrix, reset=False: None,
                  get_status=lambda: False):
         self._state = state
         self._languages = languages or ["en"]
@@ -95,6 +97,8 @@ class WristPanel:
         self._offset = tuple(offset)
         self._tilt_deg = tilt_deg
         self._roll_deg = roll_deg if roll_deg is not None else (90.0 if hand == "left" else -90.0)
+        self._configured_transform = self._coerce_transform(transform)
+        self._on_transform_changed = on_transform_changed
         a = math.radians(-pointer_tilt_deg)
         self._pointer_mat = np.identity(4)
         self._pointer_mat[1][1] = math.cos(a)
@@ -103,7 +107,7 @@ class WristPanel:
         self._pointer_mat[2][2] = math.cos(a)
         self._get_status = get_status
         self._on_text_only_toggle = on_text_only_toggle
-        font_path = resolve_font_path(font_path, "NotoSansCJKsc-Bold.otf")
+        font_path = resolve_font_path(font_path, "NotoSansCJKkr-Bold.otf")
         try:
             self._font_big = ImageFont.truetype(font_path, 60)
             self._font_mid = ImageFont.truetype(font_path, 42)
@@ -177,6 +181,8 @@ class WristPanel:
 
         self._overlay_mat = self._load_transform()
         self._overlay_mat_inv = np.linalg.inv(self._overlay_mat)
+        if self._configured_transform is not None or TRANSFORM_PATH.exists():
+            self._on_transform_changed(self._overlay_mat, False)
         self._wrist_idx = self._finger_idx = self._invalid
         self._attached_to = self._invalid
         self._laser_attached_to = self._invalid
@@ -279,6 +285,7 @@ class WristPanel:
                             self._dragging = False
                             self._overlay_mat_inv = np.linalg.inv(self._overlay_mat)
                             self._save_transform(self._overlay_mat, TRANSFORM_PATH)
+                            self._on_transform_changed(self._overlay_mat, False)
                             self._haptic(vrsys, openvr, self._finger_idx, 3000)
                             self._dirty.set()
                             log.info("wrist panel placed (saved)")
@@ -320,7 +327,7 @@ class WristPanel:
 
         if self._reset_requested and not self._dragging:
             self._reset_requested = False
-            self._overlay_mat = self._watch_matrix()
+            self._overlay_mat = self._default_watch_matrix()
             self._overlay_mat_inv = np.linalg.inv(self._overlay_mat)
             if self._attached_to != self._invalid:
                 ovl.setOverlayTransformTrackedDeviceRelative(
@@ -329,6 +336,7 @@ class WristPanel:
                 TRANSFORM_PATH.unlink(missing_ok=True)
             except OSError:
                 pass
+            self._on_transform_changed(self._overlay_mat, True)
             log.info("wrist panel position reset to defaults")
 
         if self._dirty.is_set():
@@ -527,6 +535,9 @@ class WristPanel:
 
     # ---------------- transforms ----------------
     def _load_transform(self) -> np.ndarray:
+        if self._configured_transform is not None:
+            log.info("wrist panel: restored configured position")
+            return self._configured_transform.copy()
         try:
             rows = json.loads(TRANSFORM_PATH.read_text(encoding="utf-8"))
             m = np.identity(4)
@@ -540,6 +551,20 @@ class WristPanel:
         except Exception:
             log.warning("wrist panel: invalid saved transform - using defaults", exc_info=True)
             return self._watch_matrix()
+
+    @staticmethod
+    def _coerce_transform(rows) -> np.ndarray | None:
+        if not rows:
+            return None
+        try:
+            m = np.identity(4)
+            for r in range(3):
+                for c in range(4):
+                    m[r][c] = float(rows[r][c])
+            return m
+        except Exception:
+            log.warning("wrist panel: invalid configured transform - ignoring", exc_info=True)
+            return None
 
     @staticmethod
     def _save_transform(m: np.ndarray, path: Path) -> None:
@@ -584,6 +609,11 @@ class WristPanel:
         m[:3, :3] = rx @ rz
         m[0][3], m[1][3], m[2][3] = self._offset
         return m
+
+    def _default_watch_matrix(self) -> np.ndarray:
+        if self._configured_transform is not None:
+            return self._configured_transform.copy()
+        return self._watch_matrix()
 
     @staticmethod
     def _pose_to_np(pose) -> np.ndarray:

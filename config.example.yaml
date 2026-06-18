@@ -60,7 +60,8 @@ overlay:                  # inbound subtitle overlay (SteamVR, HMD-locked)
   distance_m: 1.2
   below_m: 0.35
   tilt_deg: -15.0
-  font: bundled:NotoSansCJKsc-Regular.otf
+  transform: null             # auto-managed after repositioning in VR
+  font: bundled:NotoSansCJKkr-Regular.otf
   font_size: 44
   display_sec: 7.0        # how long finalized lines stay visible
   lines: 3                # recent finalized lines kept on screen
@@ -99,10 +100,14 @@ wrist_ui:                     # SteamVR wrist watch menu
   enabled: true
   hand: left
   width_m: 0.16
-  offset: [0.0, 0.02, 0.12]
-  tilt_deg: 0.0
-  roll_deg: null
+  offset: [-0.0557, -0.0265, 0.0952]
+  tilt_deg: 197.994
+  roll_deg: -18.911
+  transform:                  # auto-managed after repositioning in VR
+    - [0.2492944230417404, 0.08540377681623953, -0.9646577521711427, -0.055683394775783907]
+    - [-0.767839036478661, -0.5895811632634125, -0.25062930837523045, -0.026494291823405507]
+    - [-0.590149570434288, 0.8031779822175874, -0.08140481802947214, 0.09520546515391112]
   pointer_tilt_deg: 50.0
-  font: bundled:NotoSansCJKsc-Bold.otf
+  font: bundled:NotoSansCJKkr-Bold.otf
 
 log_level: INFO

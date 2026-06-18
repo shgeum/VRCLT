@@ -43,8 +43,10 @@ class SubtitlePanel:
                  hand: str = "left",  # watch hand; the OTHER hand grabs
                  width_m: float = 0.9, distance_m: float = 1.2, below_m: float = 0.35,
                  tilt_deg: float = -15.0,
-                 font_path: str = bundled_font("NotoSansCJKsc-Regular.otf"),
-                 font_size: int = 36, show_source: bool = False):
+                 transform=None,
+                 font_path: str = bundled_font("NotoSansCJKkr-Regular.otf"),
+                 font_size: int = 36, show_source: bool = False,
+                 on_transform_changed=lambda matrix, reset=False: None):
         self._store = store
         self._state = state
         self._pointer_hand = "right" if hand == "left" else "left"
@@ -54,7 +56,9 @@ class SubtitlePanel:
         self._below_m = below_m
         self._tilt_deg = tilt_deg
         self._show_source = show_source
-        font_path = resolve_font_path(font_path, "NotoSansCJKsc-Regular.otf")
+        self._configured_transform = self._coerce_transform(transform)
+        self._on_transform_changed = on_transform_changed
+        font_path = resolve_font_path(font_path, "NotoSansCJKkr-Regular.otf")
         try:
             self._font = ImageFont.truetype(font_path, font_size)
             self._font_small = ImageFont.truetype(font_path, max(20, font_size - 14))
@@ -90,6 +94,8 @@ class SubtitlePanel:
         self._tex = GlTexture(TEX_W, TEX_H)
 
         self._overlay_mat = self._load_transform()
+        if self._configured_transform is not None or TRANSFORM_PATH.exists():
+            self._on_transform_changed(self._overlay_mat, False)
         ovl.setOverlayTransformTrackedDeviceRelative(
             self._h, openvr.k_unTrackedDeviceIndex_Hmd,
             self._np_to_hmd34(openvr, self._overlay_mat))
@@ -178,12 +184,17 @@ class SubtitlePanel:
                         else:
                             self._dragging = False
                             self._save_transform(self._overlay_mat)
+                            self._on_transform_changed(self._overlay_mat, False)
                             self._haptic(vrsys, openvr, self._pointer_idx, 3000)
                             log.info("subtitle panel placed (saved)")
                     self._prev_grip = grip
 
         if self._reset_requested and not self._dragging:
             self._reset_requested = False
+            self._distance_m = 1.2
+            self._below_m = 0.35
+            self._tilt_deg = -15.0
+            self._configured_transform = None
             self._overlay_mat = self._hmd_matrix()
             ovl.setOverlayTransformTrackedDeviceRelative(
                 self._h, openvr.k_unTrackedDeviceIndex_Hmd,
@@ -192,6 +203,7 @@ class SubtitlePanel:
                 TRANSFORM_PATH.unlink(missing_ok=True)
             except OSError:
                 pass
+            self._on_transform_changed(self._overlay_mat, True)
             log.info("subtitle panel position reset to defaults")
 
         # ---- content updates (texture updated only on real changes) ----
@@ -278,6 +290,9 @@ class SubtitlePanel:
 
     # ---------------- transforms ----------------
     def _load_transform(self) -> np.ndarray:
+        if self._configured_transform is not None:
+            log.info("subtitle panel: restored configured position")
+            return self._configured_transform.copy()
         try:
             rows = json.loads(TRANSFORM_PATH.read_text(encoding="utf-8"))
             m = np.identity(4)
@@ -292,6 +307,20 @@ class SubtitlePanel:
             log.warning("subtitle panel: invalid saved transform - using defaults",
                         exc_info=True)
             return self._hmd_matrix()
+
+    @staticmethod
+    def _coerce_transform(rows) -> np.ndarray | None:
+        if not rows:
+            return None
+        try:
+            m = np.identity(4)
+            for r in range(3):
+                for c in range(4):
+                    m[r][c] = float(rows[r][c])
+            return m
+        except Exception:
+            log.warning("subtitle panel: invalid configured transform - ignoring", exc_info=True)
+            return None
 
     @staticmethod
     def _save_transform(m: np.ndarray) -> None:
