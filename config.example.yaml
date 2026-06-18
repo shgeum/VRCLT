@@ -27,6 +27,10 @@ app:
       vr_overlay: false
       wrist_ui: false
 
+dashboard:
+  translation_on: true         # last Dashboard translation toggle state
+  subtitles_on: true           # last Dashboard subtitles toggle state
+
 outbound:                 # my voice -> others (VRChat hears the translation)
   enabled: true
   target_language: ja     # BCP-47: ja, en, ko, zh-Hans, ...
@@ -56,7 +60,7 @@ overlay:                  # inbound subtitle overlay (SteamVR, HMD-locked)
   distance_m: 1.2
   below_m: 0.35
   tilt_deg: -15.0
-  font: C:/Windows/Fonts/malgun.ttf
+  font: bundled:NotoSansCJKsc-Regular.otf
   font_size: 44
   display_sec: 7.0        # how long finalized lines stay visible
   lines: 3                # recent finalized lines kept on screen
@@ -89,15 +93,16 @@ control:                      # in-VR control via avatar parameters (OSC radial 
 ui:
   mode: auto                  # auto | vr | desktop
   lang: ""                    # ""=auto | en | ko | ja | zh
+  close_action: tray          # tray | exit; window close button behavior
 
 wrist_ui:                     # SteamVR wrist watch menu
   enabled: true
   hand: left
-  width_m: 0.12
+  width_m: 0.16
   offset: [0.0, 0.02, 0.12]
   tilt_deg: 0.0
   roll_deg: null
   pointer_tilt_deg: 50.0
-  font: C:/Windows/Fonts/malgunbd.ttf
+  font: bundled:NotoSansCJKsc-Bold.otf
 
 log_level: INFO

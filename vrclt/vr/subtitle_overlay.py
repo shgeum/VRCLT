@@ -17,6 +17,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+from ..i18n import tr
+from ..resources import bundled_font, resolve_font_path
 from ..state import AppState
 from ..subtitles import SubtitleStore
 from .render import GlTexture, flip_bounds
@@ -40,7 +42,8 @@ class SubtitlePanel:
     def __init__(self, store: SubtitleStore, state: AppState, *,
                  hand: str = "left",  # watch hand; the OTHER hand grabs
                  width_m: float = 0.9, distance_m: float = 1.2, below_m: float = 0.35,
-                 tilt_deg: float = -15.0, font_path: str = "C:/Windows/Fonts/malgun.ttf",
+                 tilt_deg: float = -15.0,
+                 font_path: str = bundled_font("NotoSansCJKsc-Regular.otf"),
                  font_size: int = 36, show_source: bool = False):
         self._store = store
         self._state = state
@@ -51,6 +54,7 @@ class SubtitlePanel:
         self._below_m = below_m
         self._tilt_deg = tilt_deg
         self._show_source = show_source
+        font_path = resolve_font_path(font_path, "NotoSansCJKsc-Regular.otf")
         try:
             self._font = ImageFont.truetype(font_path, font_size)
             self._font_small = ImageFont.truetype(font_path, max(20, font_size - 14))
@@ -255,7 +259,7 @@ class SubtitlePanel:
         if p_dst or p_src:
             rows.append(((p_dst or p_src), COL_PARTIAL, self._font))
         if edit and not rows:
-            rows.append(("자막 위치 — 그립으로 이동", COL_PARTIAL, self._font))
+            rows.append((tr(self._state.ui_lang, "sub_placeholder"), COL_PARTIAL, self._font))
 
         wrapped: list[tuple[str, tuple, object]] = []
         for text, color, font in rows:

@@ -8,13 +8,14 @@ log = logging.getLogger(__name__)
 class AppState:
     def __init__(self, translation_on: bool = True, target_language: str = "en",
                  subtitles_on: bool = True, inbound_language: str = "ko",
-                 ui_lang: str = "en"):
+                 ui_lang: str = "en", text_only: bool = False):
         self._lock = threading.Lock()
         self._translation_on = translation_on
         self._target_language = target_language
         self._subtitles_on = subtitles_on
         self._inbound_language = inbound_language
         self._ui_lang = ui_lang
+        self._text_only = text_only
         self._edit_mode = False
         self._listeners = []
 
@@ -120,3 +121,18 @@ class AppState:
         if changed:
             log.info("state: UI display language -> %s", value)
             self._notify("ui_lang", value)
+
+    @property
+    def text_only(self) -> bool:
+        with self._lock:
+            return self._text_only
+
+    @text_only.setter
+    def text_only(self, value: bool) -> None:
+        value = bool(value)
+        with self._lock:
+            changed = value != self._text_only
+            self._text_only = value
+        if changed:
+            log.info("state: text-only mode %s", "ON" if value else "OFF")
+            self._notify("text_only", value)

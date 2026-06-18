@@ -7,19 +7,24 @@ from . import config as config_mod
 from . import logging_setup
 from .app_controller import AppController
 from .qt_ui import run_qt_app
+from .single_instance import SingleInstance
 
 log = logging.getLogger("vrclt")
 
 
 def cmd_run(args) -> int:
-    cfg = config_mod.load()
-    if args.app:
-        cfg.setdefault("app", {})["mode"] = args.app
-    log_file = logging_setup.setup(cfg.get("log_level", "INFO"))
-    log.info("log file: %s", log_file)
-    log.info("config path: %s", config_mod.CONFIG_PATH)
-    controller = AppController(cfg)
-    return run_qt_app(controller, log_file)
+    with SingleInstance() as instance:
+        if not instance.acquired:
+            SingleInstance.notify_duplicate()
+            return 0
+        cfg = config_mod.load()
+        if args.app:
+            cfg.setdefault("app", {})["mode"] = args.app
+        log_file = logging_setup.setup(cfg.get("log_level", "INFO"))
+        log.info("log file: %s", log_file)
+        log.info("config path: %s", config_mod.CONFIG_PATH)
+        controller = AppController(cfg)
+        return run_qt_app(controller, log_file)
 
 
 def main() -> None:

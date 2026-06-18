@@ -20,6 +20,7 @@ from . import i18n
 from .control.osc_listener import OscControl
 from .gemini.pipeline import InboundPipeline, OutboundPipeline
 from .gemini.session import FatalSessionError
+from .resources import resolve_font_path
 from .state import AppState
 from .subtitles import SubtitleStore
 
@@ -41,19 +42,20 @@ def resolve_ui_mode(cfg: dict) -> str:
     return mode if mode in ("vr", "desktop") else "vr"
 
 
-def make_wrist_panel(cfg, state, get_status):
+def make_wrist_panel(cfg, state, get_status, on_text_only_toggle=lambda enabled: None):
     from .vr.wrist_ui import WristPanel
     w = cfg.get("wrist_ui", {})
     return WristPanel(
         state, cfg.get("control", {}).get("languages", ["en"]),
         inbound_languages=cfg.get("inbound", {}).get("languages", ["ko", "en"]),
         hand=w.get("hand", "left"),
-        width_m=w.get("width_m", 0.12),
+        width_m=w.get("width_m", 0.16),
         offset=w.get("offset", [0.0, 0.02, 0.12]),
         tilt_deg=w.get("tilt_deg", 0.0),
         roll_deg=w.get("roll_deg", None),
         pointer_tilt_deg=w.get("pointer_tilt_deg", 50.0),
-        font_path=w.get("font", "C:/Windows/Fonts/malgunbd.ttf"),
+        font_path=resolve_font_path(w.get("font"), "NotoSansCJKsc-Bold.otf"),
+        on_text_only_toggle=on_text_only_toggle,
         get_status=get_status,
     )
 
@@ -68,7 +70,7 @@ def make_subtitle_panel(cfg, store, state):
         distance_m=o.get("distance_m", 1.2),
         below_m=o.get("below_m", 0.35),
         tilt_deg=o.get("tilt_deg", -15.0),
-        font_path=o.get("font", "C:/Windows/Fonts/malgun.ttf"),
+        font_path=resolve_font_path(o.get("font"), "NotoSansCJKsc-Regular.otf"),
         font_size=o.get("font_size", 36),
         show_source=o.get("show_source", False),
     )
@@ -106,12 +108,16 @@ class AppController:
                 log.exception("controller listener failed")
 
     def _make_state(self, cfg: dict) -> AppState:
+        dashboard = cfg.get("dashboard", {})
         st = AppState(
-            translation_on=True,
+            translation_on=dashboard.get(
+                "translation_on", cfg.get("outbound", {}).get("enabled", True)),
             target_language=cfg.get("outbound", {}).get("target_language", "en"),
-            subtitles_on=True,
+            subtitles_on=dashboard.get(
+                "subtitles_on", cfg.get("inbound", {}).get("enabled", True)),
             inbound_language=cfg.get("inbound", {}).get("target_language", "ko"),
             ui_lang=i18n.detect(cfg.get("ui", {}).get("lang", "")),
+            text_only=self._is_text_only(cfg),
         )
         st.subscribe(self._persist_runtime_state)
         st.subscribe(lambda *_: self._notify())
@@ -124,16 +130,22 @@ class AppController:
                              display_sec=o.get("display_sec", 7.0))
 
     def _persist_runtime_state(self, field: str, value) -> None:
-        if field == "ui_lang":
-            self.raw_cfg.setdefault("ui", {})["lang"] = value
-        elif field == "target_language":
-            self.raw_cfg.setdefault("outbound", {})["target_language"] = value
-        elif field == "inbound_language":
-            self.raw_cfg.setdefault("inbound", {})["target_language"] = value
-        else:
-            return
+        with self._lock:
+            if field == "ui_lang":
+                self.raw_cfg.setdefault("ui", {})["lang"] = value
+            elif field == "target_language":
+                self.raw_cfg.setdefault("outbound", {})["target_language"] = value
+            elif field == "inbound_language":
+                self.raw_cfg.setdefault("inbound", {})["target_language"] = value
+            elif field == "translation_on":
+                self.raw_cfg.setdefault("dashboard", {})["translation_on"] = bool(value)
+            elif field == "subtitles_on":
+                self.raw_cfg.setdefault("dashboard", {})["subtitles_on"] = bool(value)
+            else:
+                return
+            cfg = copy.deepcopy(self.raw_cfg)
         try:
-            config_mod.save(self.raw_cfg)
+            config_mod.save(cfg)
         except Exception:
             log.debug("failed to persist runtime state", exc_info=True)
 
@@ -162,6 +174,22 @@ class AppController:
     def set_ui_lang(self, value: str) -> None:
         self.state.ui_lang = value
 
+    def close_action(self) -> str:
+        return config_mod.normalize_close_action(
+            self.cfg.get("ui", {}).get("close_action", "tray"))
+
+    def set_close_action(self, value: str) -> None:
+        value = config_mod.normalize_close_action(value)
+        with self._lock:
+            self.raw_cfg.setdefault("ui", {})["close_action"] = value
+            self.cfg.setdefault("ui", {})["close_action"] = value
+            cfg = copy.deepcopy(self.raw_cfg)
+        try:
+            config_mod.save(cfg)
+        except Exception:
+            log.debug("failed to persist close action", exc_info=True)
+        self._notify()
+
     def set_overlay_font_size(self, value: int) -> None:
         value = max(18, min(72, int(value)))
         with self._lock:
@@ -172,6 +200,31 @@ class AppController:
         except Exception:
             log.debug("failed to persist overlay font size", exc_info=True)
         self._notify()
+
+    def set_text_only(self, value: bool) -> None:
+        value = bool(value)
+        self.state.text_only = value
+
+        def apply():
+            with self._lock:
+                if self._restarting:
+                    return
+            try:
+                cfg = copy.deepcopy(self.raw_cfg)
+                if value:
+                    cfg.setdefault("app", {})["mode"] = "vrchat"
+                cfg.setdefault("outbound", {})["text_only"] = value
+                cfg = config_mod.apply_app_profile(cfg)
+                config_mod.save(cfg)
+            except Exception as e:
+                log.exception("failed to apply text-only mode")
+                self.state.text_only = not value
+                self.last_error = str(e)
+                self._notify()
+                return
+            self.restart(cfg)
+
+        threading.Thread(target=apply, daemon=True, name="vrclt-text-only-restart").start()
 
     def start(self) -> bool:
         return self.restart(self.raw_cfg)
@@ -267,7 +320,9 @@ class AppController:
                 panels.append(make_subtitle_panel(cfg, store, state))
             if cfg.get("wrist_ui", {}).get("enabled", True):
                 panels.insert(0, make_wrist_panel(
-                    cfg, state, get_status=lambda: pipeline.session.connected))
+                    cfg, state,
+                    get_status=lambda: pipeline.session.connected,
+                    on_text_only_toggle=self.set_text_only))
             if panels:
                 from .vr.render import VrRenderer
                 renderer = VrRenderer(panels)
@@ -337,3 +392,13 @@ class AppController:
             self.status = status
             self.last_error = error
         self._notify()
+
+    @staticmethod
+    def _is_text_only(cfg: dict) -> bool:
+        ob = cfg.get("outbound", {})
+        return bool(
+            ob.get("text_only", False)
+            or (not ob.get("voice_output", True)
+                and ob.get("passthrough_while_translating", False)
+                and ob.get("chatbox", False))
+        )

@@ -1,22 +1,19 @@
 # vrclt
 
-언어: [English](README.md) | [한국어](README.ko.md)
+언어: [English](README.md) | [한국어](README.ko.md) | [日本語](README.ja.md) | [中文](README.zh.md)
 
 `vrclt`는 VRChat과 Discord용 Windows 실시간 번역 도구입니다. Gemini Live API로
 내 마이크를 번역하고, 번역 음성을 VB-Audio Virtual Cable을 통해 대상 앱의
 마이크 입력으로 보내며, 상대방 음성은 번역 자막으로 표시합니다.
 
-현재 앱은 PySide6 기반 자체 UI를 사용합니다. 웹 UI, 로컬 웹 서버, 릴리스 exe 옆
-설정 파일은 사용하지 않습니다.
-
 ## 주요 기능
 
-- Dashboard, Settings, Logs/About 탭을 가진 Windows 자체 UI
+- 대시보드, 설정, 로그/정보 탭을 가진 Windows 자체 UI
 - 창 열기, 설정 열기, 번역/자막 토글, 종료를 제공하는 트레이 메뉴
 - 아웃바운드 번역: 내 마이크 -> Gemini Live -> 번역 음성 -> 대상 앱 마이크
 - 인바운드 자막: 대상 앱 오디오 -> Gemini Live -> 번역 자막
 - VRChat OSC 챗박스, 아바타 OSC 제어, SteamVR 자막, 손목 메뉴 지원
-- 원래 목소리는 그대로 보내고 OSC 챗박스 번역 텍스트만 추가하는 VRC Text Only 모드
+- 원래 목소리는 그대로 보내고 OSC 챗박스 번역 텍스트만 추가하는 VRChat 텍스트 전용 모드
 - Discord 프로세스 오디오 캡처와 VRChat 전용 기능 자동 비활성화
 - 단일 exe 빌드: `dist\vrclt.exe`
 - 사용자 설정 저장 위치: `%LOCALAPPDATA%\vrclt\config.yaml`
@@ -41,7 +38,7 @@
    - 기존 프로젝트가 없다면 **Create API key in new project**를 선택하면 자동으로 생성됩니다.
 5. 생성된 API 키(`AIza...`로 시작하는 문자열)를 복사합니다.
    - 키는 한 번만 표시되므로 안전한 곳에 보관합니다.
-6. 복사한 키를 `vrclt` Settings 탭의 **API Key** 항목에 붙여넣거나,
+6. 복사한 키를 `vrclt` 설정 탭의 **API 키** 항목에 붙여넣거나,
    `config.yaml`의 `gemini.api_key` 값으로 설정합니다.
 
 > **참고**: Gemini API는 무료 티어(분당 요청 수 제한)가 있어 개인 사용에는 충분합니다.
@@ -52,7 +49,7 @@
 ### 릴리스 exe
 
 1. `vrclt-v<version>-windows-x64.exe`를 실행합니다.
-2. Settings 탭을 엽니다.
+2. 설정 탭을 엽니다.
 3. Gemini API 키, 앱 모드, 마이크, 번역 음성 출력 장치를 설정합니다.
 4. 번역 음성 출력 장치는 `CABLE Input`을 사용합니다.
 5. VRChat 또는 Discord의 마이크 입력을 **CABLE Output (VB-Audio Virtual Cable)**으로 설정합니다.
@@ -91,33 +88,33 @@ Copy-Item config.example.yaml config.yaml
 | `vrchat` | VRChat | `VRChat.exe` 오디오 캡처, OSC 챗박스, 아바타 OSC 제어, SteamVR 자막, 손목 UI 활성화 |
 | `discord` | Discord | `Discord.exe` 오디오 캡처, VRChat OSC/SteamVR 기능 비활성화, 자체 UI 유지 |
 
-Settings에서 모드를 고르거나 실행 한 번에만 인자로 지정할 수 있습니다.
+설정에서 모드를 고르거나 실행 한 번에만 인자로 지정할 수 있습니다.
 
 ```powershell
 .\vrclt.exe run --app vrchat
 .\vrclt.exe run --app discord
 ```
 
-VRChat에서 텍스트 전용으로 쓰려면 Dashboard 또는 Settings의 **텍스트 온리**를
+VRChat에서 텍스트 전용으로 쓰려면 대시보드 또는 설정의 **텍스트 전용**을
 켭니다. 원래 마이크 음성은 VRChat으로 그대로 passthrough되고, Gemini 번역 결과는
 번역 음성 없이 OSC 챗박스 텍스트로만 전송됩니다.
 
-Discord Canary 또는 PTB를 사용한다면 Settings 또는 `app.profiles.discord.process`에서
+Discord Canary 또는 PTB를 사용한다면 설정 또는 `app.profiles.discord.process`에서
 프로세스 이름을 바꿉니다.
 
 ## 자체 UI
 
-Dashboard:
+대시보드:
 
 - 런타임 상태와 연결 상태
-- VRChat/Discord 모드 토글과 VRChat 텍스트 온리 토글
+- VRChat/Discord 모드 토글과 VRChat 텍스트 전용 토글
 - 번역 ON/OFF
 - 자막 ON/OFF
 - 출력 언어와 자막 언어
 - PC 자막 위치 이동/리셋과 글자 크기 조절
 - 실시간 자막 미리보기
 
-Settings:
+설정:
 
 - API 키와 모델
 - 앱 모드와 대상 프로세스
@@ -127,7 +124,7 @@ Settings:
 - OSC, 챗박스, SteamVR 오버레이, 손목 UI 옵션
 - UI 언어와 UI 모드
 
-Logs/About:
+로그/정보:
 
 - 현재 설정 경로
 - 현재 로그 파일 경로
@@ -152,7 +149,7 @@ target app process audio -> ProcTap -> Gemini Live -> subtitles
 ```
 
 번역이 OFF이면 마이크는 Gemini를 거치지 않고 `CABLE Input`으로 바로 전달됩니다.
-VRChat **텍스트 온리**에서는 원래 목소리가 항상 passthrough되고, 번역 토글은
+VRChat **텍스트 전용**에서는 원래 목소리가 항상 passthrough되고, 번역 토글은
 Gemini 텍스트 번역과 챗박스 출력만 제어합니다.
 
 ## VRChat 기능
@@ -177,6 +174,113 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 | 빌드 결과 | `dist\vrclt.exe` | `dist\vrclt.exe` |
 
 `config.yaml`, `.venv/`, `build/`, `dist/`, `release/`, 로그 파일은 Git에 올리지 않습니다.
+
+## 설정값 설명
+
+모든 값은 `config.yaml`에 저장됩니다. 릴리스 빌드는 위 AppData 경로를 사용하고,
+소스 체크아웃은 `VRCLT_CONFIG`를 지정하지 않는 한 저장소 루트의 `config.yaml`을 사용합니다.
+
+기본값과 앱 프로필:
+
+| 키 | 기본값 | 설명 |
+| --- | --- | --- |
+| `api_key` | `""` | Gemini API 키. 비어 있으면 `GEMINI_API_KEY` 환경 변수를 사용할 수 있습니다. |
+| `model` | `gemini-3.5-live-translate-preview` | Gemini Live 모델 이름. |
+| `log_level` | `INFO` | Python 로그 레벨. |
+| `app.mode` | `vrchat` | 활성 프로필: `vrchat` 또는 `discord`. |
+| `app.profiles.<mode>.process` | `VRChat.exe` / `Discord.exe` | 인바운드 자막용으로 캡처할 프로세스. |
+| `app.profiles.<mode>.ui_mode` | `auto` / `desktop` | 프로필이 적용하는 UI 모드. |
+| `app.profiles.<mode>.voice_output` | `true` | 번역 음성 출력을 켭니다. |
+| `app.profiles.<mode>.passthrough_while_translating` | `false` | 번역 중에도 원본 마이크 음성을 보냅니다. |
+| `app.profiles.<mode>.chatbox` | `true` / `false` | VRChat OSC 챗박스 출력을 켭니다. |
+| `app.profiles.<mode>.osc_control` | `true` / `false` | 아바타 OSC 제어 리스너를 켭니다. |
+| `app.profiles.<mode>.vr_overlay` | `true` / `false` | SteamVR 자막 오버레이를 켭니다. |
+| `app.profiles.<mode>.wrist_ui` | `true` / `false` | SteamVR 손목 메뉴를 켭니다. |
+
+대시보드 상태:
+
+| 키 | 기본값 | 설명 |
+| --- | --- | --- |
+| `dashboard.translation_on` | `true` | 마지막으로 저장된 대시보드 번역 토글 상태. |
+| `dashboard.subtitles_on` | `true` | 마지막으로 저장된 대시보드 자막 토글 상태. |
+
+아웃바운드 번역:
+
+| 키 | 기본값 | 설명 |
+| --- | --- | --- |
+| `outbound.enabled` | `true` | 아웃바운드 파이프라인을 켭니다. |
+| `outbound.target_language` | `ja` | 내 말 번역의 기본 대상 언어. |
+| `outbound.echo_target_language` | `false` | 이미 대상 언어인 입력도 따라 말합니다. |
+| `outbound.mic_device` | `""` | 마이크 장치 이름 일부. 비어 있으면 기본 입력을 사용합니다. |
+| `outbound.tts_device` | `CABLE Input` | 번역 음성과 원음 전달을 내보낼 출력 장치. |
+| `outbound.monitor_device` | `""` | 번역 음성을 내가 들을 모니터 출력 장치. |
+| `outbound.text_only` | `false` | VRChat 텍스트 전용 모드. 원음 전달과 번역 챗박스 텍스트만 사용합니다. |
+| `outbound.voice_output` | `true` | 번역 TTS 음성 출력을 켭니다. |
+| `outbound.passthrough_while_translating` | `false` | 번역 활성 상태에서도 원본 마이크 음성을 보냅니다. |
+| `outbound.chatbox` | `true` | 번역 텍스트를 VRChat OSC 챗박스로 보냅니다. |
+
+인바운드 자막:
+
+| 키 | 기본값 | 설명 |
+| --- | --- | --- |
+| `inbound.enabled` | `true` | 자막용 프로세스 오디오 캡처를 켭니다. |
+| `inbound.target_language` | `ko` | 기본 자막 대상 언어. |
+| `inbound.languages` | `[ko, en, ja]` | 손목 메뉴에서 순환할 자막 언어 목록. |
+| `inbound.process` | `VRChat.exe` | 인바운드 자막용으로 캡처할 프로세스 이름. |
+| `inbound.play_audio` | `false` | 인바운드 번역 음성을 내 헤드폰으로 재생합니다. |
+| `inbound.audio_device` | `""` | 인바운드 번역 음성 출력 장치. 비어 있으면 기본 출력을 사용합니다. |
+| `inbound.vad_enabled` | `true` | 배경음악/잡음을 줄이기 위해 음성 활동 감지를 사용합니다. |
+| `inbound.vad_threshold` | `0.5` | `0`부터 `1`까지의 VAD 엄격도. 높을수록 비음성을 더 많이 거릅니다. |
+| `inbound.vad_hangover_sec` | `0.6` | 말이 멈춘 뒤 잠깐 더 캡처를 유지하는 시간. |
+
+오버레이와 OSC:
+
+| 키 | 기본값 | 설명 |
+| --- | --- | --- |
+| `overlay.enabled` | `true` | SteamVR 자막 오버레이를 켭니다. |
+| `overlay.width_m` | `0.9` | 자막 오버레이 너비(m). |
+| `overlay.distance_m` | `1.2` | HMD 기준 자막 오버레이 거리(m). |
+| `overlay.below_m` | `0.35` | HMD 아래쪽 오프셋(m). |
+| `overlay.tilt_deg` | `-15.0` | 오버레이 기울기 각도. |
+| `overlay.font` | `bundled:NotoSansCJKsc-Regular.otf` | 자막 오버레이 폰트. |
+| `overlay.font_size` | `44` | 자막 글자 크기. |
+| `overlay.display_sec` | `7.0` | 확정된 자막 줄이 남아 있는 시간. |
+| `overlay.lines` | `3` | 화면에 유지할 최근 확정 자막 줄 수. |
+| `overlay.show_source` | `false` | 자막에 원문도 함께 표시합니다. |
+| `osc.ip` | `127.0.0.1` | VRChat OSC 대상 IP. |
+| `osc.port` | `9000` | VRChat OSC 대상 포트. |
+| `osc.throttle_sec` | `1.5` | 챗박스 최소 전송 간격. |
+| `osc.notification_sfx` | `false` | VRChat 챗박스 알림음을 요청합니다. |
+| `osc.show_source` | `true` | 챗박스에서 번역 위에 원문을 표시합니다. |
+| `osc.chunk_display_sec` | `4.0` | 긴 챗박스 메시지를 나눠 보여줄 때 조각별 표시 시간. |
+
+오디오, 제어, UI, 손목 메뉴:
+
+| 키 | 기본값 | 설명 |
+| --- | --- | --- |
+| `audio.send_interval_ms` | `100` | 마이크 오디오를 Gemini로 보내는 주기. |
+| `audio.finalize_silence_sec` | `2.0` | 이만큼 침묵하면 세그먼트를 확정합니다. |
+| `audio.mic_idle_disconnect_sec` | `15.0` | 마이크 입력이 없을 때 Gemini 세션을 끊는 시간. |
+| `audio.voice_rms_threshold` | `90.0` | 마이크 음성 감지 에너지 임계값. |
+| `audio.voice_hangover_sec` | `2.5` | 짧은 멈춤 동안 마이크 턴을 유지하는 시간. |
+| `audio.echo_guard_multiplier` | `4.0` | 대상 앱 오디오가 활성일 때 마이크 게이트를 높이는 배수. `1.0`이면 비활성. |
+| `control.enabled` | `true` | 아바타 OSC 제어 입력을 켭니다. |
+| `control.osc_listen_port` | `9001` | 아바타 제어 파라미터를 받을 로컬 OSC 포트. |
+| `control.param_enabled` | `VRCLT_Enabled` | 번역 ON/OFF용 아바타 bool 파라미터. |
+| `control.param_lang` | `VRCLT_Lang` | 언어 인덱스용 아바타 int 파라미터. |
+| `control.languages` | `[ja, en, ko, zh-Hans, zh-Hant, yue, es, ru, fr, de]` | 아바타와 손목 제어에서 사용할 출력 언어 목록. |
+| `control.feedback_chatbox` | `true` | 제어 변경 피드백을 VRChat 챗박스로 보냅니다. |
+| `ui.mode` | `auto` | `auto`, `vr`, `desktop` 중 하나. |
+| `ui.lang` | `""` | UI 표시 언어. 비어 있으면 자동이며 `en`, `ko`, `ja`, `zh`를 사용할 수 있습니다. |
+| `ui.close_action` | `tray` | 창 닫기 버튼 동작: `tray` 또는 `exit`. |
+| `wrist_ui.enabled` | `true` | SteamVR 손목 메뉴를 켭니다. |
+| `wrist_ui.hand` | `left` | 메뉴를 착용할 손: `left` 또는 `right`. |
+| `wrist_ui.width_m` | `0.16` | 손목 메뉴 너비(m). |
+| `wrist_ui.offset` | `[0.0, 0.02, 0.12]` | 컨트롤러 좌표계의 x,y,z 오프셋. |
+| `wrist_ui.tilt_deg` | `0.0` | 얼굴 쪽으로 향하는 추가 기울기. |
+| `wrist_ui.roll_deg` | `null` | 평면 회전. `null`이면 손에 따라 자동 회전합니다. |
+| `wrist_ui.pointer_tilt_deg` | `50.0` | 포인터 레이의 아래쪽 기울기 각도. |
+| `wrist_ui.font` | `bundled:NotoSansCJKsc-Bold.otf` | 손목 메뉴 폰트. |
 
 ## 빌드
 
@@ -221,9 +325,16 @@ release\vrclt-v0.1.0-windows-x64.exe.sha256
 
 - 대상 앱에 번역 음성이 안 들어감: `outbound.tts_device`가 `CABLE Input`인지, 대상 앱 마이크가 `CABLE Output`인지 확인합니다.
 - 인바운드 자막이 안 뜸: 대상 프로세스 이름이 실제 실행 중인 앱과 맞는지 확인합니다. 예: `VRChat.exe`, `Discord.exe`.
-- API key required 상태: Settings에 키를 입력하거나 `GEMINI_API_KEY`를 설정합니다.
+- API 키 필요 상태: 설정에 키를 입력하거나 `GEMINI_API_KEY`를 설정합니다.
 - VR 오버레이가 안 뜸: SteamVR이 실행 중이고 `overlay.enabled` / `wrist_ui.enabled`가 켜져 있는지 확인합니다.
 - 설정을 초기화하고 싶음: 앱을 닫고 `%LOCALAPPDATA%\vrclt\config.yaml`을 다른 이름으로 옮긴 뒤 다시 실행합니다.
+
+## 감사
+
+- [Noto Sans CJK](https://github.com/notofonts/noto-cjk)와 [Pretendard](https://github.com/orioncactus/pretendard): 다국어 UI 폰트 커버리지.
+- [PySide6](https://doc.qt.io/qtforpython-6/): Windows 자체 UI.
+- [OpenVR](https://github.com/ValveSoftware/openvr), GLFW, PyOpenGL: SteamVR 오버레이 렌더링.
+- [VB-Audio Virtual Cable](https://vb-audio.com/Cable/): 앱 간 오디오 라우팅.
 
 ## 릴리스
 

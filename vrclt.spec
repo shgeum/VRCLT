@@ -4,11 +4,19 @@
 Build: pyinstaller vrclt.spec --noconfirm
 Output: dist/vrclt.exe
 """
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_all
 
 datas = []
 binaries = []
 hiddenimports = ["vrclt"]
+
+font_dir = Path("vrclt") / "assets" / "fonts"
+if font_dir.exists():
+    for path in font_dir.iterdir():
+        if path.is_file():
+            datas.append((str(path), "vrclt/assets/fonts"))
 
 # native / data-heavy packages PyInstaller can't fully trace on its own
 for pkg in [

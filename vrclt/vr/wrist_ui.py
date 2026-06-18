@@ -21,13 +21,14 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+from ..resources import bundled_font, resolve_font_path
 from ..state import AppState
 from ..i18n import tr, LANGS as UI_LANGS, UI_LANG_LABELS
 from .render import GlTexture, flip_bounds
 
 log = logging.getLogger(__name__)
 
-TEX_W, TEX_H = 512, 440
+TEX_W, TEX_H = 640, 560
 MAX_RAY_M = 1.2
 
 GAZE_ON_DEG = 22.0
@@ -36,22 +37,23 @@ GAZE_DIST_M = 0.95
 
 TRANSFORM_PATH = Path(os.environ.get("LOCALAPPDATA", ".")) / "vrclt" / "wrist_transform.json"
 
-BTN_UILANG = (118, 10, 208, 62)      # cycles the UI display language
-BTN_EDIT = (216, 10, 360, 62)
-BTN_RESET = (368, 10, 496, 62)
-BTN_TOGGLE = (16, 76, 248, 248)
-BTN_PREV = (264, 76, 320, 248)
-BTN_LANG = (320, 76, 440, 248)       # label only
-BTN_NEXT = (440, 76, 496, 248)
-BTN_SUB_TOGGLE = (16, 260, 248, 432)
-BTN_SUB_PREV = (264, 260, 320, 432)
-BTN_SUB_LANG = (320, 260, 440, 432)  # label only
-BTN_SUB_NEXT = (440, 260, 496, 432)
+BTN_UILANG = (108, 14, 206, 66)      # cycles the UI display language
+BTN_TEXT_ONLY = (216, 14, 392, 66)
+BTN_EDIT = (402, 14, 506, 66)
+BTN_RESET = (516, 14, 624, 66)
+BTN_TOGGLE = (16, 86, 306, 302)
+BTN_PREV = (322, 86, 388, 302)
+BTN_LANG = (388, 86, 556, 302)       # label only
+BTN_NEXT = (556, 86, 624, 302)
+BTN_SUB_TOGGLE = (16, 322, 306, 538)
+BTN_SUB_PREV = (322, 322, 388, 538)
+BTN_SUB_LANG = (388, 322, 556, 538)  # label only
+BTN_SUB_NEXT = (556, 322, 624, 538)
 
 BUTTONS = (("toggle", BTN_TOGGLE), ("prev", BTN_PREV), ("next", BTN_NEXT),
            ("sub_toggle", BTN_SUB_TOGGLE), ("sub_prev", BTN_SUB_PREV),
            ("sub_next", BTN_SUB_NEXT), ("edit", BTN_EDIT), ("reset", BTN_RESET),
-           ("uilang", BTN_UILANG))
+           ("uilang", BTN_UILANG), ("text_only", BTN_TEXT_ONLY))
 
 LANG_LABELS = {
     "ja": "日本語", "en": "English", "ko": "한국어",
@@ -77,11 +79,12 @@ CURSOR_SIZE_M = 0.016
 class WristPanel:
     def __init__(self, state: AppState, languages: list[str], *,
                  inbound_languages: list[str] | None = None,
-                 hand: str = "left", width_m: float = 0.12,
+                 hand: str = "left", width_m: float = 0.16,
                  offset=(0.0, 0.02, 0.12), tilt_deg: float = 0.0,
                  roll_deg: float | None = None,
                  pointer_tilt_deg: float = 50.0,
-                 font_path: str = "C:/Windows/Fonts/malgunbd.ttf",
+                 font_path: str = bundled_font("NotoSansCJKsc-Bold.otf"),
+                 on_text_only_toggle=lambda enabled: None,
                  get_status=lambda: False):
         self._state = state
         self._languages = languages or ["en"]
@@ -99,12 +102,16 @@ class WristPanel:
         self._pointer_mat[2][1] = math.sin(a)
         self._pointer_mat[2][2] = math.cos(a)
         self._get_status = get_status
+        self._on_text_only_toggle = on_text_only_toggle
+        font_path = resolve_font_path(font_path, "NotoSansCJKsc-Bold.otf")
         try:
-            self._font_big = ImageFont.truetype(font_path, 52)
-            self._font_mid = ImageFont.truetype(font_path, 38)
-            self._font_small = ImageFont.truetype(font_path, 26)
+            self._font_big = ImageFont.truetype(font_path, 60)
+            self._font_mid = ImageFont.truetype(font_path, 42)
+            self._font_small = ImageFont.truetype(font_path, 28)
+            self._font_tiny = ImageFont.truetype(font_path, 22)
         except OSError:
-            self._font_big = self._font_mid = self._font_small = ImageFont.load_default()
+            fallback = ImageFont.load_default()
+            self._font_big = self._font_mid = self._font_small = self._font_tiny = fallback
 
         self._dirty = threading.Event()
         self._dirty.set()
@@ -395,6 +402,8 @@ class WristPanel:
             st.edit_mode = not st.edit_mode
         elif button == "uilang":
             st.ui_lang = self._cycle(UI_LANGS, st.ui_lang, 1)
+        elif button == "text_only":
+            self._on_text_only_toggle(not st.text_only)
         elif button == "reset":
             self._reset_requested = True
             st.request_position_reset()  # the subtitle panel listens for this
@@ -432,49 +441,66 @@ class WristPanel:
         d.ellipse((22, 22, s - 22, s - 22), fill=(120, 180, 255, 255))
         return img
 
-    def _fit_font(self, draw, text: str, max_width: float):
-        for font in (self._font_big, self._font_mid, self._font_small):
+    def _fit_font(self, draw, text: str, max_width: float, fonts=None):
+        for font in (fonts or (self._font_big, self._font_mid, self._font_small, self._font_tiny)):
             if draw.textlength(text, font=font) <= max_width:
                 return font
-        return self._font_small
+        return self._font_tiny
 
     def _lang_block(self, d, prev_box, lang_box, next_box, code: str, caption: str) -> None:
         for box, label in ((prev_box, "◀"), (next_box, "▶")):
-            d.rounded_rectangle(box, 14, fill=COL_BTN)
+            d.rounded_rectangle(box, 16, fill=COL_BTN)
             d.text(((box[0] + box[2]) // 2, (box[1] + box[3]) // 2),
                    label, font=self._font_mid, fill=COL_TEXT, anchor="mm")
-        d.rounded_rectangle(lang_box, 14, fill=(28, 30, 38, 255))
+        d.rounded_rectangle(lang_box, 16, fill=(28, 30, 38, 255))
         label = LANG_LABELS.get(code, code)
         font = self._fit_font(d, label, lang_box[2] - lang_box[0] - 12)
-        d.text(((lang_box[0] + lang_box[2]) // 2, (lang_box[1] + lang_box[3]) // 2 - 14),
+        d.text(((lang_box[0] + lang_box[2]) // 2, (lang_box[1] + lang_box[3]) // 2 - 18),
                label, font=font, fill=COL_TEXT, anchor="mm")
-        d.text(((lang_box[0] + lang_box[2]) // 2, lang_box[3] - 24),
-               caption, font=self._font_small, fill=COL_DIM, anchor="mm")
+        d.text(((lang_box[0] + lang_box[2]) // 2, lang_box[3] - 30),
+               caption, font=self._font_tiny, fill=COL_DIM, anchor="mm")
 
     def _render(self, connected: bool, dragging: bool) -> Image.Image:
         lang = self._state.ui_lang
         edit = self._state.edit_mode
         img = Image.new("RGBA", (TEX_W, TEX_H), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
-        d.rounded_rectangle((0, 0, TEX_W - 1, TEX_H - 1), 24, fill=COL_BG,
+        d.rounded_rectangle((0, 0, TEX_W - 1, TEX_H - 1), 30, fill=COL_BG,
                             outline=COL_DRAG if (dragging or edit) else None, width=4)
 
         dot = COL_ON if connected else (110, 110, 110, 255)
-        d.ellipse((20, 22, 44, 46), fill=dot)
-        d.text((56, 34), "vrclt", font=self._font_small, fill=COL_TEXT, anchor="lm")
+        d.ellipse((20, 28, 44, 52), fill=dot)
+        d.text((54, 40), "vrclt", font=self._font_tiny, fill=COL_TEXT, anchor="lm")
         # UI display-language cycle
         d.rounded_rectangle(BTN_UILANG, 12, fill=COL_BTN)
         ui_label = UI_LANG_LABELS.get(lang, lang)
         d.text(((BTN_UILANG[0] + BTN_UILANG[2]) // 2, (BTN_UILANG[1] + BTN_UILANG[3]) // 2),
-               ui_label, font=self._fit_font(d, ui_label, BTN_UILANG[2] - BTN_UILANG[0] - 10),
+               ui_label, font=self._fit_font(
+                   d, ui_label, BTN_UILANG[2] - BTN_UILANG[0] - 10,
+                   (self._font_small, self._font_tiny)),
+               fill=COL_TEXT, anchor="mm")
+        text_only = self._state.text_only
+        d.rounded_rectangle(BTN_TEXT_ONLY, 12, fill=COL_SUB_ON if text_only else COL_BTN)
+        text_label = tr(lang, "btn_text_only_on" if text_only else "btn_text_only_off")
+        d.text(((BTN_TEXT_ONLY[0] + BTN_TEXT_ONLY[2]) // 2,
+                (BTN_TEXT_ONLY[1] + BTN_TEXT_ONLY[3]) // 2),
+               text_label, font=self._fit_font(
+                   d, text_label, BTN_TEXT_ONLY[2] - BTN_TEXT_ONLY[0] - 12,
+                   (self._font_small, self._font_tiny)),
                fill=COL_TEXT, anchor="mm")
         d.rounded_rectangle(BTN_EDIT, 12, fill=COL_DRAG if edit else COL_BTN)
         d.text(((BTN_EDIT[0] + BTN_EDIT[2]) // 2, (BTN_EDIT[1] + BTN_EDIT[3]) // 2),
-               tr(lang, "edit_moving" if dragging else "edit_mode"), font=self._font_small,
+               tr(lang, "edit_moving" if dragging else "edit_mode"),
+               font=self._fit_font(d, tr(lang, "edit_moving" if dragging else "edit_mode"),
+                                   BTN_EDIT[2] - BTN_EDIT[0] - 12,
+                                   (self._font_small, self._font_tiny)),
                fill=COL_TEXT, anchor="mm")
         d.rounded_rectangle(BTN_RESET, 12, fill=COL_BTN)
         d.text(((BTN_RESET[0] + BTN_RESET[2]) // 2, (BTN_RESET[1] + BTN_RESET[3]) // 2),
-               tr(lang, "pos_reset"), font=self._font_small, fill=COL_TEXT, anchor="mm")
+               tr(lang, "pos_reset"),
+               font=self._fit_font(d, tr(lang, "pos_reset"), BTN_RESET[2] - BTN_RESET[0] - 12,
+                                   (self._font_small, self._font_tiny)),
+               fill=COL_TEXT, anchor="mm")
 
         on = self._state.translation_on
         d.rounded_rectangle(BTN_TOGGLE, 18, fill=COL_ON if on else COL_OFF)
@@ -482,7 +508,7 @@ class WristPanel:
         cy = (BTN_TOGGLE[1] + BTN_TOGGLE[3]) // 2
         d.text((cx, cy - 18), tr(lang, "btn_trans_on" if on else "btn_trans_off"),
                font=self._font_mid, fill=COL_TEXT, anchor="mm")
-        d.text((cx, cy + 30), tr(lang, "my_to_other"), font=self._font_small,
+        d.text((cx, cy + 34), tr(lang, "my_to_other"), font=self._font_small,
                fill=COL_TEXT, anchor="mm")
         self._lang_block(d, BTN_PREV, BTN_LANG, BTN_NEXT,
                          self._state.target_language, tr(lang, "out_lang"))
@@ -493,7 +519,7 @@ class WristPanel:
         cy = (BTN_SUB_TOGGLE[1] + BTN_SUB_TOGGLE[3]) // 2
         d.text((cx, cy - 18), tr(lang, "btn_sub_on" if sub_on else "btn_sub_off"),
                font=self._font_mid, fill=COL_TEXT, anchor="mm")
-        d.text((cx, cy + 30), tr(lang, "other_to_sub"), font=self._font_small,
+        d.text((cx, cy + 34), tr(lang, "other_to_sub"), font=self._font_small,
                fill=COL_TEXT, anchor="mm")
         self._lang_block(d, BTN_SUB_PREV, BTN_SUB_LANG, BTN_SUB_NEXT,
                          self._state.inbound_language, tr(lang, "sub_lang"))

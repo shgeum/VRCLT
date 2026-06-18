@@ -6,7 +6,10 @@ from pathlib import Path
 
 import yaml
 
+from .resources import bundled_font
+
 APP_MODES = ("vrchat", "discord")
+CLOSE_ACTIONS = ("tray", "exit")
 APPDATA_DIR = Path(os.environ.get("LOCALAPPDATA", ".")) / "vrclt"
 
 if os.environ.get("VRCLT_CONFIG"):
@@ -43,6 +46,10 @@ DEFAULTS = {
                 "wrist_ui": False,
             },
         },
+    },
+    "dashboard": {
+        "translation_on": True,         # last Dashboard translation toggle state
+        "subtitles_on": True,           # last Dashboard subtitles toggle state
     },
     "outbound": {                       # pipeline A: my voice -> others
         "enabled": True,
@@ -81,7 +88,7 @@ DEFAULTS = {
         "distance_m": 1.2,
         "below_m": 0.35,
         "tilt_deg": -15.0,
-        "font": "C:/Windows/Fonts/malgun.ttf",  # CJK-capable (Malgun Gothic)
+        "font": bundled_font("NotoSansCJKsc-Regular.otf"),
         "font_size": 44,
         "display_sec": 7.0,
         "lines": 3,                     # recent finalized lines kept on screen
@@ -110,16 +117,17 @@ DEFAULTS = {
                                         # auto: VR overlays if SteamVR is running
         "lang": "",                     # UI display language: ""=auto | en | ko | ja | zh
                                         # applies to Qt UI and VR wrist menu labels
+        "close_action": "tray",         # tray | exit; window close button behavior
     },
     "wrist_ui": {                       # SteamVR wrist watch menu (XSOverlay style)
         "enabled": True,
         "hand": "left",                 # which wrist wears the watch
-        "width_m": 0.12,
+        "width_m": 0.16,
         "offset": [0.0, 0.02, 0.12],    # x,y,z in controller space (meters)
         "tilt_deg": 0.0,                # extra tilt toward the face
         "roll_deg": None,               # in-plane rotation; None = auto (+90 left / -90 right)
         "pointer_tilt_deg": 50.0,       # laser tilts down from raw controller forward
-        "font": "C:/Windows/Fonts/malgunbd.ttf",
+        "font": bundled_font("NotoSansCJKsc-Bold.otf"),
     },
     "log_level": "INFO",
 }
@@ -179,7 +187,14 @@ def apply_app_profile(cfg: dict, mode: str | None = None) -> dict:
     if selected != "vrchat":
         cfg.setdefault("outbound", {})["text_only"] = False
     _apply_outbound_output_mode(cfg)
+    cfg.setdefault("ui", {})["close_action"] = normalize_close_action(
+        cfg.get("ui", {}).get("close_action", "tray"))
     return cfg
+
+
+def normalize_close_action(value: str) -> str:
+    value = (value or "").strip().lower()
+    return value if value in CLOSE_ACTIONS else "tray"
 
 
 def _apply_outbound_output_mode(cfg: dict) -> None:
