@@ -124,13 +124,13 @@ DEFAULTS = {
         "enabled": True,
         "hand": "left",                 # which wrist wears the watch
         "width_m": 0.16,
-        "offset": [-0.0557, -0.0265, 0.0952],  # x,y,z in controller space (meters)
-        "tilt_deg": 197.994,            # extra tilt toward the face
-        "roll_deg": -18.911,            # in-plane rotation; None = auto (+90 left / -90 right)
+        "offset": [-0.0509, -0.065, 0.0891],  # x,y,z in controller space (meters)
+        "tilt_deg": 185.636,            # extra tilt toward the face
+        "roll_deg": -28.633,            # in-plane rotation; None = auto (+90 left / -90 right)
         "transform": [                  # exact 3x4 pose, auto-managed after VR reposition
-            [0.2492944230417404, 0.08540377681623953, -0.9646577521711427, -0.055683394775783907],
-            [-0.767839036478661, -0.5895811632634125, -0.25062930837523045, -0.026494291823405507],
-            [-0.590149570434288, 0.8031779822175874, -0.08140481802947214, 0.09520546515391112],
+            [0.21908726472955897, 0.11961482377927057, -0.9683485126120885, -0.05087807930923027],
+            [-0.7987573358745661, -0.5479766071541097, -0.2484075125689047, -0.06495636976505217],
+            [-0.5603464900411016, 0.8278939425076023, -0.024512937396587796, 0.08914393734081485],
         ],
         "pointer_tilt_deg": 50.0,       # laser tilts down from raw controller forward
         "font": bundled_font("NotoSansCJKkr-Bold.otf"),

@@ -282,9 +282,9 @@ Audio, control, UI, and wrist menu:
 | `wrist_ui.enabled` | `true` | Enables the SteamVR wrist menu. |
 | `wrist_ui.hand` | `left` | Wrist that wears the menu: `left` or `right`. |
 | `wrist_ui.width_m` | `0.16` | Wrist menu width in meters. |
-| `wrist_ui.offset` | `[-0.0557, -0.0265, 0.0952]` | Wrist menu x,y,z offset in controller space. |
-| `wrist_ui.tilt_deg` | `197.994` | Extra tilt toward the face. |
-| `wrist_ui.roll_deg` | `-18.911` | In-plane rotation. `null` uses automatic per-hand rotation. |
+| `wrist_ui.offset` | `[-0.0509, -0.065, 0.0891]` | Wrist menu x,y,z offset in controller space. |
+| `wrist_ui.tilt_deg` | `185.636` | Extra tilt toward the face. |
+| `wrist_ui.roll_deg` | `-28.633` | In-plane rotation. `null` uses automatic per-hand rotation. |
 | `wrist_ui.transform` | saved 3x4 pose | Exact saved 3x4 wrist pose, auto-managed after repositioning in VR. |
 | `wrist_ui.pointer_tilt_deg` | `50.0` | Pointer ray downward tilt angle. |
 | `wrist_ui.font` | `bundled:NotoSansCJKkr-Bold.otf` | Wrist menu font. |

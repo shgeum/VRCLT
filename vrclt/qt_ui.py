@@ -11,19 +11,17 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from . import config as config_mod
 from . import i18n
 from .desktop_overlay import DesktopSubtitleOverlay
+from .languages import (
+    language_code_from_text,
+    language_label,
+    supported_language_options,
+)
 from .resources import bundled_font, resolve_font_path
 
 log = logging.getLogger(__name__)
 
 APP_FONT_SIZE_PT = 11
 _APP_FONT_FAMILIES: dict[str, str] = {}
-
-LANG_LABELS = {
-    "ja": "日本語", "en": "English", "ko": "한국어",
-    "zh-Hans": "中文(简)", "zh-Hant": "中文(繁)", "yue": "廣東話",
-    "es": "Español", "ru": "Русский", "fr": "Français", "de": "Deutsch",
-}
-
 
 def _get_path(data: dict, path: str, default=None):
     cur = data
@@ -219,6 +217,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self._btn_restart.setText(self._tr("btn_restart_runtime"))
         if hasattr(self, "_text_only"):
             self._text_only.setText(self._tr("btn_text_only_on"))
+        if hasattr(self, "_out_lang_add"):
+            self._set_language_picker_placeholder(self._out_lang_add, self._tr("ph_out_add"))
+        if hasattr(self, "_out_lang_add_btn"):
+            self._out_lang_add_btn.setText(self._tr("btn_add"))
+        if hasattr(self, "_sub_lang_add"):
+            self._set_language_picker_placeholder(self._sub_lang_add, self._tr("ph_sub_add"))
+        if hasattr(self, "_sub_lang_add_btn"):
+            self._sub_lang_add_btn.setText(self._tr("btn_add"))
         if hasattr(self, "_btn_overlay_reset"):
             self._btn_overlay_reset.setText(self._tr("btn_overlay_reset"))
         if hasattr(self, "_subtitle_view"):
@@ -273,6 +279,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self._out_lang.currentTextChanged.connect(self._pick_out_lang)
         self._sub_lang.currentTextChanged.connect(self._pick_sub_lang)
         self._ui_lang.currentTextChanged.connect(self._pick_ui_lang)
+        self._out_lang_add = self._build_language_picker(self._tr("ph_out_add"))
+        self._out_lang_add.lineEdit().returnPressed.connect(self._add_output_language_from_input)
+        self._out_lang_add_btn = QtWidgets.QPushButton(self._tr("btn_add"))
+        self._out_lang_add_btn.clicked.connect(self._add_output_language_from_input)
+        self._sub_lang_add = self._build_language_picker(self._tr("ph_sub_add"))
+        self._sub_lang_add.lineEdit().returnPressed.connect(self._add_inbound_language_from_input)
+        self._sub_lang_add_btn = QtWidgets.QPushButton(self._tr("btn_add"))
+        self._sub_lang_add_btn.clicked.connect(self._add_inbound_language_from_input)
+        out_lang_add_widget = self._build_language_add_control(
+            self._out_lang_add, self._out_lang_add_btn)
+        sub_lang_add_widget = self._build_language_add_control(
+            self._sub_lang_add, self._sub_lang_add_btn)
         app_mode_widget = self._build_app_mode_toggle()
         self._text_only = QtWidgets.QCheckBox(self._tr("btn_text_only_on"))
         self._text_only.toggled.connect(self._apply_text_only)
@@ -310,6 +328,10 @@ class MainWindow(QtWidgets.QMainWindow):
         controls.addWidget(self._close_action, 4, 1)
         controls.addWidget(self._btn_overlay_move, 4, 2)
         controls.addWidget(self._btn_overlay_reset, 4, 3)
+        controls.addWidget(self._label("label_add_out_lang"), 5, 0)
+        controls.addWidget(out_lang_add_widget, 5, 1)
+        controls.addWidget(self._label("label_add_sub_lang"), 5, 2)
+        controls.addWidget(sub_lang_add_widget, 5, 3)
         root.addLayout(controls)
         root.addWidget(self._dashboard_note)
 
@@ -318,6 +340,40 @@ class MainWindow(QtWidgets.QMainWindow):
         self._subtitle_view.setPlaceholderText(self._tr("subtitle_live_placeholder"))
         root.addWidget(self._subtitle_view, 1)
         self._tab_dashboard_idx = self._tabs.addTab(page, self._tr("tab_dashboard"))
+
+    def _build_language_picker(self, placeholder: str = "") -> _NoWheelComboBox:
+        combo = _NoWheelComboBox()
+        combo.setEditable(True)
+        combo.setInsertPolicy(QtWidgets.QComboBox.InsertPolicy.NoInsert)
+        combo.setMinimumContentsLength(22)
+        combo.view().setMinimumWidth(300)
+        for code, label in supported_language_options():
+            combo.addItem(label, code)
+        completer = combo.completer()
+        if completer is not None:
+            completer.setFilterMode(QtCore.Qt.MatchFlag.MatchContains)
+            completer.setCompletionMode(QtWidgets.QCompleter.CompletionMode.PopupCompletion)
+        combo.setCurrentIndex(-1)
+        combo.setEditText("")
+        self._set_language_picker_placeholder(combo, placeholder)
+        return combo
+
+    @staticmethod
+    def _set_language_picker_placeholder(combo: QtWidgets.QComboBox, text: str) -> None:
+        line_edit = combo.lineEdit()
+        if line_edit is not None:
+            line_edit.setPlaceholderText(text)
+
+    def _build_language_add_control(self, edit: QtWidgets.QComboBox,
+                                    button: QtWidgets.QPushButton) -> QtWidgets.QWidget:
+        wrap = QtWidgets.QWidget()
+        layout = QtWidgets.QHBoxLayout(wrap)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        button.setFixedWidth(64)
+        layout.addWidget(edit, 1)
+        layout.addWidget(button)
+        return wrap
 
     def _build_app_mode_toggle(self) -> QtWidgets.QWidget:
         wrap = QtWidgets.QWidget()
@@ -491,9 +547,9 @@ class MainWindow(QtWidgets.QMainWindow):
             ("app.profiles.discord.process", "f.app.profiles.discord.process", "text"),
         ], cfg)
         self._add_group("grp_lang", [
-            ("outbound.target_language", "f.outbound.target_language", "text"),
+            ("outbound.target_language", "f.outbound.target_language", "language"),
             ("control.languages", "f.control.languages", "csv"),
-            ("inbound.target_language", "f.inbound.target_language", "text"),
+            ("inbound.target_language", "f.inbound.target_language", "language"),
             ("inbound.languages", "f.inbound.languages", "csv"),
         ], cfg)
         self._add_group("grp_ui", [
@@ -577,6 +633,10 @@ class MainWindow(QtWidgets.QMainWindow):
             return w
         if kind == "csv":
             return QtWidgets.QLineEdit(_as_csv(value))
+        if kind == "language":
+            w = self._build_language_picker()
+            self._set_language_combo_value(w, "" if value is None else str(value))
+            return w
         if kind == "float_csv":
             return QtWidgets.QLineEdit(_as_float_list(value))
         if kind == "appmode":
@@ -617,6 +677,8 @@ class MainWindow(QtWidgets.QMainWindow):
             return _from_csv(widget.text())
         if kind == "float_csv":
             return _from_float_list(widget.text())
+        if kind == "language":
+            return self._code_from_language_combo(widget, [])
         if isinstance(widget, QtWidgets.QComboBox):
             return widget.currentText().strip()
         return widget.text()
@@ -633,6 +695,8 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             if kind == "bool":
                 widget.setChecked(bool(value))
+            elif kind == "language":
+                self._set_language_combo_value(widget, "" if value is None else str(value))
             elif isinstance(widget, QtWidgets.QComboBox):
                 widget.setCurrentText("" if value is None else str(value))
             elif kind == "csv":
@@ -794,6 +858,30 @@ class MainWindow(QtWidgets.QMainWindow):
         self._desktop_overlay.reset_position()
         self._controller.state.request_position_reset()
 
+    def _add_output_language_from_input(self) -> None:
+        self._add_language_from_input(
+            self._out_lang_add,
+            self._controller.cfg.get("control", {}).get("languages", []),
+            self._controller.add_output_language,
+        )
+
+    def _add_inbound_language_from_input(self) -> None:
+        self._add_language_from_input(
+            self._sub_lang_add,
+            self._controller.cfg.get("inbound", {}).get("languages", []),
+            self._controller.add_inbound_language,
+        )
+
+    def _add_language_from_input(self, edit: QtWidgets.QComboBox, existing: list[str],
+                                 add_fn) -> None:
+        code = self._code_from_language_combo(edit, existing)
+        if not code:
+            return
+        add_fn(code)
+        edit.setCurrentIndex(-1)
+        edit.setEditText("")
+        self._dashboard_note.setText(self._tr("msg_applied"))
+
     def _pick_out_lang(self, label: str) -> None:
         code = self._code_for_label(label, self._controller.cfg.get("control", {}).get("languages", []))
         if code:
@@ -829,10 +917,25 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @staticmethod
     def _code_for_label(label: str, codes: list[str]) -> str:
-        for code in codes:
-            if LANG_LABELS.get(code, code) == label:
-                return code
-        return label
+        return language_code_from_text(label, codes)
+
+    @staticmethod
+    def _code_from_language_combo(combo: QtWidgets.QComboBox, fallback_codes: list[str]) -> str:
+        text = combo.currentText().strip()
+        data = combo.currentData()
+        if data and (not text or text == language_label(str(data))):
+            return str(data)
+        return language_code_from_text(text, fallback_codes)
+
+    @staticmethod
+    def _set_language_combo_value(combo: QtWidgets.QComboBox, code: str) -> None:
+        code = language_code_from_text(code)
+        idx = combo.findData(code)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
+        else:
+            combo.setCurrentIndex(-1)
+            combo.setEditText(code)
 
     # ---------------- refresh ----------------
     def _refresh(self) -> None:
@@ -875,11 +978,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self._overlay_font_size.blockSignals(blocked)
 
         self._sync_combo(self._out_lang, [
-            LANG_LABELS.get(c, c) for c in self._controller.cfg.get("control", {}).get("languages", ["en"])
-        ], LANG_LABELS.get(st.target_language, st.target_language))
+            language_label(c) for c in self._controller.cfg.get("control", {}).get("languages", ["en"])
+        ], language_label(st.target_language))
         self._sync_combo(self._sub_lang, [
-            LANG_LABELS.get(c, c) for c in self._controller.cfg.get("inbound", {}).get("languages", ["ko"])
-        ], LANG_LABELS.get(st.inbound_language, st.inbound_language))
+            language_label(c) for c in self._controller.cfg.get("inbound", {}).get("languages", ["ko"])
+        ], language_label(st.inbound_language))
         self._sync_combo(self._ui_lang, [i18n.UI_LANG_LABELS[c] for c in i18n.LANGS],
                          i18n.UI_LANG_LABELS.get(st.ui_lang, st.ui_lang))
 

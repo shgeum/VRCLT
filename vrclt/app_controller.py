@@ -20,6 +20,7 @@ from . import i18n
 from .control.osc_listener import OscControl
 from .gemini.pipeline import InboundPipeline, OutboundPipeline
 from .gemini.session import FatalSessionError
+from .languages import language_code_from_text
 from .resources import resolve_font_path
 from .state import AppState
 from .subtitles import SubtitleStore
@@ -100,6 +101,23 @@ def _subtitle_tilt_from_matrix(rows) -> float:
     return math.degrees(math.atan2(float(rows[2][1]), float(rows[1][1])))
 
 
+def _language_list(values) -> list[str]:
+    if isinstance(values, str):
+        values = values.split(",")
+    seen = set()
+    out: list[str] = []
+    for value in values or []:
+        code = language_code_from_text(str(value).strip())
+        if not code:
+            continue
+        key = code.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(code)
+    return out
+
+
 class AppController:
     def __init__(self, cfg: dict):
         self._lock = threading.RLock()
@@ -137,10 +155,12 @@ class AppController:
         st = AppState(
             translation_on=dashboard.get(
                 "translation_on", cfg.get("outbound", {}).get("enabled", True)),
-            target_language=cfg.get("outbound", {}).get("target_language", "en"),
+            target_language=language_code_from_text(
+                cfg.get("outbound", {}).get("target_language", "en")),
             subtitles_on=dashboard.get(
                 "subtitles_on", cfg.get("inbound", {}).get("enabled", True)),
-            inbound_language=cfg.get("inbound", {}).get("target_language", "ko"),
+            inbound_language=language_code_from_text(
+                cfg.get("inbound", {}).get("target_language", "ko")),
             ui_lang=i18n.detect(cfg.get("ui", {}).get("lang", "")),
             text_only=self._is_text_only(cfg),
         )
@@ -197,10 +217,62 @@ class AppController:
         self.state.subtitles_on = value
 
     def set_target_language(self, value: str) -> None:
-        self.state.target_language = value
+        self.state.target_language = language_code_from_text(value)
 
     def set_inbound_language(self, value: str) -> None:
-        self.state.inbound_language = value
+        self.state.inbound_language = language_code_from_text(value)
+
+    def add_output_language(self, value: str) -> None:
+        code = language_code_from_text(str(value or "").strip())
+        if not code:
+            return
+        languages = _language_list(self.cfg.get("control", {}).get("languages", []))
+        if code.lower() not in {lang.lower() for lang in languages}:
+            languages.append(code)
+            self.set_output_languages(languages)
+        self.set_target_language(code)
+
+    def add_inbound_language(self, value: str) -> None:
+        code = language_code_from_text(str(value or "").strip())
+        if not code:
+            return
+        languages = _language_list(self.cfg.get("inbound", {}).get("languages", []))
+        if code.lower() not in {lang.lower() for lang in languages}:
+            languages.append(code)
+            self.set_inbound_languages(languages)
+        self.set_inbound_language(code)
+
+    def set_output_languages(self, values) -> None:
+        languages = _language_list(values)
+        if not languages:
+            return
+        with self._lock:
+            self.raw_cfg.setdefault("control", {})["languages"] = languages
+            self.cfg.setdefault("control", {})["languages"] = list(languages)
+            cfg = copy.deepcopy(self.raw_cfg)
+        try:
+            config_mod.save(cfg)
+            self._bump_config_revision()
+        except Exception:
+            log.debug("failed to persist output languages", exc_info=True)
+        if self.state.target_language not in languages:
+            self.state.target_language = languages[0]
+
+    def set_inbound_languages(self, values) -> None:
+        languages = _language_list(values)
+        if not languages:
+            return
+        with self._lock:
+            self.raw_cfg.setdefault("inbound", {})["languages"] = languages
+            self.cfg.setdefault("inbound", {})["languages"] = list(languages)
+            cfg = copy.deepcopy(self.raw_cfg)
+        try:
+            config_mod.save(cfg)
+            self._bump_config_revision()
+        except Exception:
+            log.debug("failed to persist inbound languages", exc_info=True)
+        if self.state.inbound_language not in languages:
+            self.state.inbound_language = languages[0]
 
     def set_ui_lang(self, value: str) -> None:
         self.state.ui_lang = value

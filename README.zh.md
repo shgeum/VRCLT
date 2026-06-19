@@ -277,9 +277,9 @@ VRChat 模式可使用:
 | `wrist_ui.enabled` | `true` | 启用 SteamVR 手腕菜单。 |
 | `wrist_ui.hand` | `left` | 佩戴菜单的手: `left` 或 `right`。 |
 | `wrist_ui.width_m` | `0.16` | 手腕菜单宽度，单位米。 |
-| `wrist_ui.offset` | `[-0.0557, -0.0265, 0.0952]` | 控制器坐标系中的 x,y,z 偏移。 |
-| `wrist_ui.tilt_deg` | `197.994` | 朝向脸部的额外倾斜。 |
-| `wrist_ui.roll_deg` | `-18.911` | 平面内旋转。`null` 时按左右手自动旋转。 |
+| `wrist_ui.offset` | `[-0.0509, -0.065, 0.0891]` | 控制器坐标系中的 x,y,z 偏移。 |
+| `wrist_ui.tilt_deg` | `185.636` | 朝向脸部的额外倾斜。 |
+| `wrist_ui.roll_deg` | `-28.633` | 平面内旋转。`null` 时按左右手自动旋转。 |
 | `wrist_ui.transform` | saved 3x4 pose | 在 VR 中重新定位后自动保存的精确 3x4 手腕姿态。 |
 | `wrist_ui.pointer_tilt_deg` | `50.0` | 指针射线向下倾斜角度。 |
 | `wrist_ui.font` | `bundled:NotoSansCJKkr-Bold.otf` | 手腕菜单字体。 |
