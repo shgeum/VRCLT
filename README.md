@@ -112,7 +112,8 @@ Dashboard:
 - VRChat/Discord mode toggle and VRChat text-only toggle
 - Translation ON/OFF
 - Subtitles ON/OFF
-- Output language and subtitle language
+- Output language and subtitle language, with searchable add controls for 70+
+  Gemini Live Translation languages
 - PC subtitle position controls and font size
 - Live subtitle preview
 
@@ -121,7 +122,7 @@ Settings:
 - API key and model
 - App mode and target processes
 - Microphone, translated voice output, monitor output, and inbound audio device
-- Language lists
+- Default target languages and saved language lists
 - Audio thresholds and VAD settings
 - OSC, chatbox, SteamVR overlay, and wrist UI options
 - UI language and UI mode
@@ -214,7 +215,7 @@ Outbound translation:
 | Key | Default | Description |
 | --- | --- | --- |
 | `outbound.enabled` | `true` | Enables the outbound pipeline. |
-| `outbound.target_language` | `ja` | Default language for translating your speech. |
+| `outbound.target_language` | `ja` | Default BCP-47 language code for translating your speech. The UI can search the 70+ Gemini Live Translation languages. |
 | `outbound.echo_target_language` | `false` | Also repeats source audio that is already in the target language. |
 | `outbound.mic_device` | `""` | Microphone device name substring. Empty uses the default input. |
 | `outbound.tts_device` | `CABLE Input` | Output device for translated voice and passthrough audio. |
@@ -229,8 +230,8 @@ Inbound subtitles:
 | Key | Default | Description |
 | --- | --- | --- |
 | `inbound.enabled` | `true` | Enables process-audio capture for subtitles. |
-| `inbound.target_language` | `ko` | Default subtitle target language. |
-| `inbound.languages` | `[ko, en, ja]` | Subtitle language list used by the wrist menu. |
+| `inbound.target_language` | `ko` | Default BCP-47 subtitle target language. The UI can search the 70+ Gemini Live Translation languages. |
+| `inbound.languages` | `[ko, en, ja]` | Saved subtitle language list used by the Dashboard and wrist menu. Add only the languages you need from the UI picker. |
 | `inbound.process` | `VRChat.exe` | Process name captured for inbound subtitles. |
 | `inbound.play_audio` | `false` | Plays translated inbound speech to your headphones. |
 | `inbound.audio_device` | `""` | Output device for inbound translated speech. Empty uses default output. |
@@ -274,7 +275,7 @@ Audio, control, UI, and wrist menu:
 | `control.osc_listen_port` | `9001` | Local OSC port for avatar control parameters. |
 | `control.param_enabled` | `VRCLT_Enabled` | Avatar bool parameter for translation on/off. |
 | `control.param_lang` | `VRCLT_Lang` | Avatar int parameter for language index. |
-| `control.languages` | `[ja, en, ko, zh-Hans, zh-Hant, yue, es, ru, fr, de]` | Output language list for avatar and wrist controls. |
+| `control.languages` | `[ja, en, ko, zh-Hans, zh-Hant, yue, es, ru, fr, de]` | Saved output language list for Dashboard, avatar, and wrist controls. Add only the languages you need from the UI picker. |
 | `control.feedback_chatbox` | `true` | Sends control-change feedback to the VRChat chatbox. |
 | `ui.mode` | `auto` | `auto`, `vr`, or `desktop`. |
 | `ui.lang` | `""` | UI display language. Empty means auto; valid values are `en`, `ko`, `ja`, `zh`. |

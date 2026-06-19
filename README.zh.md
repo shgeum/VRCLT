@@ -110,7 +110,7 @@ Copy-Item config.example.yaml config.yaml
 - VRChat/Discord 模式切换和 VRChat 仅文本切换
 - 翻译 ON/OFF
 - 字幕 ON/OFF
-- 输出语言和字幕语言
+- 输出语言和字幕语言，并可搜索添加 Gemini Live Translation 支持的 70+ 种语言
 - PC 字幕位置移动/重置和字号
 - 实时字幕预览
 
@@ -119,7 +119,7 @@ Copy-Item config.example.yaml config.yaml
 - API 密钥和模型
 - 应用模式和目标进程
 - 麦克风、翻译语音输出、监听输出和入站音频设备
-- 语言列表
+- 默认目标语言和已保存语言列表
 - 音频阈值和 VAD 设置
 - OSC、聊天框、SteamVR 叠加层和手腕 UI 选项
 - UI 语言和 UI 模式
@@ -209,7 +209,7 @@ VRChat 模式可使用:
 | 键 | 默认值 | 说明 |
 | --- | --- | --- |
 | `outbound.enabled` | `true` | 启用出站管线。 |
-| `outbound.target_language` | `ja` | 翻译你说话内容的默认目标语言。 |
+| `outbound.target_language` | `ja` | 翻译你说话内容的默认 BCP-47 语言代码。可在 UI 中搜索并选择 Gemini Live Translation 支持的 70+ 种语言。 |
 | `outbound.echo_target_language` | `false` | 对已经是目标语言的输入也进行复述。 |
 | `outbound.mic_device` | `""` | 麦克风设备名片段。留空时使用默认输入。 |
 | `outbound.tts_device` | `CABLE Input` | 翻译语音和原声直通的输出设备。 |
@@ -224,8 +224,8 @@ VRChat 模式可使用:
 | 键 | 默认值 | 说明 |
 | --- | --- | --- |
 | `inbound.enabled` | `true` | 启用用于字幕的进程音频捕获。 |
-| `inbound.target_language` | `ko` | 默认字幕目标语言。 |
-| `inbound.languages` | `[ko, en, ja]` | 手腕菜单中循环的字幕语言列表。 |
+| `inbound.target_language` | `ko` | 默认字幕 BCP-47 语言代码。可在 UI 中搜索并选择 Gemini Live Translation 支持的 70+ 种语言。 |
+| `inbound.languages` | `[ko, en, ja]` | 仪表板和手腕菜单使用的已保存字幕语言列表。只从 UI 选择器中添加需要的语言。 |
 | `inbound.process` | `VRChat.exe` | 入站字幕要捕获的进程名。 |
 | `inbound.play_audio` | `false` | 将入站翻译语音播放到你的耳机。 |
 | `inbound.audio_device` | `""` | 入站翻译语音输出设备。留空时使用默认输出。 |
@@ -269,7 +269,7 @@ VRChat 模式可使用:
 | `control.osc_listen_port` | `9001` | 接收角色控制参数的本地 OSC 端口。 |
 | `control.param_enabled` | `VRCLT_Enabled` | 翻译 ON/OFF 用角色 bool 参数。 |
 | `control.param_lang` | `VRCLT_Lang` | 语言索引用角色 int 参数。 |
-| `control.languages` | `[ja, en, ko, zh-Hans, zh-Hant, yue, es, ru, fr, de]` | 角色和手腕控制使用的输出语言列表。 |
+| `control.languages` | `[ja, en, ko, zh-Hans, zh-Hant, yue, es, ru, fr, de]` | 仪表板、角色和手腕控制使用的已保存输出语言列表。只从 UI 选择器中添加需要的语言。 |
 | `control.feedback_chatbox` | `true` | 将控制变更反馈发送到 VRChat 聊天框。 |
 | `ui.mode` | `auto` | `auto`、`vr` 或 `desktop`。 |
 | `ui.lang` | `""` | UI 显示语言。留空为自动，可用 `en`、`ko`、`ja`、`zh`。 |

@@ -110,7 +110,7 @@ Discord Canary または PTB を使う場合は、設定または `app.profiles.
 - VRChat/Discord モード切り替えと VRChat テキストのみ切り替え
 - 翻訳 ON/OFF
 - 字幕 ON/OFF
-- 出力言語と字幕言語
+- 出力言語と字幕言語、Gemini Live Translation の 70 以上の対応言語を検索して追加
 - PC 字幕の位置移動/リセットと文字サイズ
 - リアルタイム字幕プレビュー
 
@@ -119,7 +119,7 @@ Discord Canary または PTB を使う場合は、設定または `app.profiles.
 - API キーとモデル
 - アプリモードと対象プロセス
 - マイク、翻訳音声出力、モニター出力、受信側音声デバイス
-- 言語リスト
+- 既定の対象言語と保存済み言語リスト
 - 音声しきい値と VAD 設定
 - OSC、チャットボックス、SteamVR オーバーレイ、手首 UI オプション
 - UI 言語と UI モード
@@ -211,7 +211,7 @@ VR オーバーレイを強制的に有効にするには `ui.mode: vr`、無効
 | キー | 既定値 | 説明 |
 | --- | --- | --- |
 | `outbound.enabled` | `true` | 送信側パイプラインを有効にします。 |
-| `outbound.target_language` | `ja` | 自分の発話を翻訳する既定の対象言語。 |
+| `outbound.target_language` | `ja` | 自分の発話を翻訳する既定の BCP-47 言語コード。UI で Gemini Live Translation の 70 以上の対応言語を検索して選択できます。 |
 | `outbound.echo_target_language` | `false` | すでに対象言語の入力も復唱します。 |
 | `outbound.mic_device` | `""` | マイクデバイス名の一部。空なら既定入力を使います。 |
 | `outbound.tts_device` | `CABLE Input` | 翻訳音声と原音送出の出力デバイス。 |
@@ -226,8 +226,8 @@ VR オーバーレイを強制的に有効にするには `ui.mode: vr`、無効
 | キー | 既定値 | 説明 |
 | --- | --- | --- |
 | `inbound.enabled` | `true` | 字幕用のプロセス音声キャプチャを有効にします。 |
-| `inbound.target_language` | `ko` | 既定の字幕対象言語。 |
-| `inbound.languages` | `[ko, en, ja]` | 手首メニューで切り替える字幕言語リスト。 |
+| `inbound.target_language` | `ko` | 既定の字幕 BCP-47 言語コード。UI で Gemini Live Translation の 70 以上の対応言語を検索して選択できます。 |
+| `inbound.languages` | `[ko, en, ja]` | ダッシュボードと手首メニューで使う保存済み字幕言語リスト。UI の選択リストから必要な言語だけ追加します。 |
 | `inbound.process` | `VRChat.exe` | 受信側字幕用にキャプチャするプロセス名。 |
 | `inbound.play_audio` | `false` | 受信側の翻訳音声を自分のヘッドホンで再生します。 |
 | `inbound.audio_device` | `""` | 受信側翻訳音声の出力デバイス。空なら既定出力を使います。 |
@@ -271,7 +271,7 @@ VR オーバーレイを強制的に有効にするには `ui.mode: vr`、無効
 | `control.osc_listen_port` | `9001` | アバター制御パラメーターを受けるローカル OSC ポート。 |
 | `control.param_enabled` | `VRCLT_Enabled` | 翻訳 ON/OFF 用のアバター bool パラメーター。 |
 | `control.param_lang` | `VRCLT_Lang` | 言語インデックス用のアバター int パラメーター。 |
-| `control.languages` | `[ja, en, ko, zh-Hans, zh-Hant, yue, es, ru, fr, de]` | アバターと手首制御で使う出力言語リスト。 |
+| `control.languages` | `[ja, en, ko, zh-Hans, zh-Hant, yue, es, ru, fr, de]` | ダッシュボード、アバター、手首制御で使う保存済み出力言語リスト。UI の選択リストから必要な言語だけ追加します。 |
 | `control.feedback_chatbox` | `true` | 制御変更フィードバックを VRChat チャットボックスへ送ります。 |
 | `ui.mode` | `auto` | `auto`、`vr`、`desktop` のいずれか。 |
 | `ui.lang` | `""` | UI 表示言語。空なら自動。`en`、`ko`、`ja`、`zh` を使えます。 |

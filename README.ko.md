@@ -110,7 +110,7 @@ Discord Canary 또는 PTB를 사용한다면 설정 또는 `app.profiles.discord
 - VRChat/Discord 모드 토글과 VRChat 텍스트 전용 토글
 - 번역 ON/OFF
 - 자막 ON/OFF
-- 출력 언어와 자막 언어
+- 출력 언어와 자막 언어, Gemini Live Translation 70개 이상 지원 언어 검색/추가
 - PC 자막 위치 이동/리셋과 글자 크기 조절
 - 실시간 자막 미리보기
 
@@ -119,7 +119,7 @@ Discord Canary 또는 PTB를 사용한다면 설정 또는 `app.profiles.discord
 - API 키와 모델
 - 앱 모드와 대상 프로세스
 - 마이크, 번역 음성 출력, 모니터 출력, 인바운드 오디오 장치
-- 언어 목록
+- 기본 도착어와 저장된 언어 목록
 - 오디오 임계값과 VAD 설정
 - OSC, 챗박스, SteamVR 오버레이, 손목 UI 옵션
 - UI 언어와 UI 모드
@@ -209,7 +209,7 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 | 키 | 기본값 | 설명 |
 | --- | --- | --- |
 | `outbound.enabled` | `true` | 아웃바운드 파이프라인을 켭니다. |
-| `outbound.target_language` | `ja` | 내 말 번역의 기본 대상 언어. |
+| `outbound.target_language` | `ja` | 내 말 번역의 기본 BCP-47 언어 코드. UI에서 Gemini Live Translation 70개 이상 지원 언어를 검색해 선택할 수 있습니다. |
 | `outbound.echo_target_language` | `false` | 이미 대상 언어인 입력도 따라 말합니다. |
 | `outbound.mic_device` | `""` | 마이크 장치 이름 일부. 비어 있으면 기본 입력을 사용합니다. |
 | `outbound.tts_device` | `CABLE Input` | 번역 음성과 원음 전달을 내보낼 출력 장치. |
@@ -224,8 +224,8 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 | 키 | 기본값 | 설명 |
 | --- | --- | --- |
 | `inbound.enabled` | `true` | 자막용 프로세스 오디오 캡처를 켭니다. |
-| `inbound.target_language` | `ko` | 기본 자막 대상 언어. |
-| `inbound.languages` | `[ko, en, ja]` | 손목 메뉴에서 순환할 자막 언어 목록. |
+| `inbound.target_language` | `ko` | 기본 자막 BCP-47 언어 코드. UI에서 Gemini Live Translation 70개 이상 지원 언어를 검색해 선택할 수 있습니다. |
+| `inbound.languages` | `[ko, en, ja]` | 대시보드와 손목 메뉴에서 사용할 저장된 자막 언어 목록. UI 선택기에서 필요한 언어만 추가합니다. |
 | `inbound.process` | `VRChat.exe` | 인바운드 자막용으로 캡처할 프로세스 이름. |
 | `inbound.play_audio` | `false` | 인바운드 번역 음성을 내 헤드폰으로 재생합니다. |
 | `inbound.audio_device` | `""` | 인바운드 번역 음성 출력 장치. 비어 있으면 기본 출력을 사용합니다. |
@@ -269,7 +269,7 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 | `control.osc_listen_port` | `9001` | 아바타 제어 파라미터를 받을 로컬 OSC 포트. |
 | `control.param_enabled` | `VRCLT_Enabled` | 번역 ON/OFF용 아바타 bool 파라미터. |
 | `control.param_lang` | `VRCLT_Lang` | 언어 인덱스용 아바타 int 파라미터. |
-| `control.languages` | `[ja, en, ko, zh-Hans, zh-Hant, yue, es, ru, fr, de]` | 아바타와 손목 제어에서 사용할 출력 언어 목록. |
+| `control.languages` | `[ja, en, ko, zh-Hans, zh-Hant, yue, es, ru, fr, de]` | 대시보드, 아바타, 손목 제어에서 사용할 저장된 출력 언어 목록. UI 선택기에서 필요한 언어만 추가합니다. |
 | `control.feedback_chatbox` | `true` | 제어 변경 피드백을 VRChat 챗박스로 보냅니다. |
 | `ui.mode` | `auto` | `auto`, `vr`, `desktop` 중 하나. |
 | `ui.lang` | `""` | UI 표시 언어. 비어 있으면 자동이며 `en`, `ko`, `ja`, `zh`를 사용할 수 있습니다. |
