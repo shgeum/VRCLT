@@ -276,7 +276,7 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 | `ui.close_action` | `tray` | 창 닫기 버튼 동작: `tray` 또는 `exit`. |
 | `wrist_ui.enabled` | `true` | SteamVR 손목 메뉴를 켭니다. |
 | `wrist_ui.hand` | `left` | 메뉴를 착용할 손: `left` 또는 `right`. |
-| `wrist_ui.width_m` | `0.16` | 손목 메뉴 너비(m). |
+| `wrist_ui.width_m` | `0.18` | 손목 메뉴 너비(m). |
 | `wrist_ui.offset` | `[-0.0509, -0.065, 0.0891]` | 컨트롤러 좌표계의 x,y,z 오프셋. |
 | `wrist_ui.tilt_deg` | `185.636` | 얼굴 쪽으로 향하는 추가 기울기. |
 | `wrist_ui.roll_deg` | `-28.633` | 평면 회전. `null`이면 손에 따라 자동 회전합니다. |

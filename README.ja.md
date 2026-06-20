@@ -278,7 +278,7 @@ VR オーバーレイを強制的に有効にするには `ui.mode: vr`、無効
 | `ui.close_action` | `tray` | ウィンドウを閉じるボタンの動作: `tray` または `exit`。 |
 | `wrist_ui.enabled` | `true` | SteamVR 手首メニューを有効にします。 |
 | `wrist_ui.hand` | `left` | メニューを装着する手: `left` または `right`。 |
-| `wrist_ui.width_m` | `0.16` | 手首メニュー幅(m)。 |
+| `wrist_ui.width_m` | `0.18` | 手首メニュー幅(m)。 |
 | `wrist_ui.offset` | `[-0.0509, -0.065, 0.0891]` | コントローラー座標での x,y,z オフセット。 |
 | `wrist_ui.tilt_deg` | `185.636` | 顔の方へ向ける追加の傾き。 |
 | `wrist_ui.roll_deg` | `-28.633` | 平面内回転。`null` なら手に応じて自動回転。 |

@@ -276,7 +276,7 @@ VRChat 模式可使用:
 | `ui.close_action` | `tray` | 窗口关闭按钮行为: `tray` 或 `exit`。 |
 | `wrist_ui.enabled` | `true` | 启用 SteamVR 手腕菜单。 |
 | `wrist_ui.hand` | `left` | 佩戴菜单的手: `left` 或 `right`。 |
-| `wrist_ui.width_m` | `0.16` | 手腕菜单宽度，单位米。 |
+| `wrist_ui.width_m` | `0.18` | 手腕菜单宽度，单位米。 |
 | `wrist_ui.offset` | `[-0.0509, -0.065, 0.0891]` | 控制器坐标系中的 x,y,z 偏移。 |
 | `wrist_ui.tilt_deg` | `185.636` | 朝向脸部的额外倾斜。 |
 | `wrist_ui.roll_deg` | `-28.633` | 平面内旋转。`null` 时按左右手自动旋转。 |

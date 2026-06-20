@@ -134,7 +134,7 @@ DEFAULTS = {
     "wrist_ui": {                       # SteamVR wrist watch menu (XSOverlay style)
         "enabled": True,
         "hand": "left",                 # which wrist wears the watch
-        "width_m": 0.16,
+        "width_m": 0.18,
         "offset": [-0.0509, -0.065, 0.0891],  # x,y,z in controller space (meters)
         "tilt_deg": 185.636,            # extra tilt toward the face
         "roll_deg": -28.633,            # in-plane rotation; None = auto (+90 left / -90 right)

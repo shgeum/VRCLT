@@ -99,7 +99,7 @@ ui:
 wrist_ui:                     # SteamVR wrist watch menu
   enabled: true
   hand: left
-  width_m: 0.16
+  width_m: 0.18
   offset: [-0.0509, -0.065, 0.0891]
   tilt_deg: 185.636
   roll_deg: -28.633

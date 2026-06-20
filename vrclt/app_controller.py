@@ -31,7 +31,7 @@ log = logging.getLogger(__name__)
 def steamvr_running() -> bool:
     for p in psutil.process_iter(["name"]):
         n = (p.info["name"] or "").lower()
-        if n in ("vrmonitor.exe", "vrcompositor.exe"):
+        if n in ("vrmonitor.exe", "vrcompositor.exe", "vrserver.exe"):
             return True
     return False
 
@@ -63,11 +63,15 @@ def make_wrist_panel(cfg, state, get_status, on_text_only_toggle=lambda enabled:
                      on_transform_changed=lambda matrix, reset=False: None):
     from .vr.wrist_ui import WristPanel
     w = cfg.get("wrist_ui", {})
+    try:
+        width_m = max(0.18, float(w.get("width_m", 0.18) or 0.18))
+    except Exception:
+        width_m = 0.18
     return WristPanel(
         state, cfg.get("control", {}).get("languages", ["en"]),
         inbound_languages=cfg.get("inbound", {}).get("languages", ["ko", "en"]),
         hand=w.get("hand", "left"),
-        width_m=w.get("width_m", 0.16),
+        width_m=width_m,
         offset=w.get("offset", [0.0, 0.02, 0.12]),
         tilt_deg=w.get("tilt_deg", 0.0),
         roll_deg=w.get("roll_deg", None),
@@ -457,11 +461,14 @@ class AppController:
         thread = self._thread
         loop = self._loop
         stop_event = self._stop_event
+        renderer = self._renderer
         if loop is not None and stop_event is not None:
             try:
                 loop.call_soon_threadsafe(stop_event.set)
             except Exception:
                 pass
+        if renderer is not None:
+            renderer.stop()
         if thread is not None and thread.is_alive():
             thread.join(timeout=timeout)
             if thread.is_alive():
@@ -547,8 +554,6 @@ class AppController:
                 try:
                     if control:
                         control.stop()
-                    if renderer:
-                        renderer.stop()
                 finally:
                     try:
                         loop.close()

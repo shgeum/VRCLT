@@ -282,7 +282,7 @@ Audio, control, UI, and wrist menu:
 | `ui.close_action` | `tray` | Window close button behavior: `tray` or `exit`. |
 | `wrist_ui.enabled` | `true` | Enables the SteamVR wrist menu. |
 | `wrist_ui.hand` | `left` | Wrist that wears the menu: `left` or `right`. |
-| `wrist_ui.width_m` | `0.16` | Wrist menu width in meters. |
+| `wrist_ui.width_m` | `0.18` | Wrist menu width in meters. |
 | `wrist_ui.offset` | `[-0.0509, -0.065, 0.0891]` | Wrist menu x,y,z offset in controller space. |
 | `wrist_ui.tilt_deg` | `185.636` | Extra tilt toward the face. |
 | `wrist_ui.roll_deg` | `-28.633` | In-plane rotation. `null` uses automatic per-hand rotation. |

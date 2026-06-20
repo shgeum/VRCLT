@@ -76,6 +76,8 @@ class SubtitlePanel:
     def _on_state(self, field: str, _value) -> None:
         if field == "reset_positions":
             self._reset_requested = True
+        elif field == "edit_mode" and _value:
+            self._prev_grip = False
         self._dirty.set()
 
     # ---------------- component lifecycle ----------------
