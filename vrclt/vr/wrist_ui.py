@@ -454,6 +454,102 @@ class WristPanel:
                 return font
         return self._font_tiny
 
+    @staticmethod
+    def _line_height(draw, font) -> int:
+        try:
+            box = draw.textbbox((0, 0), "Ag", font=font)
+            return max(1, int(box[3] - box[1]))
+        except Exception:
+            return max(1, int(getattr(font, "size", 20)))
+
+    def _wrap_to_width(self, draw, text: str, font, max_width: float) -> list[str]:
+        if draw.textlength(text, font=font) <= max_width:
+            return [text]
+
+        if " " in text:
+            parts = text.split(" ")
+            sep = " "
+        else:
+            parts = list(text)
+            sep = ""
+
+        lines: list[str] = []
+        line = ""
+        for part in parts:
+            candidate = part if not line else f"{line}{sep}{part}"
+            if draw.textlength(candidate, font=font) <= max_width:
+                line = candidate
+                continue
+            if line:
+                lines.append(line)
+                line = ""
+            if draw.textlength(part, font=font) <= max_width:
+                line = part
+                continue
+            chunk = ""
+            for ch in part:
+                candidate = f"{chunk}{ch}"
+                if chunk and draw.textlength(candidate, font=font) > max_width:
+                    lines.append(chunk)
+                    chunk = ch
+                else:
+                    chunk = candidate
+            line = chunk
+        if line:
+            lines.append(line)
+        return lines or [text]
+
+    def _clip_line(self, draw, text: str, font, max_width: float) -> str:
+        if draw.textlength(text, font=font) <= max_width:
+            return text
+        suffix = "..."
+        while text and draw.textlength(text + suffix, font=font) > max_width:
+            text = text[:-1]
+        return (text + suffix) if text else suffix
+
+    def _draw_fit_text(self, d, box, text: str, *, fonts=None, fill=COL_TEXT,
+                       max_lines: int = 1, pad_x: int = 8, pad_y: int = 4,
+                       line_spacing: int = 2) -> None:
+        x0, y0, x1, y1 = box
+        max_width = max(1, x1 - x0 - pad_x * 2)
+        max_height = max(1, y1 - y0 - pad_y * 2)
+        candidates = fonts or (self._font_mid, self._font_small, self._font_tiny)
+
+        chosen_font = candidates[-1]
+        chosen_lines = [text]
+        chosen_spacing = 0
+        for font in candidates:
+            line_h = self._line_height(d, font)
+            spacing = line_spacing if max_lines > 1 else 0
+            lines = self._wrap_to_width(d, text, font, max_width)
+            if len(lines) > max_lines:
+                continue
+            total_h = len(lines) * line_h + max(0, len(lines) - 1) * spacing
+            if total_h <= max_height and all(d.textlength(line, font=font) <= max_width
+                                             for line in lines):
+                chosen_font = font
+                chosen_lines = lines
+                chosen_spacing = spacing
+                break
+
+        line_h = self._line_height(d, chosen_font)
+        lines = self._wrap_to_width(d, text, chosen_font, max_width)
+        truncated = len(lines) > max_lines
+        lines = lines[:max_lines]
+        if truncated and lines:
+            lines[-1] = self._clip_line(d, lines[-1], chosen_font, max_width)
+        lines = [self._clip_line(d, line, chosen_font, max_width) for line in lines]
+        total_h = len(lines) * line_h + max(0, len(lines) - 1) * chosen_spacing
+        while len(lines) > 1 and total_h > max_height:
+            lines = lines[:-1]
+            lines[-1] = self._clip_line(d, lines[-1], chosen_font, max_width)
+            total_h = len(lines) * line_h + max(0, len(lines) - 1) * chosen_spacing
+        y = (y0 + y1 - total_h) / 2
+        cx = (x0 + x1) / 2
+        for line in lines:
+            d.text((cx, y + line_h / 2), line, font=chosen_font, fill=fill, anchor="mm")
+            y += line_h + chosen_spacing
+
     def _lang_block(self, d, prev_box, lang_box, next_box, code: str, caption: str) -> None:
         for box, label in ((prev_box, "◀"), (next_box, "▶")):
             d.rounded_rectangle(box, 16, fill=COL_BTN)
@@ -461,11 +557,14 @@ class WristPanel:
                    label, font=self._font_mid, fill=COL_TEXT, anchor="mm")
         d.rounded_rectangle(lang_box, 16, fill=(28, 30, 38, 255))
         label = LANG_LABELS.get(code, code)
-        font = self._fit_font(d, label, lang_box[2] - lang_box[0] - 12)
-        d.text(((lang_box[0] + lang_box[2]) // 2, (lang_box[1] + lang_box[3]) // 2 - 18),
-               label, font=font, fill=COL_TEXT, anchor="mm")
-        d.text(((lang_box[0] + lang_box[2]) // 2, lang_box[3] - 30),
-               caption, font=self._font_tiny, fill=COL_DIM, anchor="mm")
+        self._draw_fit_text(
+            d, (lang_box[0] + 4, lang_box[1] + 20, lang_box[2] - 4, lang_box[3] - 54),
+            label, fonts=(self._font_big, self._font_mid, self._font_small, self._font_tiny),
+            max_lines=1, pad_x=2, pad_y=2)
+        self._draw_fit_text(
+            d, (lang_box[0] + 4, lang_box[3] - 54, lang_box[2] - 4, lang_box[3] - 8),
+            caption, fonts=(self._font_tiny,), fill=COL_DIM, max_lines=2,
+            pad_x=2, pad_y=1, line_spacing=0)
 
     def _render(self, connected: bool, dragging: bool) -> Image.Image:
         lang = self._state.ui_lang
@@ -481,42 +580,39 @@ class WristPanel:
         # UI display-language cycle
         d.rounded_rectangle(BTN_UILANG, 12, fill=COL_BTN)
         ui_label = UI_LANG_LABELS.get(lang, lang)
-        d.text(((BTN_UILANG[0] + BTN_UILANG[2]) // 2, (BTN_UILANG[1] + BTN_UILANG[3]) // 2),
-               ui_label, font=self._fit_font(
-                   d, ui_label, BTN_UILANG[2] - BTN_UILANG[0] - 10,
-                   (self._font_small, self._font_tiny)),
-               fill=COL_TEXT, anchor="mm")
+        self._draw_fit_text(d, BTN_UILANG, ui_label,
+                            fonts=(self._font_small, self._font_tiny), max_lines=2,
+                            pad_x=5, pad_y=2, line_spacing=0)
         text_only = self._state.text_only
         d.rounded_rectangle(BTN_TEXT_ONLY, 12, fill=COL_SUB_ON if text_only else COL_BTN)
         text_label = tr(lang, "btn_text_only_on" if text_only else "btn_text_only_off")
-        d.text(((BTN_TEXT_ONLY[0] + BTN_TEXT_ONLY[2]) // 2,
-                (BTN_TEXT_ONLY[1] + BTN_TEXT_ONLY[3]) // 2),
-               text_label, font=self._fit_font(
-                   d, text_label, BTN_TEXT_ONLY[2] - BTN_TEXT_ONLY[0] - 12,
-                   (self._font_small, self._font_tiny)),
-               fill=COL_TEXT, anchor="mm")
+        self._draw_fit_text(d, BTN_TEXT_ONLY, text_label,
+                            fonts=(self._font_small, self._font_tiny), max_lines=2,
+                            pad_x=6, pad_y=2, line_spacing=0)
         d.rounded_rectangle(BTN_EDIT, 12, fill=COL_DRAG if edit else COL_BTN)
-        d.text(((BTN_EDIT[0] + BTN_EDIT[2]) // 2, (BTN_EDIT[1] + BTN_EDIT[3]) // 2),
-               tr(lang, "edit_moving" if dragging else "edit_mode"),
-               font=self._fit_font(d, tr(lang, "edit_moving" if dragging else "edit_mode"),
-                                   BTN_EDIT[2] - BTN_EDIT[0] - 12,
-                                   (self._font_small, self._font_tiny)),
-               fill=COL_TEXT, anchor="mm")
+        edit_label = tr(lang, "edit_moving" if dragging else "edit_mode")
+        self._draw_fit_text(d, BTN_EDIT, edit_label,
+                            fonts=(self._font_small, self._font_tiny), max_lines=2,
+                            pad_x=5, pad_y=2, line_spacing=0)
         d.rounded_rectangle(BTN_RESET, 12, fill=COL_BTN)
-        d.text(((BTN_RESET[0] + BTN_RESET[2]) // 2, (BTN_RESET[1] + BTN_RESET[3]) // 2),
-               tr(lang, "pos_reset"),
-               font=self._fit_font(d, tr(lang, "pos_reset"), BTN_RESET[2] - BTN_RESET[0] - 12,
-                                   (self._font_small, self._font_tiny)),
-               fill=COL_TEXT, anchor="mm")
+        self._draw_fit_text(d, BTN_RESET, tr(lang, "pos_reset"),
+                            fonts=(self._font_small, self._font_tiny), max_lines=2,
+                            pad_x=5, pad_y=2, line_spacing=0)
 
         on = self._state.translation_on
         d.rounded_rectangle(BTN_TOGGLE, 18, fill=COL_ON if on else COL_OFF)
         cx = (BTN_TOGGLE[0] + BTN_TOGGLE[2]) // 2
         cy = (BTN_TOGGLE[1] + BTN_TOGGLE[3]) // 2
-        d.text((cx, cy - 18), tr(lang, "btn_trans_on" if on else "btn_trans_off"),
-               font=self._font_mid, fill=COL_TEXT, anchor="mm")
-        d.text((cx, cy + 34), tr(lang, "my_to_other"), font=self._font_small,
-               fill=COL_TEXT, anchor="mm")
+        self._draw_fit_text(d, (BTN_TOGGLE[0] + 10, BTN_TOGGLE[1] + 36,
+                               BTN_TOGGLE[2] - 10, cy + 16),
+                            tr(lang, "btn_trans_on" if on else "btn_trans_off"),
+                            fonts=(self._font_mid, self._font_small, self._font_tiny),
+                            max_lines=1, pad_x=0, pad_y=0)
+        self._draw_fit_text(d, (BTN_TOGGLE[0] + 10, cy + 18,
+                               BTN_TOGGLE[2] - 10, BTN_TOGGLE[3] - 22),
+                            tr(lang, "my_to_other"),
+                            fonts=(self._font_small, self._font_tiny),
+                            max_lines=2, pad_x=0, pad_y=0, line_spacing=0)
         self._lang_block(d, BTN_PREV, BTN_LANG, BTN_NEXT,
                          self._state.target_language, tr(lang, "out_lang"))
 
@@ -524,10 +620,16 @@ class WristPanel:
         d.rounded_rectangle(BTN_SUB_TOGGLE, 18, fill=COL_SUB_ON if sub_on else COL_BTN)
         cx = (BTN_SUB_TOGGLE[0] + BTN_SUB_TOGGLE[2]) // 2
         cy = (BTN_SUB_TOGGLE[1] + BTN_SUB_TOGGLE[3]) // 2
-        d.text((cx, cy - 18), tr(lang, "btn_sub_on" if sub_on else "btn_sub_off"),
-               font=self._font_mid, fill=COL_TEXT, anchor="mm")
-        d.text((cx, cy + 34), tr(lang, "other_to_sub"), font=self._font_small,
-               fill=COL_TEXT, anchor="mm")
+        self._draw_fit_text(d, (BTN_SUB_TOGGLE[0] + 10, BTN_SUB_TOGGLE[1] + 36,
+                               BTN_SUB_TOGGLE[2] - 10, cy + 16),
+                            tr(lang, "btn_sub_on" if sub_on else "btn_sub_off"),
+                            fonts=(self._font_mid, self._font_small, self._font_tiny),
+                            max_lines=1, pad_x=0, pad_y=0)
+        self._draw_fit_text(d, (BTN_SUB_TOGGLE[0] + 10, cy + 18,
+                               BTN_SUB_TOGGLE[2] - 10, BTN_SUB_TOGGLE[3] - 22),
+                            tr(lang, "other_to_sub"),
+                            fonts=(self._font_small, self._font_tiny),
+                            max_lines=2, pad_x=0, pad_y=0, line_spacing=0)
         self._lang_block(d, BTN_SUB_PREV, BTN_SUB_LANG, BTN_SUB_NEXT,
                          self._state.inbound_language, tr(lang, "sub_lang"))
         return img
