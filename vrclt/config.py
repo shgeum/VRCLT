@@ -12,6 +12,17 @@ APP_MODES = ("vrchat", "discord")
 CLOSE_ACTIONS = ("tray", "exit")
 APPDATA_DIR = Path(os.environ.get("LOCALAPPDATA", ".")) / "vrclt"
 
+_PROFILE_RUNTIME_FIELDS = {
+    "process": ("inbound", "process"),
+    "ui_mode": ("ui", "mode"),
+    "voice_output": ("outbound", "voice_output"),
+    "passthrough_while_translating": ("outbound", "passthrough_while_translating"),
+    "chatbox": ("outbound", "chatbox"),
+    "osc_control": ("control", "enabled"),
+    "vr_overlay": ("overlay", "enabled"),
+    "wrist_ui": ("wrist_ui", "enabled"),
+}
+
 if os.environ.get("VRCLT_CONFIG"):
     CONFIG_PATH = Path(os.environ["VRCLT_CONFIG"])
 elif getattr(sys, "frozen", False):
@@ -157,7 +168,50 @@ def load() -> dict:
     return cfg
 
 
-def apply_app_profile(cfg: dict, mode: str | None = None) -> dict:
+def _apply_profile_value(cfg: dict, section: str, key: str, value, force: bool) -> None:
+    target = cfg.setdefault(section, {})
+    if force or key not in target:
+        target[key] = value
+
+
+def _profile_value(profile: dict, key: str):
+    value = profile[key]
+    if key not in ("process", "ui_mode"):
+        return bool(value)
+    return value
+
+
+def profile_runtime_looks_stale(cfg: dict, mode: str | None = None) -> bool:
+    app = cfg.get("app", {})
+    selected = (mode or app.get("mode") or "vrchat").strip().lower()
+    if selected == "vrc_text":
+        selected = "vrchat"
+    profiles = _merge(DEFAULTS["app"]["profiles"], app.get("profiles", {}))
+    selected_profile = profiles.get(selected)
+    if not selected_profile:
+        return False
+    for name, profile in profiles.items():
+        if name == selected:
+            continue
+        total = 0
+        matches = 0
+        for profile_key, (section, key) in _PROFILE_RUNTIME_FIELDS.items():
+            if profile_key not in profile or profile_key not in selected_profile:
+                continue
+            other_value = _profile_value(profile, profile_key)
+            selected_value = _profile_value(selected_profile, profile_key)
+            if other_value == selected_value:
+                continue
+            runtime_value = cfg.get(section, {}).get(key)
+            total += 1
+            if runtime_value == other_value:
+                matches += 1
+        if total >= 4 and matches == total:
+            return True
+    return False
+
+
+def apply_app_profile(cfg: dict, mode: str | None = None, *, force: bool = False) -> dict:
     cfg = copy.deepcopy(cfg)
     app = cfg.setdefault("app", {})
     selected = (mode or app.get("mode") or "vrchat").strip().lower()
@@ -174,22 +228,24 @@ def apply_app_profile(cfg: dict, mode: str | None = None) -> dict:
 
     app["mode"] = selected
     if profile.get("process"):
-        cfg.setdefault("inbound", {})["process"] = profile["process"]
+        _apply_profile_value(cfg, "inbound", "process", profile["process"], force)
     if profile.get("ui_mode"):
-        cfg.setdefault("ui", {})["mode"] = profile["ui_mode"]
+        _apply_profile_value(cfg, "ui", "mode", profile["ui_mode"], force)
     if "voice_output" in profile:
-        cfg.setdefault("outbound", {})["voice_output"] = bool(profile["voice_output"])
+        _apply_profile_value(cfg, "outbound", "voice_output",
+                             bool(profile["voice_output"]), force)
     if "passthrough_while_translating" in profile:
-        cfg.setdefault("outbound", {})["passthrough_while_translating"] = bool(
-            profile["passthrough_while_translating"])
+        _apply_profile_value(
+            cfg, "outbound", "passthrough_while_translating",
+            bool(profile["passthrough_while_translating"]), force)
     if "chatbox" in profile:
-        cfg.setdefault("outbound", {})["chatbox"] = bool(profile["chatbox"])
+        _apply_profile_value(cfg, "outbound", "chatbox", bool(profile["chatbox"]), force)
     if "osc_control" in profile:
-        cfg.setdefault("control", {})["enabled"] = bool(profile["osc_control"])
+        _apply_profile_value(cfg, "control", "enabled", bool(profile["osc_control"]), force)
     if "vr_overlay" in profile:
-        cfg.setdefault("overlay", {})["enabled"] = bool(profile["vr_overlay"])
+        _apply_profile_value(cfg, "overlay", "enabled", bool(profile["vr_overlay"]), force)
     if "wrist_ui" in profile:
-        cfg.setdefault("wrist_ui", {})["enabled"] = bool(profile["wrist_ui"])
+        _apply_profile_value(cfg, "wrist_ui", "enabled", bool(profile["wrist_ui"]), force)
     if selected != "vrchat":
         cfg.setdefault("outbound", {})["text_only"] = False
     _apply_outbound_output_mode(cfg)

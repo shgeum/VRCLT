@@ -20,6 +20,7 @@ def cmd_run(args) -> int:
         cfg = config_mod.load()
         if args.app:
             cfg.setdefault("app", {})["mode"] = args.app
+            cfg = config_mod.apply_app_profile(cfg, force=True)
         log_file = logging_setup.setup(cfg.get("log_level", "INFO"))
         log.info("log file: %s", log_file)
         log.info("config path: %s", config_mod.CONFIG_PATH)

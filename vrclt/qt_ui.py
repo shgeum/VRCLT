@@ -721,7 +721,11 @@ class MainWindow(QtWidgets.QMainWindow):
             key_error = config_mod.api_key_validation_error(cfg.get("api_key", ""))
             if key_error:
                 raise ValueError(self._tr("err_api_key_url"))
-            cfg = config_mod.apply_app_profile(cfg)
+            force_profile = (
+                cfg.get("app", {}).get("mode")
+                != self._controller.raw_cfg.get("app", {}).get("mode")
+            )
+            cfg = config_mod.apply_app_profile(cfg, force=force_profile)
             config_mod.save(cfg)
         except Exception as e:
             self._settings_note.setText(f"{self._tr('msg_save_failed')}: {e}")
@@ -755,16 +759,20 @@ class MainWindow(QtWidgets.QMainWindow):
     def _apply_app_mode(self, mode: str) -> None:
         mode = (mode or "").strip()
         current = self._controller.cfg.get("app", {}).get("mode", "vrchat")
-        if not mode or mode == current or self._app_mode_applying:
+        if not mode or self._app_mode_applying:
             self._set_app_mode_checked(current)
             return
         try:
             cfg = copy.deepcopy(self._controller.raw_cfg)
             cfg.setdefault("app", {})["mode"] = mode
-            cfg = config_mod.apply_app_profile(cfg)
+            cfg = config_mod.apply_app_profile(cfg, force=True)
             config_mod.save(cfg)
         except Exception as e:
             self._dashboard_note.setText(f"{self._tr('msg_mode_failed')}: {e}")
+            self._set_app_mode_checked(current)
+            return
+        if mode == current and self._profile_runtime_snapshot(cfg) == \
+                self._profile_runtime_snapshot(self._controller.cfg):
             self._set_app_mode_checked(current)
             return
 
@@ -797,6 +805,20 @@ class MainWindow(QtWidgets.QMainWindow):
         for key, btn in self._app_mode_buttons.items():
             btn.setChecked(key == mode)
 
+    @staticmethod
+    def _profile_runtime_snapshot(cfg: dict) -> tuple:
+        paths = (
+            "inbound.process",
+            "ui.mode",
+            "outbound.voice_output",
+            "outbound.passthrough_while_translating",
+            "outbound.chatbox",
+            "control.enabled",
+            "overlay.enabled",
+            "wrist_ui.enabled",
+        )
+        return tuple(_get_path(cfg, path) for path in paths)
+
     def _apply_text_only(self, enabled: bool) -> None:
         if self._app_mode_applying:
             self._sync_text_only()
@@ -806,7 +828,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if enabled:
                 cfg.setdefault("app", {})["mode"] = "vrchat"
             cfg.setdefault("outbound", {})["text_only"] = bool(enabled)
-            cfg = config_mod.apply_app_profile(cfg)
+            cfg = config_mod.apply_app_profile(cfg, force=True)
             config_mod.save(cfg)
         except Exception as e:
             self._dashboard_note.setText(f"{self._tr('msg_text_only_failed')}: {e}")

@@ -266,10 +266,10 @@ class WristPanel:
                     except Exception:
                         pass
 
-                    # panels only move in edit mode - everyday grips (game
-                    # grabbing, gestures) must never relocate the UI
+                    # The wrist panel has its own move mode so subtitle
+                    # placement is not affected by watch adjustments.
                     if grip and not self._prev_grip and on_panel and \
-                            not self._dragging and self._state.edit_mode:
+                            not self._dragging and self._state.wrist_edit_mode:
                         self._drag_offset = np.linalg.inv(f4) @ w4 @ self._overlay_mat
                         self._dragging = True
                         self._haptic(vrsys, openvr, self._finger_idx, 2000)
@@ -407,14 +407,13 @@ class WristPanel:
             st.inbound_language = self._cycle(self._inbound_languages, st.inbound_language,
                                               1 if button == "sub_next" else -1)
         elif button == "edit":
-            st.edit_mode = not st.edit_mode
+            st.wrist_edit_mode = not st.wrist_edit_mode
         elif button == "uilang":
             st.ui_lang = self._cycle(UI_LANGS, st.ui_lang, 1)
         elif button == "text_only":
             self._on_text_only_toggle(not st.text_only)
         elif button == "reset":
             self._reset_requested = True
-            st.request_position_reset()  # the subtitle panel listens for this
 
     @staticmethod
     def _cycle(langs: list[str], cur: str, step: int) -> str:
@@ -470,7 +469,7 @@ class WristPanel:
 
     def _render(self, connected: bool, dragging: bool) -> Image.Image:
         lang = self._state.ui_lang
-        edit = self._state.edit_mode
+        edit = self._state.wrist_edit_mode
         img = Image.new("RGBA", (TEX_W, TEX_H), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
         d.rounded_rectangle((0, 0, TEX_W - 1, TEX_H - 1), 30, fill=COL_BG,

@@ -17,6 +17,7 @@ class AppState:
         self._ui_lang = ui_lang
         self._text_only = text_only
         self._edit_mode = False
+        self._wrist_edit_mode = False
         self._listeners = []
 
     def subscribe(self, fn) -> None:
@@ -82,16 +83,45 @@ class AppState:
     @edit_mode.setter
     def edit_mode(self, value: bool) -> None:
         value = bool(value)
+        notify_wrist = False
         with self._lock:
             changed = value != getattr(self, "_edit_mode", False)
             self._edit_mode = value
+            if value and self._wrist_edit_mode:
+                self._wrist_edit_mode = False
+                notify_wrist = True
         if changed:
-            log.info("state: edit (move) mode %s", "ON" if value else "OFF")
+            log.info("state: subtitle edit (move) mode %s", "ON" if value else "OFF")
             self._notify("edit_mode", value)
+        if notify_wrist:
+            log.info("state: wrist edit (move) mode OFF")
+            self._notify("wrist_edit_mode", False)
+
+    @property
+    def wrist_edit_mode(self) -> bool:
+        with self._lock:
+            return self._wrist_edit_mode
+
+    @wrist_edit_mode.setter
+    def wrist_edit_mode(self, value: bool) -> None:
+        value = bool(value)
+        notify_subtitle = False
+        with self._lock:
+            changed = value != getattr(self, "_wrist_edit_mode", False)
+            self._wrist_edit_mode = value
+            if value and self._edit_mode:
+                self._edit_mode = False
+                notify_subtitle = True
+        if changed:
+            log.info("state: wrist edit (move) mode %s", "ON" if value else "OFF")
+            self._notify("wrist_edit_mode", value)
+        if notify_subtitle:
+            log.info("state: subtitle edit (move) mode OFF")
+            self._notify("edit_mode", False)
 
     def request_position_reset(self) -> None:
-        """Reset all overlay positions (wrist panel + subtitles) to defaults."""
-        log.info("state: overlay position reset requested")
+        """Reset subtitle overlay positions to defaults."""
+        log.info("state: subtitle position reset requested")
         self._notify("reset_positions", True)
 
     @property

@@ -43,6 +43,22 @@ def resolve_ui_mode(cfg: dict) -> str:
     return mode if mode in ("vr", "desktop") else "vr"
 
 
+def vr_panels_enabled(cfg: dict) -> bool:
+    if cfg.get("wrist_ui", {}).get("enabled", True):
+        return True
+    return bool(
+        cfg.get("inbound", {}).get("enabled", False)
+        and cfg.get("overlay", {}).get("enabled", True)
+    )
+
+
+def wants_vr_renderer(cfg: dict) -> bool:
+    mode = cfg.get("ui", {}).get("mode", "auto")
+    if mode == "desktop":
+        return False
+    return vr_panels_enabled(cfg)
+
+
 def make_wrist_panel(cfg, state, get_status, on_text_only_toggle=lambda enabled: None,
                      on_transform_changed=lambda matrix, reset=False: None):
     from .vr.wrist_ui import WristPanel
@@ -123,7 +139,15 @@ class AppController:
         self._lock = threading.RLock()
         self._listeners: list[Callable[[], None]] = []
         self.raw_cfg = copy.deepcopy(cfg)
-        self.cfg = config_mod.apply_app_profile(self.raw_cfg)
+        force_profile = config_mod.profile_runtime_looks_stale(self.raw_cfg)
+        self.cfg = config_mod.apply_app_profile(self.raw_cfg, force=force_profile)
+        if force_profile:
+            self.raw_cfg = copy.deepcopy(self.cfg)
+            try:
+                config_mod.save(self.raw_cfg)
+                log.info("repaired stale app profile runtime settings")
+            except Exception:
+                log.debug("failed to persist repaired app profile settings", exc_info=True)
         self.state = self._make_state(self.cfg)
         self.store = self._make_store(self.cfg)
         self.config_revision = 0
@@ -381,7 +405,7 @@ class AppController:
                 if value:
                     cfg.setdefault("app", {})["mode"] = "vrchat"
                 cfg.setdefault("outbound", {})["text_only"] = value
-                cfg = config_mod.apply_app_profile(cfg)
+                cfg = config_mod.apply_app_profile(cfg, force=True)
                 config_mod.save(cfg)
             except Exception as e:
                 log.exception("failed to apply text-only mode")
@@ -480,7 +504,7 @@ class AppController:
             control.start()
 
         renderer = None
-        if resolve_ui_mode(cfg) == "vr":
+        if wants_vr_renderer(cfg):
             panels = []
             o = cfg.get("overlay", {})
             if inbound and o.get("enabled", True):
