@@ -78,8 +78,9 @@ class VrRenderer:
     """Drives panel components: each implements setup(ctx) -> bool,
     tick(ctx, now), teardown(ctx)."""
 
-    def __init__(self, components: list):
+    def __init__(self, components: list, can_start=lambda: True):
         self._components = components
+        self._can_start = can_start
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -98,6 +99,7 @@ class VrRenderer:
         return self._stop.is_set()
 
     def _main(self) -> None:
+        waiting_logged = False
         while not self._stop.is_set():
             retry = 2.0
             openvr = None
@@ -105,6 +107,19 @@ class VrRenderer:
             glfw_up = False
             ctx = None
             ready = []
+            try:
+                can_start = bool(self._can_start())
+            except Exception:
+                log.debug("VR renderer start check failed", exc_info=True)
+                can_start = False
+            if not can_start:
+                if not waiting_logged:
+                    log.info("VR renderer: waiting for SteamVR")
+                    waiting_logged = True
+                if self._stop.wait(RETRY_SEC):
+                    return
+                continue
+            waiting_logged = False
             try:
                 openvr = openvr_ctx.acquire()
             except Exception as e:

@@ -31,7 +31,7 @@ log = logging.getLogger(__name__)
 def steamvr_running() -> bool:
     for p in psutil.process_iter(["name"]):
         n = (p.info["name"] or "").lower()
-        if n in ("vrmonitor.exe", "vrserver.exe"):
+        if n in ("vrmonitor.exe", "vrcompositor.exe"):
             return True
     return False
 
@@ -519,7 +519,7 @@ class AppController:
                     on_transform_changed=self.set_wrist_transform))
             if panels:
                 from .vr.render import VrRenderer
-                renderer = VrRenderer(panels)
+                renderer = VrRenderer(panels, can_start=steamvr_running)
                 renderer.start()
 
         self._pipeline = pipeline
