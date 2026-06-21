@@ -4,7 +4,7 @@ Display language is held in AppState.ui_lang so a change in any UI propagates
 live to the others.
 
 This is the *display* language (chrome), separate from the translation target
-languages (those keep their native names via LANG_LABELS in each UI).
+languages (those use the shared language catalog in UI controls).
 """
 import logging
 
@@ -59,6 +59,8 @@ STRINGS = {
                                   "en": "Live subtitles appear here.",
                                   "ja": "リアルタイム字幕がここに表示されます。",
                                   "zh": "实时字幕会显示在这里。"},
+    "desktop_subtitle_title": {"ko": "vrclt 자막", "en": "vrclt subtitles",
+                               "ja": "vrclt 字幕", "zh": "vrclt 字幕"},
     "card_control": {"ko": "제어", "en": "Control", "ja": "操作", "zh": "控制"},
     "ctl_my_translate": {"ko": "내 말 번역", "en": "Translate my speech",
                          "ja": "自分の発話を翻訳", "zh": "翻译我的发言"},
@@ -85,6 +87,7 @@ STRINGS = {
     "edit_done": {"ko": "이동 완료", "en": "Done", "ja": "完了", "zh": "完成"},
     "pos_reset": {"ko": "리셋", "en": "Reset", "ja": "リセット", "zh": "重置"},
     "sub_move": {"ko": "자막", "en": "Subs", "ja": "字幕", "zh": "字幕"},
+    "sub_size": {"ko": "크기", "en": "Size", "ja": "サイズ", "zh": "大小"},
     "ui_lang": {"ko": "UI 언어", "en": "UI lang", "ja": "UI言語", "zh": "界面语言"},
     "sub_placeholder": {"ko": "⠿ 자막 위치 (드래그)", "en": "⠿ subtitle area (drag)",
                         "ja": "⠿ 字幕の位置 (ドラッグ)", "zh": "⠿ 字幕位置 (拖动)"},
@@ -171,6 +174,20 @@ STRINGS = {
                              "ja": "テキストのみ適用失敗", "zh": "仅文本模式应用失败"},
     "msg_text_only_applying": {"ko": "텍스트 전용 적용 중...", "en": "Applying text-only mode...",
                                "ja": "テキストのみを適用中...", "zh": "正在应用仅文本模式..."},
+    "osc_feedback_translation_on": {"ko": "번역 ON", "en": "Translation ON",
+                                    "ja": "翻訳 ON", "zh": "翻译 开"},
+    "osc_feedback_translation_off_voice": {"ko": "번역 OFF (원음 송출)",
+                                           "en": "Translation OFF (voice passthrough)",
+                                           "ja": "翻訳 OFF (原音送出)",
+                                           "zh": "翻译 关（原声直传）"},
+    "osc_feedback_translation_off_text": {"ko": "번역 OFF (텍스트 전송 중지)",
+                                          "en": "Translation OFF (text output stopped)",
+                                          "ja": "翻訳 OFF (テキスト送信停止)",
+                                          "zh": "翻译 关（文本发送停止）"},
+    "osc_feedback_language": {"ko": "번역 언어: {language}",
+                              "en": "Translation language: {language}",
+                              "ja": "翻訳言語: {language}",
+                              "zh": "翻译语言: {language}"},
     "msg_log_missing": {"ko": "아직 로그 파일이 생성되지 않았습니다.",
                         "en": "Log file has not been created yet.",
                         "ja": "ログファイルはまだ作成されていません。",
@@ -181,6 +198,10 @@ STRINGS = {
                         "en": "Enter a Gemini API key, not a URL.",
                         "ja": "URLではなくGemini APIキーを入力してください。",
                         "zh": "请输入 Gemini API 密钥，而不是 URL。"},
+    "err_api_key_empty": {"ko": "API 키가 비어 있습니다.",
+                          "en": "API key is empty.",
+                          "ja": "APIキーが空です。",
+                          "zh": "API 密钥为空。"},
     "default_device": {"ko": "(기본)", "en": "(default)", "ja": "(既定)", "zh": "(默认)"},
     # ---- settings field labels ----
     "f.api_key": {"ko": "API 키", "en": "API key", "ja": "APIキー", "zh": "API 密钥"},
@@ -220,6 +241,14 @@ STRINGS = {
                                    "ja": "発話保持 (秒)", "zh": "语音保持 (秒)"},
     "f.audio.echo_guard_multiplier": {"ko": "에코 가드 배수", "en": "Echo guard multiplier",
                                       "ja": "エコーガード倍率", "zh": "回声防护倍数"},
+    "f.audio.echo_guard_hold_sec": {"ko": "상대 음성 차단 유지(초)",
+                                    "en": "Other voice block hold (s)",
+                                    "ja": "相手音声ブロック保持 (秒)",
+                                    "zh": "对方语音阻断保持 (秒)"},
+    "f.audio.echo_guard_barge_in_multiplier": {"ko": "동시 발화 통과 배수",
+                                               "en": "Barge-in threshold multiplier",
+                                               "ja": "同時発話通過倍率",
+                                               "zh": "同时说话通过倍数"},
     "f.audio.send_interval_ms": {"ko": "전송 주기(ms)", "en": "Send interval (ms)",
                                  "ja": "送信間隔 (ms)", "zh": "发送间隔 (ms)"},
     "f.audio.finalize_silence_sec": {"ko": "문장 확정 침묵(초)", "en": "Finalize silence (s)",
@@ -263,6 +292,8 @@ STRINGS = {
                           "ja": "字幕オーバーレイ", "zh": "字幕叠加层"},
     "f.overlay.width_m": {"ko": "자막 너비(m)", "en": "Subtitle width (m)",
                           "ja": "字幕幅 (m)", "zh": "字幕宽度 (m)"},
+    "f.overlay.height_m": {"ko": "자막 높이(m)", "en": "Subtitle height (m)",
+                           "ja": "字幕高さ (m)", "zh": "字幕高度 (m)"},
     "f.overlay.font_size": {"ko": "자막 글자크기", "en": "Subtitle font size",
                             "ja": "字幕の文字サイズ", "zh": "字幕字号"},
     "f.overlay.distance_m": {"ko": "거리(m)", "en": "Distance (m)", "ja": "距離 (m)", "zh": "距离 (m)"},

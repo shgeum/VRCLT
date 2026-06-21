@@ -114,7 +114,7 @@ Dashboard:
 - Subtitles ON/OFF
 - Output language and subtitle language, with searchable add controls for 70+
   Gemini Live Translation languages
-- PC subtitle position controls and font size
+- PC subtitle position, box size, and font size controls
 - Live subtitle preview
 
 Settings:
@@ -164,6 +164,7 @@ VRChat mode can use:
 - Avatar OSC parameters such as `VRCLT_Enabled` and `VRCLT_Lang`
 - SteamVR subtitle overlay for inbound subtitles
 - SteamVR wrist menu for in-VR controls
+- Visible VR subtitle edit laser/cursor with corner resize handles
 
 With `ui.mode: auto`, SteamVR features activate when SteamVR is running. Use
 `ui.mode: vr` to force VR overlays or `ui.mode: desktop` to keep them disabled.
@@ -245,6 +246,7 @@ Overlay and OSC:
 | --- | --- | --- |
 | `overlay.enabled` | `true` | Enables the SteamVR subtitle overlay. |
 | `overlay.width_m` | `0.9` | Subtitle overlay width in meters. |
+| `overlay.height_m` | `0.225` | Subtitle overlay height in meters. |
 | `overlay.distance_m` | `1.2` | Subtitle overlay distance from the HMD. |
 | `overlay.below_m` | `0.35` | Vertical offset below the HMD. |
 | `overlay.tilt_deg` | `-15.0` | Overlay tilt angle. |
@@ -271,6 +273,8 @@ Audio, control, UI, and wrist menu:
 | `audio.voice_rms_threshold` | `90.0` | Microphone energy gate threshold. |
 | `audio.voice_hangover_sec` | `2.5` | Keeps the mic turn open through short pauses. |
 | `audio.echo_guard_multiplier` | `4.0` | Raises mic gate while target-app audio is active. `1.0` disables it. |
+| `audio.echo_guard_hold_sec` | `1.2` | Blocks outbound mic input while target-app speech is active. |
+| `audio.echo_guard_barge_in_multiplier` | `3.0` | Lets louder local speech pass during echo guard. Lower values pass barge-in more easily. |
 | `control.enabled` | `true` | Enables avatar OSC control input. |
 | `control.osc_listen_port` | `9001` | Local OSC port for avatar control parameters. |
 | `control.param_enabled` | `VRCLT_Enabled` | Avatar bool parameter for translation on/off. |
@@ -282,7 +286,7 @@ Audio, control, UI, and wrist menu:
 | `ui.close_action` | `tray` | Window close button behavior: `tray` or `exit`. |
 | `wrist_ui.enabled` | `true` | Enables the SteamVR wrist menu. |
 | `wrist_ui.hand` | `left` | Wrist that wears the menu: `left` or `right`. |
-| `wrist_ui.width_m` | `0.18` | Wrist menu width in meters. |
+| `wrist_ui.width_m` | `0.16` | Wrist menu width in meters. |
 | `wrist_ui.offset` | `[-0.0509, -0.065, 0.0891]` | Wrist menu x,y,z offset in controller space. |
 | `wrist_ui.tilt_deg` | `185.636` | Extra tilt toward the face. |
 | `wrist_ui.roll_deg` | `-28.633` | In-plane rotation. `null` uses automatic per-hand rotation. |

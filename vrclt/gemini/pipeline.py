@@ -17,7 +17,9 @@ import time
 from ..audio.game_tap import GameAudioTap, find_pid
 from ..audio.mic_in import MicCapture, RATE as MIC_RATE
 from ..audio.player import PcmPlayer
+from .. import i18n
 from ..gemini.session import LiveTranslateSession
+from ..languages import language_label
 from ..out.osc_chatbox import Chatbox
 from ..state import AppState
 from ..subtitles import SubtitleStore
@@ -33,10 +35,15 @@ SENTENCE_END_CHARS = (".", "!", "?", "。", "！", "？", "…")
 # the model sometimes emits control-token junk like "<cont>" / "{cont>" when
 # it hears non-speech (background music/noise); strip those tag-like fragments
 _JUNK_RE = re.compile(r"[<{][^<>{}]{0,20}[>}]?")
+_TRAILING_CJK_APOSTROPHE_RE = re.compile(
+    r"(?<=[\u1100-\u11FF\u3130-\u318F\u3040-\u30FF\u3400-\u9FFF\uAC00-\uD7AF])"
+    r"['’‘`´](?=\s*$)"
+)
 
 
 def _clean(text: str) -> str:
-    return _JUNK_RE.sub("", text).strip()
+    text = _JUNK_RE.sub("", text).strip()
+    return _TRAILING_CJK_APOSTROPHE_RE.sub(".", text)
 
 
 class Segmenter:
@@ -152,13 +159,23 @@ class OutboundPipeline:
         if self.chatbox and self._feedback_chatbox:
             if field == "translation_on":
                 if value:
-                    self.chatbox.send("[vrclt] 번역 ON")
+                    self.chatbox.send(self._feedback("osc_feedback_translation_on"))
                 elif self.voice_output or self.passthrough_while_translating:
-                    self.chatbox.send("[vrclt] 번역 OFF (원음 송출)")
+                    self.chatbox.send(self._feedback("osc_feedback_translation_off_voice"))
                 else:
-                    self.chatbox.send("[vrclt] 번역 OFF (텍스트 전송 중지)")
+                    self.chatbox.send(self._feedback("osc_feedback_translation_off_text"))
             elif field == "target_language":
-                self.chatbox.send(f"[vrclt] 번역 언어: {value}")
+                self.chatbox.send(self._feedback(
+                    "osc_feedback_language", language=language_label(str(value))))
+
+    def _feedback(self, key: str, **values) -> str:
+        text = i18n.tr(self.state.ui_lang, key)
+        if values:
+            try:
+                text = text.format(**values)
+            except Exception:
+                pass
+        return f"[vrclt] {text}"
 
     # -- session callbacks (worker event loop) --
     def _on_audio(self, pcm: bytes) -> None:

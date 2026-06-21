@@ -4,7 +4,7 @@ Interaction (no SteamVR input capture - the game keeps full control):
 - gaze gate: panel fades opaque + our own laser appears only while LOOKING
   at the watch up close
 - TRIGGER on a button: click; GRIP anywhere on the panel: grab & move
-  (release saves; [위치 리셋] button resets)
+  (release saves; Reset button resets)
 - the laser points 'pointer_tilt_deg' below the controller's raw forward,
   matching the natural pistol-grip pointing direction
 
@@ -19,11 +19,13 @@ import threading
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
+from ..languages import KNOWN_LANGUAGE_NAMES, canonical_language_code
 from ..resources import bundled_font, resolve_font_path
 from ..state import AppState
 from ..i18n import tr, LANGS as UI_LANGS, UI_LANG_LABELS
+from .font_fallback import load_fallback_font
 from .render import GlTexture, flip_bounds
 
 log = logging.getLogger(__name__)
@@ -57,12 +59,6 @@ BUTTONS = (("toggle", BTN_TOGGLE), ("prev", BTN_PREV), ("next", BTN_NEXT),
            ("reset", BTN_RESET),
            ("uilang", BTN_UILANG), ("text_only", BTN_TEXT_ONLY))
 
-LANG_LABELS = {
-    "ja": "日本語", "en": "English", "ko": "한국어",
-    "zh-Hans": "中文(S)", "zh-Hant": "中文(T)", "yue": "廣東話",
-    "es": "Español", "ru": "Русский", "fr": "Français", "de": "Deutsch",
-}
-
 COL_BG = (16, 18, 24, 235)
 COL_BTN = (38, 42, 54, 255)
 COL_ON = (46, 160, 67, 255)
@@ -81,7 +77,7 @@ CURSOR_SIZE_M = 0.016
 class WristPanel:
     def __init__(self, state: AppState, languages: list[str], *,
                  inbound_languages: list[str] | None = None,
-                 hand: str = "left", width_m: float = 0.18,
+                 hand: str = "left", width_m: float = 0.16,
                  offset=(0.0, 0.02, 0.12), tilt_deg: float = 0.0,
                  roll_deg: float | None = None,
                  transform=None,
@@ -110,14 +106,10 @@ class WristPanel:
         self._get_status = get_status
         self._on_text_only_toggle = on_text_only_toggle
         font_path = resolve_font_path(font_path, "NotoSansCJKkr-Bold.otf")
-        try:
-            self._font_big = ImageFont.truetype(font_path, 54)
-            self._font_mid = ImageFont.truetype(font_path, 36)
-            self._font_small = ImageFont.truetype(font_path, 24)
-            self._font_tiny = ImageFont.truetype(font_path, 18)
-        except OSError:
-            fallback = ImageFont.load_default()
-            self._font_big = self._font_mid = self._font_small = self._font_tiny = fallback
+        self._font_big = load_fallback_font(font_path, 54, bold=True)
+        self._font_mid = load_fallback_font(font_path, 36, bold=True)
+        self._font_small = load_fallback_font(font_path, 24, bold=True)
+        self._font_tiny = load_fallback_font(font_path, 18, bold=True)
 
         self._dirty = threading.Event()
         self._dirty.set()
@@ -457,20 +449,19 @@ class WristPanel:
 
     def _fit_font(self, draw, text: str, max_width: float, fonts=None):
         for font in (fonts or (self._font_big, self._font_mid, self._font_small, self._font_tiny)):
-            if draw.textlength(text, font=font) <= max_width:
+            if font.textlength(draw, text) <= max_width:
                 return font
         return self._font_tiny
 
     @staticmethod
     def _line_height(draw, font) -> int:
         try:
-            box = draw.textbbox((0, 0), "Ag", font=font)
-            return max(1, int(box[3] - box[1]))
+            return font.line_height(draw)
         except Exception:
             return max(1, int(getattr(font, "size", 20)))
 
     def _wrap_to_width(self, draw, text: str, font, max_width: float) -> list[str]:
-        if draw.textlength(text, font=font) <= max_width:
+        if font.textlength(draw, text) <= max_width:
             return [text]
 
         if " " in text:
@@ -484,19 +475,19 @@ class WristPanel:
         line = ""
         for part in parts:
             candidate = part if not line else f"{line}{sep}{part}"
-            if draw.textlength(candidate, font=font) <= max_width:
+            if font.textlength(draw, candidate) <= max_width:
                 line = candidate
                 continue
             if line:
                 lines.append(line)
                 line = ""
-            if draw.textlength(part, font=font) <= max_width:
+            if font.textlength(draw, part) <= max_width:
                 line = part
                 continue
             chunk = ""
             for ch in part:
                 candidate = f"{chunk}{ch}"
-                if chunk and draw.textlength(candidate, font=font) > max_width:
+                if chunk and font.textlength(draw, candidate) > max_width:
                     lines.append(chunk)
                     chunk = ch
                 else:
@@ -507,10 +498,10 @@ class WristPanel:
         return lines or [text]
 
     def _clip_line(self, draw, text: str, font, max_width: float) -> str:
-        if draw.textlength(text, font=font) <= max_width:
+        if font.textlength(draw, text) <= max_width:
             return text
         suffix = "..."
-        while text and draw.textlength(text + suffix, font=font) > max_width:
+        while text and font.textlength(draw, text + suffix) > max_width:
             text = text[:-1]
         return (text + suffix) if text else suffix
 
@@ -532,7 +523,7 @@ class WristPanel:
             if len(lines) > max_lines:
                 continue
             total_h = len(lines) * line_h + max(0, len(lines) - 1) * spacing
-            if total_h <= max_height and all(d.textlength(line, font=font) <= max_width
+            if total_h <= max_height and all(font.textlength(d, line) <= max_width
                                              for line in lines):
                 chosen_font = font
                 chosen_lines = lines
@@ -554,16 +545,16 @@ class WristPanel:
         y = (y0 + y1 - total_h) / 2
         cx = (x0 + x1) / 2
         for line in lines:
-            d.text((cx, y + line_h / 2), line, font=chosen_font, fill=fill, anchor="mm")
+            chosen_font.draw(d, (cx, y + line_h / 2), line, fill=fill, anchor="mm")
             y += line_h + chosen_spacing
 
     def _lang_block(self, d, prev_box, lang_box, next_box, code: str, caption: str) -> None:
         for box, label in ((prev_box, "◀"), (next_box, "▶")):
             d.rounded_rectangle(box, 16, fill=COL_BTN)
-            d.text(((box[0] + box[2]) // 2, (box[1] + box[3]) // 2),
-                   label, font=self._font_mid, fill=COL_TEXT, anchor="mm")
+            self._font_mid.draw(d, ((box[0] + box[2]) // 2, (box[1] + box[3]) // 2),
+                                label, fill=COL_TEXT, anchor="mm")
         d.rounded_rectangle(lang_box, 16, fill=(28, 30, 38, 255))
-        label = LANG_LABELS.get(code, code)
+        label = self._language_label(code)
         self._draw_fit_text(
             d, (lang_box[0] + 4, lang_box[1] + 20, lang_box[2] - 4, lang_box[3] - 54),
             label, fonts=(self._font_big, self._font_mid, self._font_small, self._font_tiny),
@@ -572,6 +563,11 @@ class WristPanel:
             d, (lang_box[0] + 4, lang_box[3] - 54, lang_box[2] - 4, lang_box[3] - 8),
             caption, fonts=(self._font_tiny,), fill=COL_DIM, max_lines=1,
             pad_x=2, pad_y=1, line_spacing=0)
+
+    @staticmethod
+    def _language_label(code: str) -> str:
+        code = canonical_language_code(code)
+        return KNOWN_LANGUAGE_NAMES.get(code, code)
 
     def _render(self, connected: bool, dragging: bool) -> Image.Image:
         lang = self._state.ui_lang
@@ -585,7 +581,7 @@ class WristPanel:
 
         dot = COL_ON if connected else (110, 110, 110, 255)
         d.ellipse((20, 28, 44, 52), fill=dot)
-        d.text((54, 40), "vrclt", font=self._font_tiny, fill=COL_TEXT, anchor="lm")
+        self._font_tiny.draw(d, (54, 40), "vrclt", fill=COL_TEXT, anchor="lm")
         # UI display-language cycle
         d.rounded_rectangle(BTN_UILANG, 12, fill=COL_BTN)
         ui_label = UI_LANG_LABELS.get(lang, lang)

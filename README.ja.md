@@ -111,7 +111,7 @@ Discord Canary または PTB を使う場合は、設定または `app.profiles.
 - 翻訳 ON/OFF
 - 字幕 ON/OFF
 - 出力言語と字幕言語、Gemini Live Translation の 70 以上の対応言語を検索して追加
-- PC 字幕の位置移動/リセットと文字サイズ
+- PC 字幕の位置移動/リセット、ボックスサイズ、文字サイズ
 - リアルタイム字幕プレビュー
 
 設定:
@@ -160,6 +160,7 @@ VRChat モードでは次の機能を使えます。
 - `VRCLT_Enabled`、`VRCLT_Lang` などのアバター OSC パラメーター
 - 受信側字幕用の SteamVR 字幕オーバーレイ
 - VR 内で操作できる SteamVR 手首メニュー
+- VR 字幕編集 laser/cursor 表示と角ハンドルでのサイズ調整
 
 `ui.mode: auto` では、SteamVR 実行中に VR 機能が有効になります。
 VR オーバーレイを強制的に有効にするには `ui.mode: vr`、無効に保つには
@@ -241,6 +242,7 @@ VR オーバーレイを強制的に有効にするには `ui.mode: vr`、無効
 | --- | --- | --- |
 | `overlay.enabled` | `true` | SteamVR 字幕オーバーレイを有効にします。 |
 | `overlay.width_m` | `0.9` | 字幕オーバーレイ幅(m)。 |
+| `overlay.height_m` | `0.225` | 字幕オーバーレイ高さ(m)。 |
 | `overlay.distance_m` | `1.2` | HMD からの字幕オーバーレイ距離(m)。 |
 | `overlay.below_m` | `0.35` | HMD 下方向のオフセット(m)。 |
 | `overlay.tilt_deg` | `-15.0` | オーバーレイの傾き角度。 |
@@ -267,6 +269,8 @@ VR オーバーレイを強制的に有効にするには `ui.mode: vr`、無効
 | `audio.voice_rms_threshold` | `90.0` | マイク音声検出のエネルギーしきい値。 |
 | `audio.voice_hangover_sec` | `2.5` | 短い間の沈黙中もマイクターンを維持する時間。 |
 | `audio.echo_guard_multiplier` | `4.0` | 対象アプリ音声が有効な時にマイクゲートを上げる倍率。`1.0` で無効。 |
+| `audio.echo_guard_hold_sec` | `1.2` | 対象アプリの音声が有効な間、outbound マイク入力をブロックする時間。 |
+| `audio.echo_guard_barge_in_multiplier` | `3.0` | エコーガード中でも大きい自分の声を通します。低いほど同時発話が通りやすくなります。 |
 | `control.enabled` | `true` | アバター OSC 制御入力を有効にします。 |
 | `control.osc_listen_port` | `9001` | アバター制御パラメーターを受けるローカル OSC ポート。 |
 | `control.param_enabled` | `VRCLT_Enabled` | 翻訳 ON/OFF 用のアバター bool パラメーター。 |
@@ -278,7 +282,7 @@ VR オーバーレイを強制的に有効にするには `ui.mode: vr`、無効
 | `ui.close_action` | `tray` | ウィンドウを閉じるボタンの動作: `tray` または `exit`。 |
 | `wrist_ui.enabled` | `true` | SteamVR 手首メニューを有効にします。 |
 | `wrist_ui.hand` | `left` | メニューを装着する手: `left` または `right`。 |
-| `wrist_ui.width_m` | `0.18` | 手首メニュー幅(m)。 |
+| `wrist_ui.width_m` | `0.16` | 手首メニュー幅(m)。 |
 | `wrist_ui.offset` | `[-0.0509, -0.065, 0.0891]` | コントローラー座標での x,y,z オフセット。 |
 | `wrist_ui.tilt_deg` | `185.636` | 顔の方へ向ける追加の傾き。 |
 | `wrist_ui.roll_deg` | `-28.633` | 平面内回転。`null` なら手に応じて自動回転。 |

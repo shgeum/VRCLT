@@ -64,9 +64,9 @@ def make_wrist_panel(cfg, state, get_status, on_text_only_toggle=lambda enabled:
     from .vr.wrist_ui import WristPanel
     w = cfg.get("wrist_ui", {})
     try:
-        width_m = max(0.18, float(w.get("width_m", 0.18) or 0.18))
+        width_m = max(0.16, float(w.get("width_m", 0.16) or 0.16))
     except Exception:
-        width_m = 0.18
+        width_m = 0.16
     return WristPanel(
         state, cfg.get("control", {}).get("languages", ["en"]),
         inbound_languages=cfg.get("inbound", {}).get("languages", ["ko", "en"]),
@@ -84,21 +84,26 @@ def make_wrist_panel(cfg, state, get_status, on_text_only_toggle=lambda enabled:
     )
 
 
-def make_subtitle_panel(cfg, store, state, on_transform_changed=lambda matrix, reset=False: None):
+def make_subtitle_panel(cfg, store, state, on_transform_changed=lambda matrix, reset=False: None,
+                        on_size_changed=lambda width_m, height_m: None):
     from .vr.subtitle_overlay import SubtitlePanel
     o = cfg.get("overlay", {})
+    w = cfg.get("wrist_ui", {})
     return SubtitlePanel(
         store, state,
-        hand=cfg.get("wrist_ui", {}).get("hand", "left"),
+        hand=w.get("hand", "left"),
         width_m=o.get("width_m", 0.9),
+        height_m=o.get("height_m"),
         distance_m=o.get("distance_m", 1.2),
         below_m=o.get("below_m", 0.35),
         tilt_deg=o.get("tilt_deg", -15.0),
         transform=o.get("transform"),
+        pointer_tilt_deg=w.get("pointer_tilt_deg", 50.0),
         font_path=resolve_font_path(o.get("font"), "NotoSansCJKkr-Regular.otf"),
         font_size=o.get("font_size", 36),
         show_source=o.get("show_source", False),
         on_transform_changed=on_transform_changed,
+        on_size_changed=on_size_changed,
     )
 
 
@@ -332,6 +337,44 @@ class AppController:
         except Exception:
             log.debug("failed to persist overlay font size", exc_info=True)
 
+    def set_overlay_width(self, value: float) -> None:
+        try:
+            value = float(value)
+        except Exception:
+            return
+        value = round(max(0.45, min(1.6, value)), 2)
+        with self._lock:
+            self.raw_cfg.setdefault("overlay", {})["width_m"] = value
+            self.cfg.setdefault("overlay", {})["width_m"] = value
+            cfg = copy.deepcopy(self.raw_cfg)
+        try:
+            config_mod.save(cfg)
+            self._bump_config_revision()
+        except Exception:
+            log.debug("failed to persist overlay width", exc_info=True)
+
+    def set_overlay_size(self, width_m: float, height_m: float) -> None:
+        try:
+            width_m = float(width_m)
+            height_m = float(height_m)
+        except Exception:
+            return
+        width_m = round(max(0.45, min(1.6, width_m)), 2)
+        height_m = round(max(0.10, min(0.60, height_m)), 2)
+        with self._lock:
+            overlay = self.raw_cfg.setdefault("overlay", {})
+            overlay["width_m"] = width_m
+            overlay["height_m"] = height_m
+            cfg_overlay = self.cfg.setdefault("overlay", {})
+            cfg_overlay["width_m"] = width_m
+            cfg_overlay["height_m"] = height_m
+            cfg = copy.deepcopy(self.raw_cfg)
+        try:
+            config_mod.save(cfg)
+            self._bump_config_revision()
+        except Exception:
+            log.debug("failed to persist overlay size", exc_info=True)
+
     def set_wrist_transform(self, matrix, reset: bool = False) -> None:
         try:
             rows = [[float(matrix[r][c]) for c in range(4)] for r in range(3)]
@@ -492,11 +535,18 @@ class AppController:
         inbound = None
         if cfg.get("inbound", {}).get("enabled", False):
             inbound = InboundPipeline(cfg, key, store, state)
-            mult = float(cfg.get("audio", {}).get("echo_guard_multiplier", 4.0))
+            audio_cfg = cfg.get("audio", {})
+            mult = float(audio_cfg.get("echo_guard_multiplier", 4.0))
+            hold_sec = float(audio_cfg.get("echo_guard_hold_sec", 1.2))
+            barge_mult = float(audio_cfg.get("echo_guard_barge_in_multiplier", 3.0))
+            ib = inbound
             if mult > 1.0:
-                ib = inbound
                 pipeline.mic.set_threshold_boost(
-                    lambda: mult if (state.translation_on and ib.tap.active(1.0)) else 1.0)
+                    lambda: mult if (state.translation_on and ib.tap.active(hold_sec)) else 1.0)
+            if hold_sec > 0.0:
+                pipeline.mic.set_suppressed(
+                    lambda: ib.tap.active(hold_sec),
+                    barge_in_multiplier=barge_mult)
 
         control = None
         ctl = cfg.get("control", {})
@@ -517,7 +567,8 @@ class AppController:
             if inbound and o.get("enabled", True):
                 panels.append(make_subtitle_panel(
                     cfg, store, state,
-                    on_transform_changed=self.set_subtitle_transform))
+                    on_transform_changed=self.set_subtitle_transform,
+                    on_size_changed=self.set_overlay_size))
             if cfg.get("wrist_ui", {}).get("enabled", True):
                 panels.insert(0, make_wrist_panel(
                     cfg, state,

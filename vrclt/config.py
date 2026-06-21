@@ -96,6 +96,7 @@ DEFAULTS = {
     "overlay": {                        # inbound subtitle overlay (SteamVR)
         "enabled": True,
         "width_m": 0.9,
+        "height_m": 0.225,
         "distance_m": 1.2,
         "below_m": 0.35,
         "tilt_deg": -15.0,
@@ -113,6 +114,8 @@ DEFAULTS = {
         "voice_rms_threshold": 90.0,    # mic energy gate; raise if noise opens sessions, lower if speech is missed
         "voice_hangover_sec": 2.5,      # keep the turn open this long through pauses (avoids re-speak lag + chopping)
         "echo_guard_multiplier": 4.0,   # gate boost while game audio plays (1.0 = off)
+        "echo_guard_hold_sec": 1.2,     # mute outbound mic while inbound game speech is active
+        "echo_guard_barge_in_multiplier": 3.0,  # allow my louder speech during echo guard
     },
     "control": {                        # in-VR control via avatar parameters (OSC)
         "enabled": True,
@@ -134,7 +137,7 @@ DEFAULTS = {
     "wrist_ui": {                       # SteamVR wrist watch menu (XSOverlay style)
         "enabled": True,
         "hand": "left",                 # which wrist wears the watch
-        "width_m": 0.18,
+        "width_m": 0.16,
         "offset": [-0.0509, -0.065, 0.0891],  # x,y,z in controller space (meters)
         "tilt_deg": 185.636,            # extra tilt toward the face
         "roll_deg": -28.633,            # in-plane rotation; None = auto (+90 left / -90 right)

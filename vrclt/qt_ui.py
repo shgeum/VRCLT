@@ -204,6 +204,13 @@ class MainWindow(QtWidgets.QMainWindow):
         key = "status_" + (status or "").strip().lower().replace(" ", "_")
         return i18n.tr(self._lang(), key)
 
+    def _error_label(self, error: str) -> str:
+        if error == "API key is empty.":
+            return self._tr("err_api_key_empty")
+        if error == "API key must be a Gemini API key, not a URL.":
+            return self._tr("err_api_key_url")
+        return error
+
     def _apply_i18n(self) -> None:
         for key, widget in self._i18n_widgets.items():
             widget.setText(self._tr(key))
@@ -251,7 +258,7 @@ class MainWindow(QtWidgets.QMainWindow):
         top = QtWidgets.QHBoxLayout()
         self._status_dot = QtWidgets.QLabel()
         self._status_dot.setFixedSize(14, 14)
-        self._status_text = QtWidgets.QLabel("Stopped")
+        self._status_text = QtWidgets.QLabel(self._tr("status_stopped"))
         self._status_text.setObjectName("statusText")
         self._error_text = QtWidgets.QLabel("")
         self._error_text.setObjectName("errorText")
@@ -568,6 +575,8 @@ class MainWindow(QtWidgets.QMainWindow):
             ("audio.voice_rms_threshold", "f.audio.voice_rms_threshold", "float"),
             ("audio.voice_hangover_sec", "f.audio.voice_hangover_sec", "float"),
             ("audio.echo_guard_multiplier", "f.audio.echo_guard_multiplier", "float"),
+            ("audio.echo_guard_hold_sec", "f.audio.echo_guard_hold_sec", "float"),
+            ("audio.echo_guard_barge_in_multiplier", "f.audio.echo_guard_barge_in_multiplier", "float"),
             ("audio.send_interval_ms", "f.audio.send_interval_ms", "int"),
             ("audio.finalize_silence_sec", "f.audio.finalize_silence_sec", "float"),
             ("audio.mic_idle_disconnect_sec", "f.audio.mic_idle_disconnect_sec", "float"),
@@ -592,6 +601,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._add_group("grp_overlay_wrist", [
             ("overlay.enabled", "f.overlay.enabled", "bool"),
             ("overlay.width_m", "f.overlay.width_m", "float"),
+            ("overlay.height_m", "f.overlay.height_m", "float"),
             ("overlay.distance_m", "f.overlay.distance_m", "float"),
             ("overlay.below_m", "f.overlay.below_m", "float"),
             ("overlay.tilt_deg", "f.overlay.tilt_deg", "float"),
@@ -977,7 +987,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._status_dot.setStyleSheet(f"background:{color}; border-radius:7px;")
         conn_key = "conn_on" if connected else "conn_off"
         self._status_text.setText(f"{self._status_label(status)} | {i18n.tr(st.ui_lang, conn_key)}")
-        self._error_text.setText(self._controller.last_error)
+        self._error_text.setText(self._error_label(self._controller.last_error))
 
         self._btn_trans.setText(i18n.tr(st.ui_lang, "btn_trans_on" if st.translation_on else "btn_trans_off"))
         self._btn_trans.setStyleSheet(

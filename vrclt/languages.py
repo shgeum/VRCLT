@@ -20,8 +20,8 @@ SUPPORTED_LANGUAGES: tuple[tuple[str, str], ...] = (
     ("bg", "Bulgarian"),
     ("my", "Burmese Myanmar"),
     ("ca", "Catalan"),
-    ("zh-Hans", "Chinese Simplified"),
-    ("zh-Hant", "Chinese Traditional"),
+    ("zh-Hans", "Simplified Chinese"),
+    ("zh-Hant", "Traditional Chinese"),
     ("hr", "Croatian"),
     ("cs", "Czech"),
     ("da", "Danish"),
@@ -135,6 +135,8 @@ _TEXT_ALIASES = {
     "burmese (myanmar)": "my",
     "chinese simplified": "zh-Hans",
     "chinese traditional": "zh-Hant",
+    "simplified chinese": "zh-Hans",
+    "traditional chinese": "zh-Hant",
 }
 
 

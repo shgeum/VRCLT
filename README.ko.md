@@ -111,7 +111,7 @@ Discord Canary 또는 PTB를 사용한다면 설정 또는 `app.profiles.discord
 - 번역 ON/OFF
 - 자막 ON/OFF
 - 출력 언어와 자막 언어, Gemini Live Translation 70개 이상 지원 언어 검색/추가
-- PC 자막 위치 이동/리셋과 글자 크기 조절
+- PC 자막 위치 이동/리셋, 상자 크기, 글자 크기 조절
 - 실시간 자막 미리보기
 
 설정:
@@ -160,6 +160,7 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 - `VRCLT_Enabled`, `VRCLT_Lang` 같은 아바타 OSC 파라미터
 - 인바운드 자막용 SteamVR 자막 오버레이
 - VR 안에서 제어할 수 있는 SteamVR 손목 메뉴
+- VR 자막 편집 laser/cursor 표시와 모서리 크기 조절 핸들
 
 `ui.mode: auto`에서는 SteamVR이 실행 중일 때 VR 기능이 활성화됩니다. 강제로 VR
 오버레이를 켜려면 `ui.mode: vr`, 끄려면 `ui.mode: desktop`을 사용합니다.
@@ -239,6 +240,7 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 | --- | --- | --- |
 | `overlay.enabled` | `true` | SteamVR 자막 오버레이를 켭니다. |
 | `overlay.width_m` | `0.9` | 자막 오버레이 너비(m). |
+| `overlay.height_m` | `0.225` | 자막 오버레이 높이(m). |
 | `overlay.distance_m` | `1.2` | HMD 기준 자막 오버레이 거리(m). |
 | `overlay.below_m` | `0.35` | HMD 아래쪽 오프셋(m). |
 | `overlay.tilt_deg` | `-15.0` | 오버레이 기울기 각도. |
@@ -265,6 +267,8 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 | `audio.voice_rms_threshold` | `90.0` | 마이크 음성 감지 에너지 임계값. |
 | `audio.voice_hangover_sec` | `2.5` | 짧은 멈춤 동안 마이크 턴을 유지하는 시간. |
 | `audio.echo_guard_multiplier` | `4.0` | 대상 앱 오디오가 활성일 때 마이크 게이트를 높이는 배수. `1.0`이면 비활성. |
+| `audio.echo_guard_hold_sec` | `1.2` | 대상 앱 음성이 활성일 때 outbound 마이크 입력을 차단하는 시간. |
+| `audio.echo_guard_barge_in_multiplier` | `3.0` | 에코 가드 중에도 더 큰 내 목소리는 통과시킵니다. 낮출수록 동시 발화가 더 쉽게 통과합니다. |
 | `control.enabled` | `true` | 아바타 OSC 제어 입력을 켭니다. |
 | `control.osc_listen_port` | `9001` | 아바타 제어 파라미터를 받을 로컬 OSC 포트. |
 | `control.param_enabled` | `VRCLT_Enabled` | 번역 ON/OFF용 아바타 bool 파라미터. |
@@ -276,7 +280,7 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 | `ui.close_action` | `tray` | 창 닫기 버튼 동작: `tray` 또는 `exit`. |
 | `wrist_ui.enabled` | `true` | SteamVR 손목 메뉴를 켭니다. |
 | `wrist_ui.hand` | `left` | 메뉴를 착용할 손: `left` 또는 `right`. |
-| `wrist_ui.width_m` | `0.18` | 손목 메뉴 너비(m). |
+| `wrist_ui.width_m` | `0.16` | 손목 메뉴 너비(m). |
 | `wrist_ui.offset` | `[-0.0509, -0.065, 0.0891]` | 컨트롤러 좌표계의 x,y,z 오프셋. |
 | `wrist_ui.tilt_deg` | `185.636` | 얼굴 쪽으로 향하는 추가 기울기. |
 | `wrist_ui.roll_deg` | `-28.633` | 평면 회전. `null`이면 손에 따라 자동 회전합니다. |

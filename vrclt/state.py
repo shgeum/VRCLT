@@ -91,7 +91,7 @@ class AppState:
                 self._wrist_edit_mode = False
                 notify_wrist = True
         if changed:
-            log.info("state: subtitle edit (move) mode %s", "ON" if value else "OFF")
+            log.info("state: subtitle edit mode %s", "ON" if value else "OFF")
             self._notify("edit_mode", value)
         if notify_wrist:
             log.info("state: wrist edit (move) mode OFF")
@@ -116,7 +116,7 @@ class AppState:
             log.info("state: wrist edit (move) mode %s", "ON" if value else "OFF")
             self._notify("wrist_edit_mode", value)
         if notify_subtitle:
-            log.info("state: subtitle edit (move) mode OFF")
+            log.info("state: subtitle edit mode OFF")
             self._notify("edit_mode", False)
 
     def request_position_reset(self) -> None:

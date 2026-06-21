@@ -40,6 +40,10 @@ class MicCapture:
         # echo guard: callable returning a threshold multiplier (>1 while game
         # audio is playing) so bled-in voices stay below the gate
         self._boost = lambda: 1.0
+        # echo suppress: callable returning True while target-app speech should
+        # be treated as not-my-voice and never sent to the outbound session.
+        self._suppress = lambda: False
+        self._suppress_barge_in_multiplier = 0.0
         # gate enable: when False (e.g. passthrough mode), stream everything
         # continuously - no voice gating, so raw audio isn't chopped
         self._gate_enabled = lambda: True
@@ -58,6 +62,10 @@ class MicCapture:
 
     def set_threshold_boost(self, fn) -> None:
         self._boost = fn
+
+    def set_suppressed(self, fn, *, barge_in_multiplier: float = 0.0) -> None:
+        self._suppress = fn
+        self._suppress_barge_in_multiplier = max(0.0, float(barge_in_multiplier))
 
     def set_gate_enabled(self, fn) -> None:
         self._gate_enabled = fn
@@ -78,21 +86,37 @@ class MicCapture:
         if status:
             log.debug("mic status: %s", status)
         data = bytes(indata)
-        for tap in list(self._raw_taps):
-            tap.append(data)
         now = time.time()
-        if not self._gate_enabled():
-            # passthrough / gate off: stream everything continuously
-            self.buffer.append(data)
-            self.last_voice_time = now
-            self._preroll.append(data)
-            return
         x = np.frombuffer(data, dtype=np.int16).astype(np.float32)
         rms = float(np.sqrt(np.mean(x * x))) if x.size else 0.0
         try:
             threshold = self._threshold * float(self._boost())
         except Exception:
             threshold = self._threshold
+        try:
+            suppressed = bool(self._suppress())
+        except Exception:
+            suppressed = False
+        if suppressed:
+            barge_mult = self._suppress_barge_in_multiplier
+            barge_threshold = self._threshold * barge_mult
+            if barge_mult <= 0.0 or rms < barge_threshold:
+                self._preroll.clear()
+                if self._in_voice and (now - self.last_voice_time) < self._hangover:
+                    return
+                self.buffer.clear()
+                self._in_voice = False
+                return
+            threshold = min(threshold, barge_threshold)
+
+        for tap in list(self._raw_taps):
+            tap.append(data)
+        if not self._gate_enabled():
+            # passthrough / gate off: stream everything continuously
+            self.buffer.append(data)
+            self.last_voice_time = now
+            self._preroll.append(data)
+            return
         # hysteresis: open at `threshold`, but once speaking, stay open down to
         # 40% of it - so weak consonants / brief dips don't chop the stream
         # (which made the translated audio come out choppy).

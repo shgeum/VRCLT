@@ -237,7 +237,7 @@ class LiveTranslateSession:
                 # no audio this tick: if speech just ended, tell the server the
                 # turn is over so it flushes the rest of the translation NOW
                 # instead of holding it until the session closes (which split a
-                # sentence into "私が自分で" + a 15s-late "作りました")
+                # sentence into a partial phrase + a late suffix)
                 if speaking:
                     speaking = False
                     try:

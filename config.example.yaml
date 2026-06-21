@@ -57,6 +57,7 @@ inbound:                  # others' voices -> me (subtitles)
 overlay:                  # inbound subtitle overlay (SteamVR, HMD-locked)
   enabled: true
   width_m: 0.9
+  height_m: 0.225
   distance_m: 1.2
   below_m: 0.35
   tilt_deg: -15.0
@@ -82,6 +83,8 @@ audio:
   voice_rms_threshold: 90.0   # raise if noise opens sessions, lower if speech is missed
   voice_hangover_sec: 2.5     # keep the turn open this long through pauses
   echo_guard_multiplier: 4.0  # gate boost while game audio plays; 1.0 = off
+  echo_guard_hold_sec: 1.2    # mute outbound mic while inbound game speech is active
+  echo_guard_barge_in_multiplier: 3.0  # allow my louder speech during echo guard
 
 control:                      # in-VR control via avatar parameters (OSC radial menu)
   enabled: true
@@ -99,7 +102,7 @@ ui:
 wrist_ui:                     # SteamVR wrist watch menu
   enabled: true
   hand: left
-  width_m: 0.18
+  width_m: 0.16
   offset: [-0.0509, -0.065, 0.0891]
   tilt_deg: 185.636
   roll_deg: -28.633

@@ -111,7 +111,7 @@ Copy-Item config.example.yaml config.yaml
 - 翻译 ON/OFF
 - 字幕 ON/OFF
 - 输出语言和字幕语言，并可搜索添加 Gemini Live Translation 支持的 70+ 种语言
-- PC 字幕位置移动/重置和字号
+- PC 字幕位置移动/重置、字幕框大小和字号
 - 实时字幕预览
 
 设置:
@@ -160,6 +160,7 @@ VRChat 模式可使用:
 - `VRCLT_Enabled`、`VRCLT_Lang` 等角色 OSC 参数
 - 用于入站字幕的 SteamVR 字幕叠加层
 - 可在 VR 内控制的 SteamVR 手腕菜单
+- VR 字幕编辑 laser/cursor 显示和角落尺寸调整手柄
 
 使用 `ui.mode: auto` 时，SteamVR 运行后会启用 VR 功能。使用 `ui.mode: vr`
 可强制启用 VR 叠加层，使用 `ui.mode: desktop` 可保持禁用。
@@ -239,6 +240,7 @@ VRChat 模式可使用:
 | --- | --- | --- |
 | `overlay.enabled` | `true` | 启用 SteamVR 字幕叠加层。 |
 | `overlay.width_m` | `0.9` | 字幕叠加层宽度，单位米。 |
+| `overlay.height_m` | `0.225` | 字幕叠加层高度，单位米。 |
 | `overlay.distance_m` | `1.2` | 字幕叠加层相对 HMD 的距离，单位米。 |
 | `overlay.below_m` | `0.35` | HMD 下方偏移，单位米。 |
 | `overlay.tilt_deg` | `-15.0` | 叠加层倾斜角度。 |
@@ -265,6 +267,8 @@ VRChat 模式可使用:
 | `audio.voice_rms_threshold` | `90.0` | 麦克风语音检测能量阈值。 |
 | `audio.voice_hangover_sec` | `2.5` | 在短暂停顿期间保持麦克风回合的时间。 |
 | `audio.echo_guard_multiplier` | `4.0` | 目标应用音频活跃时提高麦克风门限的倍数。`1.0` 表示禁用。 |
+| `audio.echo_guard_hold_sec` | `1.2` | 目标应用语音活跃时阻断 outbound 麦克风输入的保持时间。 |
+| `audio.echo_guard_barge_in_multiplier` | `3.0` | 回声防护期间仍允许更大的本地语音通过。数值越低，同时说话越容易通过。 |
 | `control.enabled` | `true` | 启用角色 OSC 控制输入。 |
 | `control.osc_listen_port` | `9001` | 接收角色控制参数的本地 OSC 端口。 |
 | `control.param_enabled` | `VRCLT_Enabled` | 翻译 ON/OFF 用角色 bool 参数。 |
@@ -276,7 +280,7 @@ VRChat 模式可使用:
 | `ui.close_action` | `tray` | 窗口关闭按钮行为: `tray` 或 `exit`。 |
 | `wrist_ui.enabled` | `true` | 启用 SteamVR 手腕菜单。 |
 | `wrist_ui.hand` | `left` | 佩戴菜单的手: `left` 或 `right`。 |
-| `wrist_ui.width_m` | `0.18` | 手腕菜单宽度，单位米。 |
+| `wrist_ui.width_m` | `0.16` | 手腕菜单宽度，单位米。 |
 | `wrist_ui.offset` | `[-0.0509, -0.065, 0.0891]` | 控制器坐标系中的 x,y,z 偏移。 |
 | `wrist_ui.tilt_deg` | `185.636` | 朝向脸部的额外倾斜。 |
 | `wrist_ui.roll_deg` | `-28.633` | 平面内旋转。`null` 时按左右手自动旋转。 |
