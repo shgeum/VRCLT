@@ -110,6 +110,7 @@ Copy-Item config.example.yaml config.yaml
 - VRChat/Discord 模式切换和 VRChat 仅文本切换
 - 翻译 ON/OFF
 - 字幕 ON/OFF
+- 使用 PC 全局热键切换翻译/字幕
 - 输出语言和字幕语言，并可搜索添加 Gemini Live Translation 支持的 70+ 种语言
 - PC 字幕位置移动/重置、字幕框大小和字号
 - 实时字幕预览
@@ -120,6 +121,7 @@ Copy-Item config.example.yaml config.yaml
 - 应用模式和目标进程
 - 麦克风、翻译语音输出、监听输出和入站音频设备
 - 默认目标语言和已保存语言列表
+- PC 全局热键设置
 - 音频阈值和 VAD 设置
 - OSC、聊天框、SteamVR 叠加层和手腕 UI 选项
 - UI 语言和 UI 模式
@@ -204,6 +206,14 @@ VRChat 模式可使用:
 | --- | --- | --- |
 | `dashboard.translation_on` | `true` | 上次保存的仪表板翻译开关状态。 |
 | `dashboard.subtitles_on` | `true` | 上次保存的仪表板字幕开关状态。 |
+
+PC 热键:
+
+| 键 | 默认值 | 说明 |
+| --- | --- | --- |
+| `hotkeys.enabled` | `true` | 启用 Windows 全局热键。 |
+| `hotkeys.translation_toggle` | `Ctrl+Alt+T` | 翻译 ON/OFF 切换热键。留空会禁用该热键。 |
+| `hotkeys.subtitles_toggle` | `Ctrl+Alt+S` | 字幕 ON/OFF 切换热键。留空会禁用该热键。 |
 
 出站翻译:
 

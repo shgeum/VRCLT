@@ -112,6 +112,7 @@ Dashboard:
 - VRChat/Discord mode toggle and VRChat text-only toggle
 - Translation ON/OFF
 - Subtitles ON/OFF
+- Global PC hotkeys for translation/subtitle toggles
 - Output language and subtitle language, with searchable add controls for 70+
   Gemini Live Translation languages
 - PC subtitle position, box size, and font size controls
@@ -123,6 +124,7 @@ Settings:
 - App mode and target processes
 - Microphone, translated voice output, monitor output, and inbound audio device
 - Default target languages and saved language lists
+- Global PC hotkey settings
 - Audio thresholds and VAD settings
 - OSC, chatbox, SteamVR overlay, and wrist UI options
 - UI language and UI mode
@@ -210,6 +212,14 @@ Dashboard state:
 | --- | --- | --- |
 | `dashboard.translation_on` | `true` | Last saved Dashboard translation toggle state. |
 | `dashboard.subtitles_on` | `true` | Last saved Dashboard subtitles toggle state. |
+
+PC hotkeys:
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `hotkeys.enabled` | `true` | Enables Windows global hotkeys. |
+| `hotkeys.translation_toggle` | `Ctrl+Alt+T` | Toggles translation ON/OFF. Empty disables this hotkey. |
+| `hotkeys.subtitles_toggle` | `Ctrl+Alt+S` | Toggles subtitles ON/OFF. Empty disables this hotkey. |
 
 Outbound translation:
 

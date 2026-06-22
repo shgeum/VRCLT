@@ -10,17 +10,21 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from . import config as config_mod
 from . import i18n
+from .app_controller import resolve_ui_mode
 from .desktop_overlay import DesktopSubtitleOverlay
 from .languages import (
     language_code_from_text,
     language_label,
     supported_language_options,
 )
+from .hotkeys import HotkeyRegistration, WindowsGlobalHotkeys
 from .resources import bundled_font, resolve_font_path
 
 log = logging.getLogger(__name__)
 
 APP_FONT_SIZE_PT = 11
+HOTKEY_TRANSLATION_ID = 0x6100
+HOTKEY_SUBTITLES_ID = 0x6101
 _APP_FONT_FAMILIES: dict[str, str] = {}
 
 def _get_path(data: dict, path: str, default=None):
@@ -133,6 +137,8 @@ class _UiSignals(QtCore.QObject):
     refresh = QtCore.Signal()
     save_done = QtCore.Signal(bool)
     mode_done = QtCore.Signal(bool)
+    translation_hotkey = QtCore.Signal()
+    subtitles_hotkey = QtCore.Signal()
 
 
 class _NoWheelComboBox(QtWidgets.QComboBox):
@@ -141,6 +147,19 @@ class _NoWheelComboBox(QtWidgets.QComboBox):
             super().wheelEvent(event)
         else:
             event.ignore()
+
+
+class _HotkeyEdit(QtWidgets.QKeySequenceEdit):
+    focus_in = QtCore.Signal()
+    focus_out = QtCore.Signal()
+
+    def focusInEvent(self, event: QtGui.QFocusEvent) -> None:
+        self.focus_in.emit()
+        super().focusInEvent(event)
+
+    def focusOutEvent(self, event: QtGui.QFocusEvent) -> None:
+        super().focusOutEvent(event)
+        self.focus_out.emit()
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -157,6 +176,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._tray_actions = {}
         self._last_ui_lang = ""
         self._last_config_revision = getattr(controller, "config_revision", 0)
+        self._hotkey_signature = None
+        self._hotkeys = WindowsGlobalHotkeys()
         self._save_thread = None
         self._mode_thread = None
         self._app_mode_applying = False
@@ -166,6 +187,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._signals.refresh.connect(self._refresh)
         self._signals.save_done.connect(self._save_done)
         self._signals.mode_done.connect(self._mode_done)
+        self._signals.translation_hotkey.connect(self._toggle_translation)
+        self._signals.subtitles_hotkey.connect(self._toggle_subtitles)
 
         self.setWindowTitle("vrclt")
         self.resize(980, 720)
@@ -183,6 +206,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._timer.timeout.connect(self._refresh)
         self._timer.start(250)
         self._controller.subscribe(self._signals.refresh.emit)
+        self._sync_hotkeys()
         self._refresh()
 
     # ---------------- construction ----------------
@@ -476,10 +500,8 @@ class MainWindow(QtWidgets.QMainWindow):
         }
         act_show.triggered.connect(self._show_main)
         act_settings.triggered.connect(self._show_settings)
-        act_trans.triggered.connect(
-            lambda: self._controller.set_translation_on(not self._controller.state.translation_on))
-        act_sub.triggered.connect(
-            lambda: self._controller.set_subtitles_on(not self._controller.state.subtitles_on))
+        act_trans.triggered.connect(self._toggle_translation)
+        act_sub.triggered.connect(self._toggle_subtitles)
         act_quit.triggered.connect(self._quit)
         self._tray.setContextMenu(menu)
         self._tray.activated.connect(
@@ -563,6 +585,11 @@ class MainWindow(QtWidgets.QMainWindow):
             ("ui.mode", "f.ui.mode", "uimode"),
             ("ui.lang", "f.ui.lang", "text"),
         ], cfg)
+        self._add_group("grp_hotkeys", [
+            ("hotkeys.enabled", "f.hotkeys.enabled", "bool"),
+            ("hotkeys.translation_toggle", "f.hotkeys.translation_toggle", "hotkey"),
+            ("hotkeys.subtitles_toggle", "f.hotkeys.subtitles_toggle", "hotkey"),
+        ], cfg)
         self._add_group("grp_dev", [
             ("outbound.mic_device", "f.outbound.mic_device", "input_device"),
             ("outbound.text_only", "f.outbound.text_only", "bool"),
@@ -643,6 +670,16 @@ class MainWindow(QtWidgets.QMainWindow):
             return w
         if kind == "csv":
             return QtWidgets.QLineEdit(_as_csv(value))
+        if kind == "hotkey":
+            w = _HotkeyEdit()
+            w.setKeySequence(QtGui.QKeySequence("" if value is None else str(value)))
+            if hasattr(w, "setMaximumSequenceLength"):
+                w.setMaximumSequenceLength(1)
+            if hasattr(w, "setClearButtonEnabled"):
+                w.setClearButtonEnabled(True)
+            w.focus_in.connect(self._hotkeys.stop)
+            w.focus_out.connect(lambda: self._sync_hotkeys(force=True))
+            return w
         if kind == "language":
             w = self._build_language_picker()
             self._set_language_combo_value(w, "" if value is None else str(value))
@@ -687,6 +724,9 @@ class MainWindow(QtWidgets.QMainWindow):
             return _from_csv(widget.text())
         if kind == "float_csv":
             return _from_float_list(widget.text())
+        if kind == "hotkey":
+            return widget.keySequence().toString(
+                QtGui.QKeySequence.SequenceFormat.PortableText)
         if kind == "language":
             return self._code_from_language_combo(widget, [])
         if isinstance(widget, QtWidgets.QComboBox):
@@ -707,6 +747,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 widget.setChecked(bool(value))
             elif kind == "language":
                 self._set_language_combo_value(widget, "" if value is None else str(value))
+            elif kind == "hotkey":
+                widget.setKeySequence(QtGui.QKeySequence("" if value is None else str(value)))
             elif isinstance(widget, QtWidgets.QComboBox):
                 widget.setCurrentText("" if value is None else str(value))
             elif kind == "csv":
@@ -754,6 +796,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._btn_save.setEnabled(True)
         self._settings_note.setText(
             self._tr("msg_applied") if ok else self._tr("msg_saved_start_failed"))
+        self._sync_hotkeys(force=True)
         self._populate_settings()
 
     def _restart_runtime(self) -> None:
@@ -804,6 +847,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sync_text_only()
         self._dashboard_note.setText(
             self._tr("msg_mode_applied") if ok else self._tr("msg_saved_start_failed"))
+        self._sync_hotkeys(force=True)
         self._populate_settings()
 
     def _set_dashboard_apply_enabled(self, enabled: bool) -> None:
@@ -889,6 +933,34 @@ class MainWindow(QtWidgets.QMainWindow):
     def _reset_overlay_position(self) -> None:
         self._desktop_overlay.reset_position()
         self._controller.state.request_position_reset()
+
+    def _toggle_translation(self) -> None:
+        self._controller.set_translation_on(not self._controller.state.translation_on)
+
+    def _toggle_subtitles(self) -> None:
+        self._controller.set_subtitles_on(not self._controller.state.subtitles_on)
+
+    def _sync_hotkeys(self, force: bool = False) -> None:
+        cfg = self._controller.cfg.get("hotkeys", {})
+        enabled = bool(cfg.get("enabled", True))
+        translation = str(cfg.get("translation_toggle", "") or "")
+        subtitles = str(cfg.get("subtitles_toggle", "") or "")
+        pc_mode = resolve_ui_mode(self._controller.cfg) == "desktop"
+        signature = (enabled, pc_mode, translation, subtitles)
+        if not force and signature == self._hotkey_signature:
+            return
+        self._hotkey_signature = signature
+        if not enabled or not pc_mode:
+            self._hotkeys.configure([])
+            return
+        self._hotkeys.configure([
+            HotkeyRegistration(
+                HOTKEY_TRANSLATION_ID, "translation toggle", translation,
+                self._signals.translation_hotkey.emit),
+            HotkeyRegistration(
+                HOTKEY_SUBTITLES_ID, "subtitles toggle", subtitles,
+                self._signals.subtitles_hotkey.emit),
+        ])
 
     def _add_output_language_from_input(self) -> None:
         self._add_language_from_input(
@@ -981,6 +1053,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if revision != self._last_config_revision:
             self._last_config_revision = revision
             self._sync_settings_from_config()
+            self._sync_hotkeys()
         connected = self._controller.connected()
         status = self._controller.status
         color = "#2ea043" if connected else ("#d29922" if status == "Running" else "#8b949e")
@@ -1075,6 +1148,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _quit(self) -> None:
         self._quitting = True
+        self._hotkeys.stop()
         self._desktop_overlay.close()
         self._tray.hide()
         self._controller.stop()

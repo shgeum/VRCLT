@@ -31,6 +31,11 @@ dashboard:
   translation_on: true         # last Dashboard translation toggle state
   subtitles_on: true           # last Dashboard subtitles toggle state
 
+hotkeys:                       # Windows global hotkeys for PC/desktop controls
+  enabled: true
+  translation_toggle: Ctrl+Alt+T
+  subtitles_toggle: Ctrl+Alt+S
+
 outbound:                 # my voice -> others (VRChat hears the translation)
   enabled: true
   target_language: ja     # BCP-47: ja, en, ko, zh-Hans, ...

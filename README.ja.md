@@ -110,6 +110,7 @@ Discord Canary または PTB を使う場合は、設定または `app.profiles.
 - VRChat/Discord モード切り替えと VRChat テキストのみ切り替え
 - 翻訳 ON/OFF
 - 字幕 ON/OFF
+- PC グローバルホットキーで翻訳/字幕を切り替え
 - 出力言語と字幕言語、Gemini Live Translation の 70 以上の対応言語を検索して追加
 - PC 字幕の位置移動/リセット、ボックスサイズ、文字サイズ
 - リアルタイム字幕プレビュー
@@ -120,6 +121,7 @@ Discord Canary または PTB を使う場合は、設定または `app.profiles.
 - アプリモードと対象プロセス
 - マイク、翻訳音声出力、モニター出力、受信側音声デバイス
 - 既定の対象言語と保存済み言語リスト
+- PC グローバルホットキー設定
 - 音声しきい値と VAD 設定
 - OSC、チャットボックス、SteamVR オーバーレイ、手首 UI オプション
 - UI 言語と UI モード
@@ -206,6 +208,14 @@ VR オーバーレイを強制的に有効にするには `ui.mode: vr`、無効
 | --- | --- | --- |
 | `dashboard.translation_on` | `true` | 最後に保存されたダッシュボード翻訳トグル状態。 |
 | `dashboard.subtitles_on` | `true` | 最後に保存されたダッシュボード字幕トグル状態。 |
+
+PC ホットキー:
+
+| キー | 既定値 | 説明 |
+| --- | --- | --- |
+| `hotkeys.enabled` | `true` | Windows グローバルホットキーを有効にします。 |
+| `hotkeys.translation_toggle` | `Ctrl+Alt+T` | 翻訳 ON/OFF の切り替えホットキー。空にすると無効になります。 |
+| `hotkeys.subtitles_toggle` | `Ctrl+Alt+S` | 字幕 ON/OFF の切り替えホットキー。空にすると無効になります。 |
 
 送信側翻訳:
 

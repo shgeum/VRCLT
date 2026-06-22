@@ -110,6 +110,7 @@ Discord Canary 또는 PTB를 사용한다면 설정 또는 `app.profiles.discord
 - VRChat/Discord 모드 토글과 VRChat 텍스트 전용 토글
 - 번역 ON/OFF
 - 자막 ON/OFF
+- PC 전역 핫키로 번역/자막 토글
 - 출력 언어와 자막 언어, Gemini Live Translation 70개 이상 지원 언어 검색/추가
 - PC 자막 위치 이동/리셋, 상자 크기, 글자 크기 조절
 - 실시간 자막 미리보기
@@ -120,6 +121,7 @@ Discord Canary 또는 PTB를 사용한다면 설정 또는 `app.profiles.discord
 - 앱 모드와 대상 프로세스
 - 마이크, 번역 음성 출력, 모니터 출력, 인바운드 오디오 장치
 - 기본 도착어와 저장된 언어 목록
+- PC 전역 핫키 설정
 - 오디오 임계값과 VAD 설정
 - OSC, 챗박스, SteamVR 오버레이, 손목 UI 옵션
 - UI 언어와 UI 모드
@@ -204,6 +206,14 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 | --- | --- | --- |
 | `dashboard.translation_on` | `true` | 마지막으로 저장된 대시보드 번역 토글 상태. |
 | `dashboard.subtitles_on` | `true` | 마지막으로 저장된 대시보드 자막 토글 상태. |
+
+PC 핫키:
+
+| 키 | 기본값 | 설명 |
+| --- | --- | --- |
+| `hotkeys.enabled` | `true` | Windows 전역 핫키를 켭니다. |
+| `hotkeys.translation_toggle` | `Ctrl+Alt+T` | 번역 ON/OFF 토글 핫키. 빈 값이면 비활성화됩니다. |
+| `hotkeys.subtitles_toggle` | `Ctrl+Alt+S` | 자막 ON/OFF 토글 핫키. 빈 값이면 비활성화됩니다. |
 
 아웃바운드 번역:
 

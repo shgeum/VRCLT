@@ -62,6 +62,11 @@ DEFAULTS = {
         "translation_on": True,         # last Dashboard translation toggle state
         "subtitles_on": True,           # last Dashboard subtitles toggle state
     },
+    "hotkeys": {                        # Windows global hotkeys for desktop/PC controls
+        "enabled": True,
+        "translation_toggle": "Ctrl+Alt+T",
+        "subtitles_toggle": "Ctrl+Alt+S",
+    },
     "outbound": {                       # pipeline A: my voice -> others
         "enabled": True,
         "target_language": "ja",        # BCP-47
