@@ -256,7 +256,7 @@ PC 핫키:
 | `overlay.tilt_deg` | `-15.0` | 오버레이 기울기 각도. |
 | `overlay.transform` | `null` | VR에서 위치를 다시 잡으면 자동 저장되는 정확한 3x4 자막 위치. |
 | `overlay.font` | `bundled:NotoSansCJKkr-Regular.otf` | 자막 오버레이 폰트. |
-| `overlay.font_size` | `44` | 자막 글자 크기. |
+| `overlay.font_size` | `27` | 자막 글자 크기. |
 | `overlay.display_sec` | `7.0` | 확정된 자막 줄이 남아 있는 시간. |
 | `overlay.lines` | `3` | 화면에 유지할 최근 확정 자막 줄 수. |
 | `overlay.show_source` | `false` | 자막에 원문도 함께 표시합니다. |

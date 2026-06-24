@@ -360,7 +360,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._overlay_font_size.setRange(18, 72)
         self._overlay_font_size.setSuffix(" px")
         self._overlay_font_size.setValue(
-            int(self._controller.cfg.get("overlay", {}).get("font_size", 44)))
+            int(self._controller.cfg.get("overlay", {}).get("font_size", 27)))
         self._overlay_font_size.valueChanged.connect(self._set_overlay_font_size)
         self._close_action = _NoWheelComboBox()
         self._sync_close_action()
@@ -1228,7 +1228,7 @@ class MainWindow(QtWidgets.QMainWindow):
         blocked = self._overlay_font_size.blockSignals(True)
         try:
             self._overlay_font_size.setValue(
-                int(self._controller.cfg.get("overlay", {}).get("font_size", 44)))
+                int(self._controller.cfg.get("overlay", {}).get("font_size", 27)))
         finally:
             self._overlay_font_size.blockSignals(blocked)
 

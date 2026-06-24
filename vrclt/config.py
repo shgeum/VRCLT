@@ -12,6 +12,7 @@ APP_MODES = ("vrchat", "discord")
 CLOSE_ACTIONS = ("tray", "exit")
 APPDATA_DIR = Path(os.environ.get("LOCALAPPDATA", ".")) / "vrclt"
 RESET_PRESERVE_PATHS = (
+    ("api_key",),
     ("control", "languages"),
     ("inbound", "languages"),
 )
@@ -89,7 +90,7 @@ DEFAULTS = {
     "inbound": {                        # pipeline B: others' voices -> me (subtitles)
         "enabled": True,
         "target_language": "ko",
-        "languages": ["ko", "en", "ja"],  # wrist menu cycles subtitles through these
+        "languages": ["ko", "en", "ja", "zh-Hans", "zh-Hant"],  # wrist menu cycles subtitles through these
         "process": "VRChat.exe",
         "play_audio": False,            # translated speech to my headphones
         "audio_device": "",             # "" = default output
@@ -114,7 +115,7 @@ DEFAULTS = {
         "tilt_deg": -15.0,
         "transform": None,              # exact 3x4 pose, auto-managed after VR reposition
         "font": bundled_font("NotoSansCJKkr-Regular.otf"),
-        "font_size": 44,
+        "font_size": 27,
         "display_sec": 7.0,
         "lines": 3,                     # recent finalized lines kept on screen
         "show_source": False,           # also show the original text (small)

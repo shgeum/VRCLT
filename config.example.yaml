@@ -71,7 +71,7 @@ overlay:                  # inbound subtitle overlay (SteamVR, HMD-locked)
   tilt_deg: -15.0
   transform: null             # auto-managed after repositioning in VR
   font: bundled:NotoSansCJKkr-Regular.otf
-  font_size: 44
+  font_size: 27
   display_sec: 7.0        # how long finalized lines stay visible
   lines: 3                # recent finalized lines kept on screen
   show_source: false      # also show the original text

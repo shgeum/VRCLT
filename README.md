@@ -262,7 +262,7 @@ Overlay and OSC:
 | `overlay.tilt_deg` | `-15.0` | Overlay tilt angle. |
 | `overlay.transform` | `null` | Exact saved 3x4 subtitle pose, auto-managed after repositioning in VR. |
 | `overlay.font` | `bundled:NotoSansCJKkr-Regular.otf` | Subtitle overlay font. |
-| `overlay.font_size` | `44` | Subtitle font size. |
+| `overlay.font_size` | `27` | Subtitle font size. |
 | `overlay.display_sec` | `7.0` | Time finalized subtitle lines stay visible. |
 | `overlay.lines` | `3` | Number of recent finalized lines kept on screen. |
 | `overlay.show_source` | `false` | Also shows original source text in subtitles. |

@@ -256,7 +256,7 @@ PC 热键:
 | `overlay.tilt_deg` | `-15.0` | 叠加层倾斜角度。 |
 | `overlay.transform` | `null` | 在 VR 中重新定位后自动保存的精确 3x4 字幕姿态。 |
 | `overlay.font` | `bundled:NotoSansCJKkr-Regular.otf` | 字幕叠加层字体。 |
-| `overlay.font_size` | `44` | 字幕字号。 |
+| `overlay.font_size` | `27` | 字幕字号。 |
 | `overlay.display_sec` | `7.0` | 已确认字幕行保留显示的时间。 |
 | `overlay.lines` | `3` | 屏幕上保留的最近确认字幕行数。 |
 | `overlay.show_source` | `false` | 在字幕中同时显示原文。 |

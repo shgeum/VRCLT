@@ -258,7 +258,7 @@ PC ホットキー:
 | `overlay.tilt_deg` | `-15.0` | オーバーレイの傾き角度。 |
 | `overlay.transform` | `null` | VR 内で位置を調整した後に自動保存される正確な 3x4 字幕ポーズ。 |
 | `overlay.font` | `bundled:NotoSansCJKkr-Regular.otf` | 字幕オーバーレイフォント。 |
-| `overlay.font_size` | `44` | 字幕の文字サイズ。 |
+| `overlay.font_size` | `27` | 字幕の文字サイズ。 |
 | `overlay.display_sec` | `7.0` | 確定字幕行が表示される時間。 |
 | `overlay.lines` | `3` | 画面に保持する最近の確定字幕行数。 |
 | `overlay.show_source` | `false` | 字幕に原文も表示します。 |
