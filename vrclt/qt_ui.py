@@ -139,6 +139,7 @@ class _UiSignals(QtCore.QObject):
     refresh = QtCore.Signal()
     save_done = QtCore.Signal(bool)
     mode_done = QtCore.Signal(bool)
+    reset_done = QtCore.Signal(bool)
     translation_hotkey = QtCore.Signal()
     subtitles_hotkey = QtCore.Signal()
     update_available = QtCore.Signal(object)
@@ -183,6 +184,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._hotkeys = WindowsGlobalHotkeys()
         self._save_thread = None
         self._mode_thread = None
+        self._reset_thread = None
         self._update_thread = None
         self._update_info = None
         self._update_notified = False
@@ -193,6 +195,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._signals.refresh.connect(self._refresh)
         self._signals.save_done.connect(self._save_done)
         self._signals.mode_done.connect(self._mode_done)
+        self._signals.reset_done.connect(self._reset_done)
         self._signals.translation_hotkey.connect(self._toggle_translation)
         self._signals.subtitles_hotkey.connect(self._toggle_subtitles)
         self._signals.update_available.connect(self._update_available)
@@ -216,6 +219,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sync_hotkeys()
         self._refresh()
         self._start_update_check()
+        QtCore.QTimer.singleShot(1200, self._maybe_prompt_config_reset_after_update)
 
     # ---------------- construction ----------------
     def _lang(self) -> str:
@@ -270,6 +274,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._subtitle_view.setPlaceholderText(self._tr("subtitle_live_placeholder"))
         if hasattr(self, "_btn_devices"):
             self._btn_devices.setText(self._tr("btn_refresh_devices"))
+        if hasattr(self, "_btn_reset_config"):
+            self._btn_reset_config.setText(self._tr("btn_reset_config"))
         if hasattr(self, "_btn_save"):
             self._btn_save.setText(self._tr("btn_save_restart"))
         if hasattr(self, "_btn_log_refresh"):
@@ -471,6 +477,8 @@ class MainWindow(QtWidgets.QMainWindow):
         buttons = QtWidgets.QHBoxLayout()
         self._btn_devices = QtWidgets.QPushButton(self._tr("btn_refresh_devices"))
         self._btn_devices.clicked.connect(self._reload_devices)
+        self._btn_reset_config = QtWidgets.QPushButton(self._tr("btn_reset_config"))
+        self._btn_reset_config.clicked.connect(self._confirm_reset_config)
         self._btn_save = QtWidgets.QPushButton(self._tr("btn_save_restart"))
         self._btn_save.setObjectName("primaryButton")
         self._btn_save.clicked.connect(self._save_settings)
@@ -478,6 +486,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._settings_note.setObjectName("noteText")
         buttons.addWidget(self._settings_note, 1)
         buttons.addWidget(self._btn_devices)
+        buttons.addWidget(self._btn_reset_config)
         buttons.addWidget(self._btn_save)
         outer.addLayout(buttons)
 
@@ -635,6 +644,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._add_group("grp_audio", [
             ("audio.voice_rms_threshold", "f.audio.voice_rms_threshold", "float"),
             ("audio.voice_hangover_sec", "f.audio.voice_hangover_sec", "float"),
+            ("audio.turn_end_silence_sec", "f.audio.turn_end_silence_sec", "float"),
             ("audio.echo_guard_multiplier", "f.audio.echo_guard_multiplier", "float"),
             ("audio.echo_guard_hold_sec", "f.audio.echo_guard_hold_sec", "float"),
             ("audio.echo_guard_barge_in_multiplier", "f.audio.echo_guard_barge_in_multiplier", "float"),
@@ -848,6 +858,64 @@ class MainWindow(QtWidgets.QMainWindow):
         if info is None:
             return
         QtGui.QDesktopServices.openUrl(QtCore.QUrl(info.release_url))
+
+    def _maybe_prompt_config_reset_after_update(self) -> None:
+        previous = self._controller.last_config_version()
+        if previous == __version__:
+            return
+        if not config_mod.CONFIG_PATH.exists():
+            self._controller.mark_config_version_seen(__version__)
+            return
+        body = self._tr("reset_config_update_body").format(
+            previous=previous or self._tr("version_unknown"),
+            current=__version__,
+        )
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            self._tr("reset_config_title"),
+            body,
+            QtWidgets.QMessageBox.StandardButton.Yes
+            | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No,
+        )
+        if reply == QtWidgets.QMessageBox.StandardButton.Yes:
+            self._run_config_reset()
+        else:
+            self._controller.mark_config_version_seen(__version__)
+
+    def _confirm_reset_config(self) -> None:
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            self._tr("reset_config_title"),
+            self._tr("reset_config_body"),
+            QtWidgets.QMessageBox.StandardButton.Yes
+            | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No,
+        )
+        if reply == QtWidgets.QMessageBox.StandardButton.Yes:
+            self._run_config_reset()
+
+    def _run_config_reset(self) -> None:
+        if self._reset_thread is not None and self._reset_thread.is_alive():
+            return
+        self._settings_note.setText(self._tr("msg_reset_restarting"))
+        self._btn_reset_config.setEnabled(False)
+        self._btn_save.setEnabled(False)
+
+        def run():
+            ok = self._controller.reset_config_preserving_language_lists(__version__)
+            self._signals.reset_done.emit(ok)
+
+        self._reset_thread = threading.Thread(target=run, daemon=True, name="vrclt-reset")
+        self._reset_thread.start()
+
+    def _reset_done(self, ok: bool) -> None:
+        self._btn_reset_config.setEnabled(True)
+        self._btn_save.setEnabled(True)
+        self._settings_note.setText(
+            self._tr("msg_reset_done") if ok else self._tr("msg_reset_failed"))
+        self._sync_hotkeys(force=True)
+        self._populate_settings()
 
     def _save_settings(self) -> None:
         try:

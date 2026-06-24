@@ -35,6 +35,7 @@ PASSTHROUGH_POLL_SEC = 0.008
 PASSTHROUGH_PREBUFFER_MS = 0
 PASSTHROUGH_SLICE_MS = 20
 PASSTHROUGH_BLOCK_MS = 10
+TTS_PREBUFFER_MS = 80
 
 # the model sometimes emits control-token junk like "<cont>" / "{cont>" when
 # it hears non-speech (background music/noise); strip those tag-like fragments
@@ -116,7 +117,8 @@ class OutboundPipeline:
         self.mic.set_gate_enabled(
             lambda: state.translation_on
             if self.voice_output and not self.passthrough_while_translating else True)
-        self.tts_player = PcmPlayer(ob["tts_device"], name="tts", rate=24000) \
+        self.tts_player = PcmPlayer(ob["tts_device"], name="tts", rate=24000,
+                                    prebuffer_ms=TTS_PREBUFFER_MS) \
             if self.voice_output else None
         # passthrough: raw 48k mic audio straight to the cable when translation is off
         self.passthrough = PcmPlayer(ob["tts_device"], name="passthrough", rate=CAPTURE_RATE,
@@ -147,6 +149,7 @@ class OutboundPipeline:
             enabled=lambda: self.state.translation_on,
             send_interval_ms=au["send_interval_ms"],
             idle_disconnect_sec=au["mic_idle_disconnect_sec"],
+            turn_end_silence_sec=au.get("turn_end_silence_sec", 0.55),
             on_src=self.segmenter.add_src,
             on_dst=self.segmenter.add_dst,
             on_audio=self._on_audio if self.voice_output else None,
@@ -304,6 +307,7 @@ class InboundPipeline:
             enabled=lambda: self._tap_running and self.state.subtitles_on,
             send_interval_ms=au["send_interval_ms"],
             idle_disconnect_sec=au["mic_idle_disconnect_sec"],
+            turn_end_silence_sec=au.get("turn_end_silence_sec", 0.55),
             on_src=self.segmenter.add_src,
             on_dst=self.segmenter.add_dst,
             on_audio=self._on_audio if self.player else None,

@@ -11,6 +11,10 @@ from .resources import bundled_font
 APP_MODES = ("vrchat", "discord")
 CLOSE_ACTIONS = ("tray", "exit")
 APPDATA_DIR = Path(os.environ.get("LOCALAPPDATA", ".")) / "vrclt"
+RESET_PRESERVE_PATHS = (
+    ("control", "languages"),
+    ("inbound", "languages"),
+)
 
 _PROFILE_RUNTIME_FIELDS = {
     "process": ("inbound", "process"),
@@ -61,6 +65,9 @@ DEFAULTS = {
     "dashboard": {
         "translation_on": True,         # last Dashboard translation toggle state
         "subtitles_on": True,           # last Dashboard subtitles toggle state
+    },
+    "meta": {
+        "last_version": "",             # last app version that reviewed config migration/reset
     },
     "hotkeys": {                        # Windows global hotkeys for desktop/PC controls
         "enabled": True,
@@ -113,11 +120,12 @@ DEFAULTS = {
         "show_source": False,           # also show the original text (small)
     },
     "audio": {
-        "send_interval_ms": 100,        # how often mic audio is flushed to the API
+        "send_interval_ms": 50,         # how often mic audio is flushed to the API
         "finalize_silence_sec": 2.0,    # flush a segment after this much transcription silence
         "mic_idle_disconnect_sec": 15.0,
         "voice_rms_threshold": 90.0,    # mic energy gate; raise if noise opens sessions, lower if speech is missed
         "voice_hangover_sec": 2.5,      # keep the turn open this long through pauses (avoids re-speak lag + chopping)
+        "turn_end_silence_sec": 0.55,   # tell Gemini the turn ended after this much real silence
         "echo_guard_multiplier": 4.0,   # gate boost while game audio plays (1.0 = off)
         "echo_guard_hold_sec": 1.2,     # mute outbound mic while inbound game speech is active
         "echo_guard_barge_in_multiplier": 3.0,  # allow my louder speech during echo guard
@@ -165,6 +173,40 @@ def _merge(base: dict, override: dict) -> dict:
             out[k] = _merge(out[k], v)
         else:
             out[k] = v
+    return out
+
+
+def _get_nested(cfg: dict, path: tuple[str, ...]):
+    cur = cfg
+    for part in path:
+        if not isinstance(cur, dict) or part not in cur:
+            return None
+        cur = cur[part]
+    return copy.deepcopy(cur)
+
+
+def _set_nested(cfg: dict, path: tuple[str, ...], value) -> None:
+    cur = cfg
+    for part in path[:-1]:
+        cur = cur.setdefault(part, {})
+    cur[path[-1]] = copy.deepcopy(value)
+
+
+def reset_preserving_language_lists(cfg: dict, version: str = "") -> dict:
+    """Return default config while preserving user language cycling lists."""
+    out = copy.deepcopy(DEFAULTS)
+    for path in RESET_PRESERVE_PATHS:
+        value = _get_nested(cfg, path)
+        if value:
+            _set_nested(out, path, value)
+    if version:
+        out.setdefault("meta", {})["last_version"] = version
+    return out
+
+
+def mark_version_seen(cfg: dict, version: str) -> dict:
+    out = copy.deepcopy(cfg)
+    out.setdefault("meta", {})["last_version"] = version
     return out
 
 

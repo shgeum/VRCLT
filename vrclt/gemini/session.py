@@ -58,6 +58,7 @@ class LiveTranslateSession:
                  get_target_language, echo_target_language: bool = False,
                  enabled=lambda: True,
                  send_interval_ms: int = 100, idle_disconnect_sec: float = 15.0,
+                 turn_end_silence_sec: float = 0.55,
                  on_src=None, on_dst=None, on_audio=None, on_turn_complete=None,
                  on_interrupted=None, on_session_state=None):
         self._client = genai.Client(api_key=api_key)
@@ -69,6 +70,7 @@ class LiveTranslateSession:
         self.name = name
         self._interval = max(0.05, send_interval_ms / 1000.0)
         self._idle_disconnect = idle_disconnect_sec
+        self._turn_end_silence = max(self._interval, float(turn_end_silence_sec))
         self._on_src = on_src
         self._on_dst = on_dst
         self._on_audio = on_audio
@@ -245,6 +247,14 @@ class LiveTranslateSession:
                 # turn is over so it flushes the rest of the translation NOW
                 # instead of holding it until the session closes (which split a
                 # sentence into a partial phrase + a late suffix)
+                if speaking:
+                    speaking = False
+                    try:
+                        await session.send_realtime_input(audio_stream_end=True)
+                    except Exception:
+                        return
+                continue
+            if not self._source.active(self._turn_end_silence):
                 if speaking:
                     speaking = False
                     try:

@@ -337,6 +337,35 @@ class AppController:
         except Exception:
             log.debug("failed to persist overlay font size", exc_info=True)
 
+    def last_config_version(self) -> str:
+        try:
+            return str(self.raw_cfg.get("meta", {}).get("last_version") or "")
+        except Exception:
+            return ""
+
+    def mark_config_version_seen(self, version: str) -> None:
+        with self._lock:
+            self.raw_cfg = config_mod.mark_version_seen(self.raw_cfg, version)
+            self.cfg = config_mod.mark_version_seen(self.cfg, version)
+            cfg = copy.deepcopy(self.raw_cfg)
+        try:
+            config_mod.save(cfg)
+            self._bump_config_revision()
+        except Exception:
+            log.debug("failed to persist config version marker", exc_info=True)
+
+    def reset_config_preserving_language_lists(self, version: str = "") -> bool:
+        try:
+            with self._lock:
+                cfg = config_mod.reset_preserving_language_lists(self.raw_cfg, version)
+            config_mod.save(cfg)
+        except Exception as e:
+            log.exception("failed to reset config")
+            self.last_error = str(e)
+            self._notify()
+            return False
+        return self.restart(cfg)
+
     def set_overlay_width(self, value: float) -> None:
         try:
             value = float(value)
