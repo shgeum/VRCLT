@@ -232,6 +232,13 @@ class LiveTranslateSession:
         speaking = False
         while True:
             await asyncio.sleep(self._interval)
+            if self._restart or not self._enabled():
+                if speaking:
+                    try:
+                        await session.send_realtime_input(audio_stream_end=True)
+                    except Exception:
+                        pass
+                return
             chunks = self._source.drain()
             if not chunks:
                 # no audio this tick: if speech just ended, tell the server the
@@ -282,12 +289,23 @@ class LiveTranslateSession:
                          self.name, self._idle_disconnect)
                 try:
                     await session.send_realtime_input(audio_stream_end=True)
-                    await asyncio.sleep(2.0)  # let final transcripts arrive
                 except Exception:
                     pass
-                self._closing = True
-                await session.close()
-                return
+                close_at = time.time() + 2.0  # let final transcripts arrive
+                while time.time() < close_at:
+                    await asyncio.sleep(0.1)
+                    if stop.is_set() or self._restart or not self._enabled():
+                        self._closing = True
+                        await session.close()
+                        return
+                    if self._source.active(self._idle_disconnect):
+                        log.info("[%s] voice resumed during idle close - keeping session open",
+                                 self.name)
+                        break
+                else:
+                    self._closing = True
+                    await session.close()
+                    return
 
 
 async def _sleep_interruptible(duration: float, stop: asyncio.Event) -> None:

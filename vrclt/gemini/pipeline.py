@@ -15,7 +15,7 @@ import re
 import time
 
 from ..audio.game_tap import GameAudioTap, find_pid
-from ..audio.mic_in import MicCapture, RATE as MIC_RATE
+from ..audio.mic_in import MicCapture, CAPTURE_RATE
 from ..audio.player import PcmPlayer
 from .. import i18n
 from ..gemini.session import LiveTranslateSession
@@ -31,6 +31,10 @@ log = logging.getLogger(__name__)
 FORCE_FINALIZE_CHARS = 120
 HARD_FINALIZE_CHARS = 140
 SENTENCE_END_CHARS = (".", "!", "?", "。", "！", "？", "…")
+PASSTHROUGH_POLL_SEC = 0.008
+PASSTHROUGH_PREBUFFER_MS = 0
+PASSTHROUGH_SLICE_MS = 20
+PASSTHROUGH_BLOCK_MS = 10
 
 # the model sometimes emits control-token junk like "<cont>" / "{cont>" when
 # it hears non-speech (background music/noise); strip those tag-like fragments
@@ -114,11 +118,13 @@ class OutboundPipeline:
             if self.voice_output and not self.passthrough_while_translating else True)
         self.tts_player = PcmPlayer(ob["tts_device"], name="tts", rate=24000) \
             if self.voice_output else None
-        # passthrough: raw 16k mic audio straight to the cable when translation is off
-        self.passthrough = PcmPlayer(ob["tts_device"], name="passthrough", rate=MIC_RATE) \
+        # passthrough: raw 48k mic audio straight to the cable when translation is off
+        self.passthrough = PcmPlayer(ob["tts_device"], name="passthrough", rate=CAPTURE_RATE,
+                                     prebuffer_ms=PASSTHROUGH_PREBUFFER_MS,
+                                     slice_ms=PASSTHROUGH_SLICE_MS,
+                                     block_ms=PASSTHROUGH_BLOCK_MS) \
             if self.voice_output or self.passthrough_while_translating else None
-        self._passthrough_tap = self.mic.add_raw_tap() \
-            if self.passthrough_while_translating else None
+        self._passthrough_tap = self.mic.add_raw_tap() if self.passthrough else None
         self.monitor = PcmPlayer(ob["monitor_device"], name="monitor") \
             if self.voice_output and ob["monitor_device"] else None
         self.chatbox = None
@@ -154,8 +160,25 @@ class OutboundPipeline:
         if field == "target_language":
             self.session.request_restart()
         if field == "translation_on":
-            # leaving passthrough: drop the audio buffered while off
-            self.mic.trim_to(0.5)
+            if value:
+                # Leaving passthrough: keep only a small speech onset cushion for
+                # Gemini and drop raw audio that may still be queued for VB-Cable.
+                self.mic.trim_to(0.5)
+                if self.passthrough:
+                    self.passthrough.interrupt()
+            else:
+                # Entering passthrough: stop stale translated audio immediately
+                # and start from fresh mic frames rather than replaying the last
+                # gated chunks that were meant for Gemini.
+                self.mic.trim_to(0.0)
+                if self._passthrough_tap is not None:
+                    self.mic.drain_tap(self._passthrough_tap)
+                if self.tts_player:
+                    self.tts_player.interrupt()
+                if self.monitor:
+                    self.monitor.interrupt()
+                if self.passthrough:
+                    self.passthrough.interrupt()
         if self.chatbox and self._feedback_chatbox:
             if field == "translation_on":
                 if value:
@@ -240,24 +263,14 @@ class OutboundPipeline:
             self.segmenter.tick()
 
     async def _route_passthrough(self, stop: asyncio.Event) -> None:
-        """While translation is OFF, drain the mic straight to the cable."""
-        if self._passthrough_tap is not None:
-            while not stop.is_set():
-                await asyncio.sleep(0.1)
-                chunks = self.mic.drain_tap(self._passthrough_tap)
-                if chunks:
-                    self.passthrough.play(b"".join(chunks))
+        """Route raw mic frames to the cable when passthrough should be audible."""
+        if self._passthrough_tap is None:
             return
-        was_off = False
         while not stop.is_set():
-            await asyncio.sleep(0.1)
-            if self.state.translation_on:
-                was_off = False
+            await asyncio.sleep(PASSTHROUGH_POLL_SEC)
+            chunks = self.mic.drain_tap(self._passthrough_tap)
+            if self.state.translation_on and not self.passthrough_while_translating:
                 continue
-            if not was_off:
-                was_off = True
-                self.mic.trim_to(0.2)  # don't replay buffered audio on mode switch
-            chunks = self.mic.drain()
             if chunks:
                 self.passthrough.play(b"".join(chunks))
 

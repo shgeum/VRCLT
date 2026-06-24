@@ -4,7 +4,7 @@ A small jitter buffer (prebuffer) absorbs the irregular cadence of server
 audio: playback only starts once ~prebuffer_ms is queued, then writes
 continuously, so gaps between server chunks don't make the voice choppy.
 
-Epoch-based interruption: play() enqueues (epoch, <=100ms slice) tuples;
+Epoch-based interruption: play() enqueues (epoch, <=slice_ms) tuples;
 interrupt() bumps the epoch so the consumer skips anything stale.
 """
 import logging
@@ -20,11 +20,12 @@ log = logging.getLogger(__name__)
 
 class PcmPlayer:
     def __init__(self, device_substr: str, name: str = "player", rate: int = 24000,
-                 prebuffer_ms: int = 120):
+                 prebuffer_ms: int = 120, slice_ms: int = 100, block_ms: int = 20):
         self._device_substr = device_substr
         self._name = name
         self._rate = rate
-        self._slice_bytes = rate // 10 * 2  # 100 ms of mono int16
+        self._slice_bytes = max(1, rate * max(1, slice_ms) // 1000) * 2
+        self._blocksize = max(1, rate * max(1, block_ms) // 1000)
         self._prebuffer_bytes = rate * 2 * prebuffer_ms // 1000
         self._q: queue.Queue[tuple[int, bytes]] = queue.Queue(maxsize=256)
         self._thread: threading.Thread | None = None
@@ -45,7 +46,7 @@ class PcmPlayer:
         try:
             stream = sd.RawOutputStream(
                 device=self._device_index, samplerate=self._rate, channels=1, dtype="int16",
-                blocksize=self._rate // 50, latency="low",  # 20 ms blocks
+                blocksize=self._blocksize, latency="low",
                 extra_settings=sd.WasapiSettings(auto_convert=True),
             )
             stream.start()

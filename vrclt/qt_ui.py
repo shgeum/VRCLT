@@ -8,6 +8,7 @@ from pathlib import Path
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from . import __version__
 from . import config as config_mod
 from . import i18n
 from .app_controller import resolve_ui_mode
@@ -19,6 +20,7 @@ from .languages import (
 )
 from .hotkeys import HotkeyRegistration, WindowsGlobalHotkeys
 from .resources import bundled_font, resolve_font_path
+from .update_check import check_latest_release
 
 log = logging.getLogger(__name__)
 
@@ -139,6 +141,7 @@ class _UiSignals(QtCore.QObject):
     mode_done = QtCore.Signal(bool)
     translation_hotkey = QtCore.Signal()
     subtitles_hotkey = QtCore.Signal()
+    update_available = QtCore.Signal(object)
 
 
 class _NoWheelComboBox(QtWidgets.QComboBox):
@@ -180,6 +183,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._hotkeys = WindowsGlobalHotkeys()
         self._save_thread = None
         self._mode_thread = None
+        self._update_thread = None
+        self._update_info = None
+        self._update_notified = False
         self._app_mode_applying = False
         self._app_mode_buttons = {}
         self._inputs, self._outputs = _device_names()
@@ -189,6 +195,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._signals.mode_done.connect(self._mode_done)
         self._signals.translation_hotkey.connect(self._toggle_translation)
         self._signals.subtitles_hotkey.connect(self._toggle_subtitles)
+        self._signals.update_available.connect(self._update_available)
 
         self.setWindowTitle("vrclt")
         self.resize(980, 720)
@@ -208,6 +215,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._controller.subscribe(self._signals.refresh.emit)
         self._sync_hotkeys()
         self._refresh()
+        self._start_update_check()
 
     # ---------------- construction ----------------
     def _lang(self) -> str:
@@ -268,6 +276,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self._btn_log_refresh.setText(self._tr("btn_refresh_log"))
         if hasattr(self, "_about_text"):
             self._about_text.setText(self._tr("about_paths").format(config=config_mod.CONFIG_PATH))
+        if hasattr(self, "_btn_update_open"):
+            self._btn_update_open.setText(self._tr("btn_update_open"))
+            self._sync_update_banner()
         if hasattr(self, "_close_action"):
             self._sync_close_action()
         for key, action in self._tray_actions.items():
@@ -295,6 +306,20 @@ class MainWindow(QtWidgets.QMainWindow):
         top.addWidget(self._btn_restart)
         root.addLayout(top)
         root.addWidget(self._error_text)
+
+        self._update_bar = QtWidgets.QWidget()
+        self._update_bar.setObjectName("updateBar")
+        update_layout = QtWidgets.QHBoxLayout(self._update_bar)
+        update_layout.setContentsMargins(12, 10, 12, 10)
+        self._update_text = QtWidgets.QLabel("")
+        self._update_text.setObjectName("updateText")
+        self._update_text.setWordWrap(True)
+        self._btn_update_open = QtWidgets.QPushButton(self._tr("btn_update_open"))
+        self._btn_update_open.clicked.connect(self._open_update_release)
+        update_layout.addWidget(self._update_text, 1)
+        update_layout.addWidget(self._btn_update_open)
+        self._update_bar.hide()
+        root.addWidget(self._update_bar)
 
         controls = QtWidgets.QGridLayout()
         self._btn_trans = QtWidgets.QPushButton()
@@ -486,6 +511,8 @@ class MainWindow(QtWidgets.QMainWindow):
         menu = QtWidgets.QMenu(self)
         act_show = menu.addAction(self._tr("tray_show"))
         act_settings = menu.addAction(self._tr("tray_settings"))
+        act_update = menu.addAction(self._tr("tray_update"))
+        act_update.setVisible(False)
         menu.addSeparator()
         act_trans = menu.addAction(self._tr("tray_trans"))
         act_sub = menu.addAction(self._tr("tray_subs"))
@@ -494,12 +521,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self._tray_actions = {
             "tray_show": act_show,
             "tray_settings": act_settings,
+            "tray_update": act_update,
             "tray_trans": act_trans,
             "tray_subs": act_sub,
             "tray_quit": act_quit,
         }
         act_show.triggered.connect(self._show_main)
         act_settings.triggered.connect(self._show_settings)
+        act_update.triggered.connect(self._open_update_release)
         act_trans.triggered.connect(self._toggle_translation)
         act_sub.triggered.connect(self._toggle_subtitles)
         act_quit.triggered.connect(self._quit)
@@ -507,6 +536,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._tray.activated.connect(
             lambda reason: self._show_main()
             if reason == QtWidgets.QSystemTrayIcon.ActivationReason.Trigger else None)
+        self._tray.messageClicked.connect(self._open_update_release)
         self._tray.show()
 
     def _make_icon(self) -> QtGui.QIcon:
@@ -554,6 +584,10 @@ class MainWindow(QtWidgets.QMainWindow):
             #statusText { font-weight: 700; }
             #errorText { color: #ffb4a8; }
             #noteText { color: #9aa0ad; }
+            #updateBar {
+                background: #1c1f29; border: 1px solid #d29922; border-radius: 6px;
+            }
+            #updateText { color: #ffd580; font-weight: 600; }
             QPushButton[modeButton="true"] {
                 background: #1c1f29; border: 1px solid #303542; border-radius: 8px;
                 padding: 10px 14px; font-weight: 600;
@@ -767,6 +801,54 @@ class MainWindow(QtWidgets.QMainWindow):
         return cfg
 
     # ---------------- actions ----------------
+    def _start_update_check(self) -> None:
+        if self._update_thread is not None:
+            return
+
+        def run():
+            info = check_latest_release(__version__)
+            if info is not None:
+                self._signals.update_available.emit(info)
+
+        self._update_thread = threading.Thread(
+            target=run, daemon=True, name="vrclt-update-check")
+        self._update_thread.start()
+
+    def _update_available(self, info) -> None:
+        self._update_info = info
+        self._sync_update_banner()
+        action = self._tray_actions.get("tray_update")
+        if action is not None:
+            action.setVisible(True)
+        if not self._update_notified:
+            self._update_notified = True
+            self._tray.showMessage(
+                self._tr("update_title"),
+                self._update_message(info),
+                QtWidgets.QSystemTrayIcon.MessageIcon.Information,
+                10000,
+            )
+
+    def _sync_update_banner(self) -> None:
+        if not hasattr(self, "_update_bar"):
+            return
+        info = self._update_info
+        self._update_bar.setVisible(info is not None)
+        if info is not None:
+            self._update_text.setText(self._update_message(info))
+
+    def _update_message(self, info) -> str:
+        return self._tr("update_body").format(
+            current=info.current_version,
+            latest=info.latest_version,
+        )
+
+    def _open_update_release(self) -> None:
+        info = self._update_info
+        if info is None:
+            return
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl(info.release_url))
+
     def _save_settings(self) -> None:
         try:
             cfg = self._settings_from_fields()

@@ -1,7 +1,10 @@
-"""Microphone capture -> 16 kHz mono int16, voice-activity gated.
+"""Microphone capture -> high-rate raw taps + 16 kHz Gemini source.
 
-Only audio during actual speech (RMS over the gate, plus a short pre-roll and
-hangover tail) is buffered for sending. This matters for two reasons:
+The physical mic is captured at 48 kHz mono int16 so raw passthrough keeps
+normal voice bandwidth. Audio buffered for Gemini is resampled to 16 kHz and
+voice-activity gated: only audio during actual speech (RMS over the gate, plus
+a short pre-roll and hangover tail) is buffered for sending. This matters for
+two reasons:
 
 1. Latency/cost: silence is never streamed, so the server isn't fed dead air.
 2. Echo: while game audio plays, the echo guard raises the gate, so other
@@ -20,15 +23,18 @@ import time
 
 import numpy as np
 import sounddevice as sd
+import soxr
 
 from . import devices
 
 log = logging.getLogger(__name__)
 
-RATE = 16000
-CHUNK_MS = 32  # ~512 frames @ 16k
-PREROLL_CHUNKS = 6  # ~192 ms kept so speech onsets aren't clipped
+RATE = 16000  # Gemini input rate
+CAPTURE_RATE = 48000  # raw mic / passthrough rate
+CHUNK_MS = 10
+PREROLL_CHUNKS = 20  # ~200 ms kept so speech onsets aren't clipped
 UPGRADE_INTERVAL = 6.0  # how often to retry upgrading to WASAPI
+BUFFER_CHUNKS = int(13_000 / CHUNK_MS)
 
 
 class MicCapture:
@@ -49,13 +55,14 @@ class MicCapture:
         self._gate_enabled = lambda: True
         self._stream: sd.RawInputStream | None = None
         self._current_api: str | None = None
+        self._rs: soxr.ResampleStream | None = None
         # ~13 s of audio max; old chunks drop automatically while disconnected
-        self.buffer: collections.deque[bytes] = collections.deque(maxlen=400)
+        self.buffer: collections.deque[bytes] = collections.deque(maxlen=BUFFER_CHUNKS)
         self._raw_taps: list[collections.deque[bytes]] = []
         self._preroll: collections.deque[bytes] = collections.deque(maxlen=PREROLL_CHUNKS)
         self.last_voice_time = 0.0
         self._in_voice = False
-        self._blocksize = int(RATE * CHUNK_MS / 1000)
+        self._blocksize = int(CAPTURE_RATE * CHUNK_MS / 1000)
         self._swap_lock = threading.Lock()
         self._upgrade_stop = threading.Event()
         self._upgrade_thread: threading.Thread | None = None
@@ -70,7 +77,8 @@ class MicCapture:
     def set_gate_enabled(self, fn) -> None:
         self._gate_enabled = fn
 
-    def add_raw_tap(self, maxlen: int = 400) -> collections.deque[bytes]:
+    def add_raw_tap(self, maxlen: int = BUFFER_CHUNKS) -> collections.deque[bytes]:
+        """Add a 48 kHz mono int16 raw mic tap for passthrough."""
         tap: collections.deque[bytes] = collections.deque(maxlen=maxlen)
         self._raw_taps.append(tap)
         return tap
@@ -82,13 +90,24 @@ class MicCapture:
             pass
 
     # ---------------- audio callback ----------------
-    def _callback(self, indata, frames, time_info, status):
+    def _make_callback(self, rs: soxr.ResampleStream):
+        def callback(indata, frames, time_info, status):
+            self._callback(indata, frames, time_info, status, rs)
+        return callback
+
+    def _callback(self, indata, frames, time_info, status, rs: soxr.ResampleStream):
         if status:
             log.debug("mic status: %s", status)
         data = bytes(indata)
         now = time.time()
-        x = np.frombuffer(data, dtype=np.int16).astype(np.float32)
+        x16 = np.frombuffer(data, dtype=np.int16)
+        x = x16.astype(np.float32)
         rms = float(np.sqrt(np.mean(x * x))) if x.size else 0.0
+        y = rs.resample_chunk(x / 32768.0)
+        if y.size:
+            gemini_data = (np.clip(y, -1.0, 1.0) * 32767.0).astype(np.int16).tobytes()
+        else:
+            gemini_data = b""
         try:
             threshold = self._threshold * float(self._boost())
         except Exception:
@@ -111,11 +130,13 @@ class MicCapture:
 
         for tap in list(self._raw_taps):
             tap.append(data)
+        if not gemini_data:
+            return
         if not self._gate_enabled():
             # passthrough / gate off: stream everything continuously
-            self.buffer.append(data)
+            self.buffer.append(gemini_data)
             self.last_voice_time = now
-            self._preroll.append(data)
+            self._preroll.append(gemini_data)
             return
         # hysteresis: open at `threshold`, but once speaking, stay open down to
         # 40% of it - so weak consonants / brief dips don't chop the stream
@@ -125,21 +146,22 @@ class MicCapture:
                 self._in_voice = True
                 self.last_voice_time = now
                 self.buffer.extend(self._preroll)  # include the speech onset
-                self.buffer.append(data)
+                self.buffer.append(gemini_data)
         else:
             if rms >= threshold * 0.4:
                 self.last_voice_time = now
-                self.buffer.append(data)
+                self.buffer.append(gemini_data)
             elif (now - self.last_voice_time) < self._hangover:
-                self.buffer.append(data)  # hangover: bridge a short pause
+                self.buffer.append(gemini_data)  # hangover: bridge a short pause
             else:
                 self._in_voice = False
-        self._preroll.append(data)
+        self._preroll.append(gemini_data)
 
     # ---------------- stream open ----------------
-    def _open(self, idx: int, api: str, latency) -> sd.RawInputStream:
-        kwargs = dict(device=idx, samplerate=RATE, channels=1, dtype="int16",
-                      blocksize=self._blocksize, latency=latency, callback=self._callback)
+    def _open(self, idx: int, api: str, latency, rs: soxr.ResampleStream) -> sd.RawInputStream:
+        kwargs = dict(device=idx, samplerate=CAPTURE_RATE, channels=1, dtype="int16",
+                      blocksize=self._blocksize, latency=latency,
+                      callback=self._make_callback(rs))
         if api == "Windows WASAPI":
             kwargs["extra_settings"] = sd.WasapiSettings(auto_convert=True)
         s = sd.RawInputStream(**kwargs)
@@ -156,12 +178,14 @@ class MicCapture:
             name = sd.query_devices(idx)["name"]
             for latency in ("low", None):
                 try:
-                    self._stream = self._open(idx, api, latency)
+                    rs = soxr.ResampleStream(CAPTURE_RATE, RATE, 1, dtype="float32")
+                    self._stream = self._open(idx, api, latency, rs)
+                    self._rs = rs
                     self._current_api = api
                     log.info("mic capture started: [%d] %s via %s @ %d Hz mono "
-                             "(gate RMS %.0f, hangover %.1fs, latency=%s)",
-                             idx, name, api, RATE, self._threshold, self._hangover,
-                             latency or "default")
+                             "(Gemini %d Hz, gate RMS %.0f, hangover %.1fs, latency=%s)",
+                             idx, name, api, CAPTURE_RATE, RATE, self._threshold,
+                             self._hangover, latency or "default")
                     if api != "Windows WASAPI":
                         log.warning("mic opened via %s (HIGH latency). WASAPI was busy "
                                     "(VRChat probing the mic?); will auto-upgrade to "
@@ -178,6 +202,7 @@ class MicCapture:
                         except Exception:
                             pass
                         self._stream = None
+                        self._rs = None
         raise RuntimeError(
             f"could not start mic capture ({self._device_substr!r}): {last_err}. "
             "The mic may be held by another app - set VRChat's microphone to "
@@ -198,17 +223,21 @@ class MicCapture:
             if self._current_api == "Windows WASAPI":
                 return
             new = None
+            new_rs = None
             for latency in ("low", None):
                 try:
-                    new = self._open(wasapi_idx, "Windows WASAPI", latency)
+                    new_rs = soxr.ResampleStream(CAPTURE_RATE, RATE, 1, dtype="float32")
+                    new = self._open(wasapi_idx, "Windows WASAPI", latency, new_rs)
                     break
                 except Exception:
                     new = None
+                    new_rs = None
             if new is None:
                 continue  # still busy, retry next interval
             with self._swap_lock:
                 old = self._stream
                 self._stream = new
+                self._rs = new_rs
                 self._current_api = "Windows WASAPI"
             if old is not None:
                 try:
@@ -245,6 +274,9 @@ class MicCapture:
 
     def trim_to(self, seconds: float) -> None:
         """Drop buffered audio beyond a short pre-roll (stale audio guard)."""
+        if seconds <= 0:
+            self.buffer.clear()
+            return
         keep = max(1, int(seconds * 1000 / CHUNK_MS))
         while len(self.buffer) > keep:
             try:
@@ -260,6 +292,7 @@ class MicCapture:
         with self._swap_lock:
             s = self._stream
             self._stream = None
+            self._rs = None
         if s is not None:
             try:
                 s.stop()
