@@ -15,6 +15,8 @@
 - VRChat OSC 챗박스, 아바타 OSC 제어, SteamVR 자막, 손목 메뉴 지원
 - 원래 목소리는 그대로 보내고 OSC 챗박스 번역 텍스트만 추가하는 VRChat 텍스트 전용 모드
 - Discord 프로세스 오디오 캡처와 VRChat 전용 기능 자동 비활성화
+- 원음 송출은 48 kHz 원본 마이크 스트림을 바로 사용하고, Gemini 번역용 스트림은 별도로 리샘플링
+- GitHub Releases 업데이트 알림과 API 키/저장 언어 목록을 보존하는 안전한 설정 리셋
 - 단일 exe 빌드: `dist\vrclt.exe`
 - 사용자 설정 저장 위치: `%LOCALAPPDATA%\vrclt\config.yaml`
 
@@ -123,6 +125,7 @@ Discord Canary 또는 PTB를 사용한다면 설정 또는 `app.profiles.discord
 - 기본 도착어와 저장된 언어 목록
 - PC 전역 핫키 설정
 - 오디오 임계값과 VAD 설정
+- API 키, 출력 언어 목록, 자막 언어 목록은 유지하는 기본값 리셋 버튼
 - OSC, 챗박스, SteamVR 오버레이, 손목 UI 옵션
 - UI 언어와 UI 모드
 
@@ -153,6 +156,10 @@ target app process audio -> ProcTap -> Gemini Live -> subtitles
 번역이 OFF이면 마이크는 Gemini를 거치지 않고 `CABLE Input`으로 바로 전달됩니다.
 VRChat **텍스트 전용**에서는 원래 목소리가 항상 passthrough되고, 번역 토글은
 Gemini 텍스트 번역과 챗박스 출력만 제어합니다.
+
+원음 passthrough는 캡처한 48 kHz 마이크 스트림을 그대로 사용하고, Gemini 번역용
+스트림은 별도로 리샘플링합니다. 그래서 passthrough가 번역 세션을 기다리지 않고,
+불필요한 음질 손실도 줄입니다.
 
 ## VRChat 기능
 
@@ -190,6 +197,7 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 | `api_key` | `""` | Gemini API 키. 비어 있으면 `GEMINI_API_KEY` 환경 변수를 사용할 수 있습니다. |
 | `model` | `gemini-3.5-live-translate-preview` | Gemini Live 모델 이름. |
 | `log_level` | `INFO` | Python 로그 레벨. |
+| `meta.last_version` | `""` | 현재 설정에서 확인한 마지막 앱 버전. 업데이트 후 1회 리셋 확인에 사용합니다. |
 | `app.mode` | `vrchat` | 활성 프로필: `vrchat` 또는 `discord`. |
 | `app.profiles.<mode>.process` | `VRChat.exe` / `Discord.exe` | 인바운드 자막용으로 캡처할 프로세스. |
 | `app.profiles.<mode>.ui_mode` | `auto` / `desktop` | 프로필이 적용하는 UI 모드. |
@@ -242,7 +250,7 @@ PC 핫키:
 | `inbound.audio_device` | `""` | 인바운드 번역 음성 출력 장치. 비어 있으면 기본 출력을 사용합니다. |
 | `inbound.vad_enabled` | `true` | 배경음악/잡음을 줄이기 위해 음성 활동 감지를 사용합니다. |
 | `inbound.vad_threshold` | `0.5` | `0`부터 `1`까지의 VAD 엄격도. 높을수록 비음성을 더 많이 거릅니다. |
-| `inbound.vad_hangover_sec` | `0.6` | 말이 멈춘 뒤 잠깐 더 캡처를 유지하는 시간. |
+| `inbound.vad_hangover_sec` | `0.35` | 말이 멈춘 뒤 잠깐 더 캡처를 유지하는 시간. 낮출수록 자막 꼬리 지연이 줄어듭니다. |
 
 오버레이와 OSC:
 
@@ -271,11 +279,15 @@ PC 핫키:
 
 | 키 | 기본값 | 설명 |
 | --- | --- | --- |
-| `audio.send_interval_ms` | `100` | 마이크 오디오를 Gemini로 보내는 주기. |
+| `audio.send_interval_ms` | `50` | 마이크 오디오를 Gemini로 보내는 주기. 낮을수록 번역 지연이 줄지만 네트워크 전송량은 조금 늘어납니다. |
 | `audio.finalize_silence_sec` | `2.0` | 이만큼 침묵하면 세그먼트를 확정합니다. |
 | `audio.mic_idle_disconnect_sec` | `15.0` | 마이크 입력이 없을 때 Gemini 세션을 끊는 시간. |
 | `audio.voice_rms_threshold` | `90.0` | 마이크 음성 감지 에너지 임계값. |
 | `audio.voice_hangover_sec` | `2.5` | 짧은 멈춤 동안 마이크 턴을 유지하는 시간. |
+| `audio.turn_end_silence_sec` | `0.55` | 실제 마이크 침묵이 이만큼 이어지면 Gemini에 턴 종료 힌트를 보냅니다. 낮출수록 번역 음성 지연이 줄 수 있습니다. |
+| `audio.inbound_turn_end_silence_sec` | `0.35` | 인바운드 자막 세션에 더 빠른 턴 종료 힌트를 보냅니다. |
+| `audio.subtitle_partial_interval_sec` | `0.15` | 자막 줄이 확정되기 전 실시간으로 갱신하는 주기. |
+| `audio.subtitle_finalize_silence_sec` | `0.8` | 인바운드 자막 줄을 확정하기 전 필요한 침묵 시간. |
 | `audio.echo_guard_multiplier` | `4.0` | 대상 앱 오디오가 활성일 때 마이크 게이트를 높이는 배수. `1.0`이면 비활성. |
 | `audio.echo_guard_hold_sec` | `1.2` | 대상 앱 음성이 활성일 때 outbound 마이크 입력을 차단하는 시간. |
 | `audio.echo_guard_barge_in_multiplier` | `3.0` | 에코 가드 중에도 더 큰 내 목소리는 통과시킵니다. 낮출수록 동시 발화가 더 쉽게 통과합니다. |
@@ -343,7 +355,8 @@ release\vrclt-v0.1.0-windows-x64.exe.sha256
 - 인바운드 자막이 안 뜸: 대상 프로세스 이름이 실제 실행 중인 앱과 맞는지 확인합니다. 예: `VRChat.exe`, `Discord.exe`.
 - API 키 필요 상태: 설정에 키를 입력하거나 `GEMINI_API_KEY`를 설정합니다.
 - VR 오버레이가 안 뜸: SteamVR이 실행 중이고 `overlay.enabled` / `wrist_ui.enabled`가 켜져 있는지 확인합니다.
-- 설정을 초기화하고 싶음: 앱을 닫고 `%LOCALAPPDATA%\vrclt\config.yaml`을 다른 이름으로 옮긴 뒤 다시 실행합니다.
+- passthrough나 자막 지연이 큼: 먼저 이 README의 기본값을 사용하고, 연결이 안정적이면 `audio.turn_end_silence_sec`, `audio.inbound_turn_end_silence_sec`, `audio.subtitle_finalize_silence_sec`를 조심해서 낮춥니다.
+- 설정을 초기화하고 싶음: 설정 탭의 **기본값 리셋**을 사용합니다. API 키, 출력 언어 목록, 자막 언어 목록은 유지하고 나머지를 기본값으로 되돌립니다. 앱 업데이트 후에도 vrclt가 이 리셋을 한 번 물어봅니다.
 
 ## 감사
 

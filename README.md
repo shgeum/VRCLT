@@ -16,6 +16,8 @@ people's speech.
 - VRChat support for OSC chatbox output, avatar OSC controls, SteamVR subtitles, and the wrist menu
 - VRC Text Only mode for sending translated chatbox text while passing your original voice through
 - Discord mode with Discord process audio capture and VRChat-only features disabled
+- Low-latency raw mic passthrough with separate Gemini resampling for translation
+- GitHub Releases update notification and safe config reset that keeps your API key and saved language lists
 - Single-file release build: `dist\vrclt.exe`
 - User settings stored in `%LOCALAPPDATA%\vrclt\config.yaml`
 
@@ -126,6 +128,7 @@ Settings:
 - Default target languages and saved language lists
 - Global PC hotkey settings
 - Audio thresholds and VAD settings
+- Reset defaults button that keeps the API key, output language list, and subtitle language list
 - OSC, chatbox, SteamVR overlay, and wrist UI options
 - UI language and UI mode
 
@@ -157,6 +160,10 @@ When translation is OFF, the microphone bypasses Gemini and is sent directly to
 `CABLE Input`. In VRChat **Text only**, the original microphone is always passed
 through; the translation toggle controls Gemini text translation and chatbox
 output.
+
+Raw passthrough uses the captured 48 kHz microphone stream directly, while the
+Gemini translation stream is resampled separately. This keeps passthrough from
+waiting on the translation session and avoids unnecessary quality loss.
 
 ## VRChat Features
 
@@ -196,6 +203,7 @@ Top-level and app profile settings:
 | `api_key` | `""` | Gemini API key. Empty means `GEMINI_API_KEY` can be used. |
 | `model` | `gemini-3.5-live-translate-preview` | Gemini Live model name. |
 | `log_level` | `INFO` | Python logging level. |
+| `meta.last_version` | `""` | Last app version that acknowledged the current config. Used for one-time update reset prompts. |
 | `app.mode` | `vrchat` | Active profile: `vrchat` or `discord`. |
 | `app.profiles.<mode>.process` | `VRChat.exe` / `Discord.exe` | Process captured for inbound subtitles. |
 | `app.profiles.<mode>.ui_mode` | `auto` / `desktop` | UI mode applied by the profile. |
@@ -248,7 +256,7 @@ Inbound subtitles:
 | `inbound.audio_device` | `""` | Output device for inbound translated speech. Empty uses default output. |
 | `inbound.vad_enabled` | `true` | Uses voice activity detection to gate background music/noise. |
 | `inbound.vad_threshold` | `0.5` | VAD strictness from `0` to `1`; higher rejects more non-speech. |
-| `inbound.vad_hangover_sec` | `0.6` | Keeps capturing briefly after speech stops. |
+| `inbound.vad_hangover_sec` | `0.35` | Keeps capturing briefly after speech stops. Lower values reduce subtitle tail latency. |
 
 Overlay and OSC:
 
@@ -277,11 +285,15 @@ Audio, control, UI, and wrist menu:
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `audio.send_interval_ms` | `100` | Microphone audio flush interval to Gemini. |
+| `audio.send_interval_ms` | `50` | Microphone audio flush interval to Gemini. Lower values reduce translation latency at a small network overhead cost. |
 | `audio.finalize_silence_sec` | `2.0` | Silence duration before a segment is finalized. |
 | `audio.mic_idle_disconnect_sec` | `15.0` | Disconnects idle Gemini mic sessions after this many seconds. |
 | `audio.voice_rms_threshold` | `90.0` | Microphone energy gate threshold. |
 | `audio.voice_hangover_sec` | `2.5` | Keeps the mic turn open through short pauses. |
+| `audio.turn_end_silence_sec` | `0.55` | Sends a turn-end hint to Gemini after this much real microphone silence. Lower values can reduce translated voice delay. |
+| `audio.inbound_turn_end_silence_sec` | `0.35` | Sends a faster turn-end hint for inbound subtitle sessions. |
+| `audio.subtitle_partial_interval_sec` | `0.15` | Live subtitle refresh cadence before a line is finalized. |
+| `audio.subtitle_finalize_silence_sec` | `0.8` | Silence duration before an inbound subtitle line is finalized. |
 | `audio.echo_guard_multiplier` | `4.0` | Raises mic gate while target-app audio is active. `1.0` disables it. |
 | `audio.echo_guard_hold_sec` | `1.2` | Blocks outbound mic input while target-app speech is active. |
 | `audio.echo_guard_barge_in_multiplier` | `3.0` | Lets louder local speech pass during echo guard. Lower values pass barge-in more easily. |
@@ -349,7 +361,8 @@ app receives audio from `CABLE Output`.
 - No inbound subtitles: confirm the target process name matches the running app, for example `VRChat.exe` or `Discord.exe`.
 - Runtime says API key is required: enter the key in Settings or set `GEMINI_API_KEY`.
 - VR overlays do not appear: confirm SteamVR is running and `overlay.enabled` / `wrist_ui.enabled` are enabled.
-- Need a clean config: close the app, move `%LOCALAPPDATA%\vrclt\config.yaml`, then start the app again.
+- Passthrough or subtitles feel late: start from the defaults in this README, then lower `audio.turn_end_silence_sec`, `audio.inbound_turn_end_silence_sec`, or `audio.subtitle_finalize_silence_sec` carefully if your connection is stable.
+- Need a clean config: use **Reset defaults** in Settings. It resets current settings while preserving the API key, output language list, and subtitle language list. After an app update, vrclt also asks once whether to do this reset.
 
 ## Thanks To
 
