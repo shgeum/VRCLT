@@ -55,8 +55,10 @@ class Segmenter:
     """Accumulates transcription fragments; finalizes on turnComplete, silence,
     or when the text outgrows the chatbox limit."""
 
-    def __init__(self, finalize_silence_sec: float, on_final, on_partial=None):
+    def __init__(self, finalize_silence_sec: float, on_final, on_partial=None,
+                 partial_interval_sec: float = 0.3):
         self._silence = finalize_silence_sec
+        self._partial_interval = max(0.05, float(partial_interval_sec))
         self._on_final = on_final
         self._on_partial = on_partial
         self._src = ""
@@ -82,7 +84,8 @@ class Segmenter:
                 (len(dst) > FORCE_FINALIZE_CHARS and dst.endswith(SENTENCE_END_CHARS)):
             self.flush()
             return
-        if self._on_partial and (src or dst) and (time.time() - self._last_partial) > 0.3:
+        if self._on_partial and (src or dst) and \
+                (time.time() - self._last_partial) > self._partial_interval:
             self._last_partial = time.time()
             self._on_partial(src, dst)
 
@@ -296,7 +299,12 @@ class InboundPipeline:
         self._tap_running = False
         self.player = PcmPlayer(ib["audio_device"], name="inbound-audio") if ib["play_audio"] else None
 
-        self.segmenter = Segmenter(au["finalize_silence_sec"], self._on_final, self._on_partial)
+        self.segmenter = Segmenter(
+            au.get("subtitle_finalize_silence_sec", au["finalize_silence_sec"]),
+            self._on_final,
+            self._on_partial,
+            partial_interval_sec=au.get("subtitle_partial_interval_sec", 0.15),
+        )
         self.session = LiveTranslateSession(
             api_key=api_key,
             model=cfg["model"],
@@ -307,7 +315,10 @@ class InboundPipeline:
             enabled=lambda: self._tap_running and self.state.subtitles_on,
             send_interval_ms=au["send_interval_ms"],
             idle_disconnect_sec=au["mic_idle_disconnect_sec"],
-            turn_end_silence_sec=au.get("turn_end_silence_sec", 0.55),
+            turn_end_silence_sec=au.get(
+                "inbound_turn_end_silence_sec",
+                au.get("turn_end_silence_sec", 0.55),
+            ),
             on_src=self.segmenter.add_src,
             on_dst=self.segmenter.add_dst,
             on_audio=self._on_audio if self.player else None,

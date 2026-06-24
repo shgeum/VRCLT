@@ -37,7 +37,7 @@ class GameAudioTap:
     """
 
     def __init__(self, exe_name: str = "VRChat.exe", *, use_vad: bool = True,
-                 vad_threshold: float = 0.5, vad_hangover_sec: float = 0.6):
+                 vad_threshold: float = 0.5, vad_hangover_sec: float = 0.35):
         self._exe = exe_name
         self._tap = None
         self._rs = None

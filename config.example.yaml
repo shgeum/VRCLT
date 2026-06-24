@@ -60,7 +60,7 @@ inbound:                  # others' voices -> me (subtitles)
   audio_device: ""
   vad_enabled: true       # Silero VAD: send only speech to Gemini
   vad_threshold: 0.5      # 0-1; raise toward 0.7 to reject more music
-  vad_hangover_sec: 0.6   # keep capturing this long after speech stops
+  vad_hangover_sec: 0.35  # keep capturing this long after speech stops
 
 overlay:                  # inbound subtitle overlay (SteamVR, HMD-locked)
   enabled: true
@@ -91,6 +91,9 @@ audio:
   voice_rms_threshold: 90.0   # raise if noise opens sessions, lower if speech is missed
   voice_hangover_sec: 2.5     # keep the turn open this long through pauses
   turn_end_silence_sec: 0.55  # tell Gemini to flush after this much real silence
+  inbound_turn_end_silence_sec: 0.35  # faster flush for subtitle sessions
+  subtitle_partial_interval_sec: 0.15 # live subtitle refresh cadence
+  subtitle_finalize_silence_sec: 0.8  # finalize subtitle lines after this silence
   echo_guard_multiplier: 4.0  # gate boost while game audio plays; 1.0 = off
   echo_guard_hold_sec: 1.2    # mute outbound mic while inbound game speech is active
   echo_guard_barge_in_multiplier: 3.0  # allow my louder speech during echo guard
