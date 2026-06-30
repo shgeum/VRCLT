@@ -9,6 +9,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from . import config as config_mod
 from . import i18n
+from .app_controller import resolve_ui_mode
 
 log = logging.getLogger(__name__)
 
@@ -73,15 +74,17 @@ class DesktopSubtitleOverlay(QtWidgets.QWidget):
         state = self._controller.state
         cfg = self._controller.cfg
         self.setWindowTitle(i18n.tr(state.ui_lang, "desktop_subtitle_title"))
-        overlay_cfg = cfg.get("overlay", {})
-        enabled = bool(overlay_cfg.get("enabled", True))
+        desktop_mode = resolve_ui_mode(cfg) == "desktop"
+        inbound_enabled = bool(cfg.get("inbound", {}).get("enabled", True))
         edit = bool(state.edit_mode)
         text = self._subtitle_text()
 
         if edit and not text:
             text = i18n.tr(state.ui_lang, "sub_placeholder")
 
-        should_show = edit or (enabled and state.subtitles_on and bool(text))
+        should_show = desktop_mode and (
+            edit or (inbound_enabled and state.subtitles_on and bool(text))
+        )
         if not should_show:
             self.hide()
             return
@@ -100,6 +103,8 @@ class DesktopSubtitleOverlay(QtWidgets.QWidget):
 
     def show_for_edit(self) -> None:
         self.refresh()
+        if resolve_ui_mode(self._controller.cfg) != "desktop":
+            return
         self.show()
         self.raise_()
 

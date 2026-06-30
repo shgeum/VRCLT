@@ -16,9 +16,20 @@
 - 원래 목소리는 그대로 보내고 OSC 챗박스 번역 텍스트만 추가하는 VRChat 텍스트 전용 모드
 - Discord 프로세스 오디오 캡처와 VRChat 전용 기능 자동 비활성화
 - 원음 송출은 48 kHz 원본 마이크 스트림을 바로 사용하고, Gemini 번역용 스트림은 별도로 리샘플링
-- GitHub Releases 업데이트 알림과 API 키/저장 언어 목록을 보존하는 안전한 설정 리셋
+- GitHub Releases 업데이트 알림과 API 키, 저장 언어 목록, UI 언어, 창 닫기 동작, 선택한 오디오 장치를 보존하는 안전한 설정 리셋
 - 단일 exe 빌드: `dist\vrclt.exe`
 - 사용자 설정 저장 위치: `%LOCALAPPDATA%\vrclt\config.yaml`
+
+## 0.8.0 주요 변경점
+
+- passthrough 지연 감소: 원본 마이크 오디오는 캡처된 48 kHz 스트림을 바로 사용하고, 재생 버퍼링을 줄였습니다.
+- 번역 응답성 개선: 마이크 오디오를 Gemini로 더 자주 보내고, 실제 침묵이 감지되면 더 빨리 턴 종료 힌트를 보냅니다.
+- OSC 챗박스 실시간 출력: 말하는 도중 partial 번역 텍스트를 보내고, 같은 내용의 final 중복 전송은 막습니다.
+- Discord 캡처 안정화: Discord 다중 프로세스 트리를 루트 프로세스부터 캡처하고, 선택된 PID가 바뀌면 캡처를 다시 시작합니다.
+- 자막 지연 감소: 인바운드 VAD hangover를 줄이고, 실시간 자막 partial 갱신과 자막 확정 시점을 앞당겼습니다.
+- 모드 전환 안정화: 번역과 passthrough를 전환할 때 오래된 번역 음성, 모니터 음성, passthrough 버퍼를 비웁니다.
+- 업데이트 알림: 릴리스 빌드는 GitHub Releases를 확인하고 새 버전이 있으면 대시보드 배너, 트레이 메뉴, 알림을 표시합니다.
+- 설정 리셋 흐름: 앱 업데이트 후 API 키, 출력 언어 목록, 자막 언어 목록, UI 언어, 창 닫기 동작, 선택한 오디오 장치를 보존한 채 기본값으로 리셋할지 한 번 묻습니다. 같은 리셋은 설정에서도 실행할 수 있습니다.
 
 ## 요구사항
 
@@ -88,7 +99,7 @@ Copy-Item config.example.yaml config.yaml
 | 모드 | 대상 | 동작 |
 | --- | --- | --- |
 | `vrchat` | VRChat | `VRChat.exe` 오디오 캡처, OSC 챗박스, 아바타 OSC 제어, SteamVR 자막, 손목 UI 활성화 |
-| `discord` | Discord | `Discord.exe` 오디오 캡처, VRChat OSC/SteamVR 기능 비활성화, 자체 UI 유지 |
+| `discord` | Discord | 루트 `Discord.exe` 프로세스 트리 오디오 캡처, VRChat OSC/SteamVR 기능 비활성화, PC UI와 데스크톱 자막 유지 |
 
 설정에서 모드를 고르거나 실행 한 번에만 인자로 지정할 수 있습니다.
 
@@ -114,6 +125,7 @@ Discord Canary 또는 PTB를 사용한다면 설정 또는 `app.profiles.discord
 - 자막 ON/OFF
 - PC 전역 핫키로 번역/자막 토글
 - 출력 언어와 자막 언어, Gemini Live Translation 70개 이상 지원 언어 검색/추가
+- 마이크 입력과 번역 음성 출력 장치 선택
 - PC 자막 위치 이동/리셋, 상자 크기, 글자 크기 조절
 - 실시간 자막 미리보기
 
@@ -125,7 +137,7 @@ Discord Canary 또는 PTB를 사용한다면 설정 또는 `app.profiles.discord
 - 기본 도착어와 저장된 언어 목록
 - PC 전역 핫키 설정
 - 오디오 임계값과 VAD 설정
-- API 키, 출력 언어 목록, 자막 언어 목록은 유지하는 기본값 리셋 버튼
+- API 키, 출력 언어 목록, 자막 언어 목록, UI 언어, 창 닫기 동작, 선택한 오디오 장치는 유지하는 기본값 리셋 버튼
 - OSC, 챗박스, SteamVR 오버레이, 손목 UI 옵션
 - UI 언어와 UI 모드
 
@@ -270,7 +282,7 @@ PC 핫키:
 | `overlay.show_source` | `false` | 자막에 원문도 함께 표시합니다. |
 | `osc.ip` | `127.0.0.1` | VRChat OSC 대상 IP. |
 | `osc.port` | `9000` | VRChat OSC 대상 포트. |
-| `osc.throttle_sec` | `1.5` | 챗박스 최소 전송 간격. |
+| `osc.throttle_sec` | `1.5` | 실시간 partial 갱신을 포함한 챗박스 최소 전송 간격. |
 | `osc.notification_sfx` | `false` | VRChat 챗박스 알림음을 요청합니다. |
 | `osc.show_source` | `true` | 챗박스에서 번역 위에 원문을 표시합니다. |
 | `osc.chunk_display_sec` | `4.0` | 긴 챗박스 메시지를 나눠 보여줄 때 조각별 표시 시간. |
@@ -356,7 +368,7 @@ release\vrclt-v0.1.0-windows-x64.exe.sha256
 - API 키 필요 상태: 설정에 키를 입력하거나 `GEMINI_API_KEY`를 설정합니다.
 - VR 오버레이가 안 뜸: SteamVR이 실행 중이고 `overlay.enabled` / `wrist_ui.enabled`가 켜져 있는지 확인합니다.
 - passthrough나 자막 지연이 큼: 먼저 이 README의 기본값을 사용하고, 연결이 안정적이면 `audio.turn_end_silence_sec`, `audio.inbound_turn_end_silence_sec`, `audio.subtitle_finalize_silence_sec`를 조심해서 낮춥니다.
-- 설정을 초기화하고 싶음: 설정 탭의 **기본값 리셋**을 사용합니다. API 키, 출력 언어 목록, 자막 언어 목록은 유지하고 나머지를 기본값으로 되돌립니다. 앱 업데이트 후에도 vrclt가 이 리셋을 한 번 물어봅니다.
+- 설정을 초기화하고 싶음: 설정 탭의 **기본값 리셋**을 사용합니다. API 키, 출력 언어 목록, 자막 언어 목록, UI 언어, 창 닫기 동작, 선택한 오디오 장치는 유지하고 나머지를 기본값으로 되돌립니다. 앱 업데이트 후에도 vrclt가 이 리셋을 한 번 물어봅니다.
 
 ## 감사
 

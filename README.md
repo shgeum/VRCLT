@@ -17,9 +17,20 @@ people's speech.
 - VRC Text Only mode for sending translated chatbox text while passing your original voice through
 - Discord mode with Discord process audio capture and VRChat-only features disabled
 - Low-latency raw mic passthrough with separate Gemini resampling for translation
-- GitHub Releases update notification and safe config reset that keeps your API key and saved language lists
+- GitHub Releases update notification and safe config reset that keeps your API key, saved language lists, UI language, close action, and selected audio devices
 - Single-file release build: `dist\vrclt.exe`
 - User settings stored in `%LOCALAPPDATA%\vrclt\config.yaml`
+
+## What's New In 0.8.0
+
+- Lower-latency passthrough: raw microphone audio now uses the captured 48 kHz stream directly, with less playback buffering.
+- More responsive translation: microphone audio is flushed to Gemini more often, and Gemini receives an earlier turn-end hint after real silence.
+- Live OSC chatbox output: partial translated text is sent while you are still speaking, and duplicate final sends are suppressed.
+- More reliable Discord capture: Discord's multi-process tree is captured from the root process, and capture restarts if the selected PID changes.
+- Faster subtitles: inbound VAD hangover is shorter, live subtitle partials refresh sooner, and subtitle lines finalize after less silence.
+- Safer mode switching: stale translated audio, monitor audio, and passthrough buffers are cleared when switching between translation and passthrough.
+- Update awareness: release builds check GitHub Releases and show an update banner, tray action, and notification when a newer release exists.
+- Config reset flow: after an app update, vrclt asks once whether to reset defaults while preserving the API key, output language list, subtitle language list, UI language, window close action, and selected audio devices. The same reset is available from Settings.
 
 ## Requirements
 
@@ -90,7 +101,7 @@ Copy-Item config.example.yaml config.yaml
 | Mode | Use for | Behavior |
 | --- | --- | --- |
 | `vrchat` | VRChat | Captures `VRChat.exe`, enables OSC chatbox, avatar OSC control, SteamVR subtitles, and wrist UI |
-| `discord` | Discord | Captures `Discord.exe`, disables VRChat OSC/SteamVR features, keeps the native app UI active |
+| `discord` | Discord | Captures the root `Discord.exe` process tree, disables VRChat OSC/SteamVR features, keeps the native PC UI and desktop subtitles active |
 
 Choose a mode in Settings or pass it for one launch:
 
@@ -117,6 +128,7 @@ Dashboard:
 - Global PC hotkeys for translation/subtitle toggles
 - Output language and subtitle language, with searchable add controls for 70+
   Gemini Live Translation languages
+- Microphone input and translated voice output device selectors
 - PC subtitle position, box size, and font size controls
 - Live subtitle preview
 
@@ -128,7 +140,7 @@ Settings:
 - Default target languages and saved language lists
 - Global PC hotkey settings
 - Audio thresholds and VAD settings
-- Reset defaults button that keeps the API key, output language list, and subtitle language list
+- Reset defaults button that keeps the API key, output language list, subtitle language list, UI language, window close action, and selected audio devices
 - OSC, chatbox, SteamVR overlay, and wrist UI options
 - UI language and UI mode
 
@@ -276,7 +288,7 @@ Overlay and OSC:
 | `overlay.show_source` | `false` | Also shows original source text in subtitles. |
 | `osc.ip` | `127.0.0.1` | VRChat OSC destination IP. |
 | `osc.port` | `9000` | VRChat OSC destination port. |
-| `osc.throttle_sec` | `1.5` | Minimum chatbox send interval. |
+| `osc.throttle_sec` | `1.5` | Minimum chatbox send interval, including live partial updates. |
 | `osc.notification_sfx` | `false` | Requests VRChat chatbox notification sound. |
 | `osc.show_source` | `true` | Shows source text above translation in the chatbox. |
 | `osc.chunk_display_sec` | `4.0` | Display time per chunk for long chatbox messages. |
@@ -362,7 +374,7 @@ app receives audio from `CABLE Output`.
 - Runtime says API key is required: enter the key in Settings or set `GEMINI_API_KEY`.
 - VR overlays do not appear: confirm SteamVR is running and `overlay.enabled` / `wrist_ui.enabled` are enabled.
 - Passthrough or subtitles feel late: start from the defaults in this README, then lower `audio.turn_end_silence_sec`, `audio.inbound_turn_end_silence_sec`, or `audio.subtitle_finalize_silence_sec` carefully if your connection is stable.
-- Need a clean config: use **Reset defaults** in Settings. It resets current settings while preserving the API key, output language list, and subtitle language list. After an app update, vrclt also asks once whether to do this reset.
+- Need a clean config: use **Reset defaults** in Settings. It resets current settings while preserving the API key, output language list, subtitle language list, UI language, window close action, and selected audio devices. After an app update, vrclt also asks once whether to do this reset.
 
 ## Thanks To
 

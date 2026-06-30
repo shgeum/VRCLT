@@ -15,6 +15,12 @@ RESET_PRESERVE_PATHS = (
     ("api_key",),
     ("control", "languages"),
     ("inbound", "languages"),
+    ("ui", "lang"),
+    ("ui", "close_action"),
+    ("outbound", "mic_device"),
+    ("outbound", "tts_device"),
+    ("outbound", "monitor_device"),
+    ("inbound", "audio_device"),
 )
 
 _PROFILE_RUNTIME_FIELDS = {
@@ -197,7 +203,7 @@ def _set_nested(cfg: dict, path: tuple[str, ...], value) -> None:
 
 
 def reset_preserving_language_lists(cfg: dict, version: str = "") -> dict:
-    """Return default config while preserving user language cycling lists."""
+    """Return default config while preserving user identity/preference fields."""
     out = copy.deepcopy(DEFAULTS)
     for path in RESET_PRESERVE_PATHS:
         value = _get_nested(cfg, path)

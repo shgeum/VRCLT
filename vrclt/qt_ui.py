@@ -139,6 +139,7 @@ class _UiSignals(QtCore.QObject):
     refresh = QtCore.Signal()
     save_done = QtCore.Signal(bool)
     mode_done = QtCore.Signal(bool)
+    device_done = QtCore.Signal(bool)
     reset_done = QtCore.Signal(bool)
     translation_hotkey = QtCore.Signal()
     subtitles_hotkey = QtCore.Signal()
@@ -184,17 +185,20 @@ class MainWindow(QtWidgets.QMainWindow):
         self._hotkeys = WindowsGlobalHotkeys()
         self._save_thread = None
         self._mode_thread = None
+        self._device_thread = None
         self._reset_thread = None
         self._update_thread = None
         self._update_info = None
         self._update_notified = False
         self._app_mode_applying = False
+        self._device_applying = False
         self._app_mode_buttons = {}
         self._inputs, self._outputs = _device_names()
         self._signals = _UiSignals()
         self._signals.refresh.connect(self._refresh)
         self._signals.save_done.connect(self._save_done)
         self._signals.mode_done.connect(self._mode_done)
+        self._signals.device_done.connect(self._device_done)
         self._signals.reset_done.connect(self._reset_done)
         self._signals.translation_hotkey.connect(self._toggle_translation)
         self._signals.subtitles_hotkey.connect(self._toggle_subtitles)
@@ -341,6 +345,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self._out_lang.currentTextChanged.connect(self._pick_out_lang)
         self._sub_lang.currentTextChanged.connect(self._pick_sub_lang)
         self._ui_lang.currentTextChanged.connect(self._pick_ui_lang)
+        self._mic_device = self._build_dashboard_device_combo(
+            "outbound.mic_device", self._inputs,
+            self._controller.cfg.get("outbound", {}).get("mic_device", ""))
+        self._voice_out_device = self._build_dashboard_device_combo(
+            "outbound.tts_device", self._outputs,
+            self._controller.cfg.get("outbound", {}).get("tts_device", ""))
         self._out_lang_add = self._build_language_picker(self._tr("ph_out_add"))
         self._out_lang_add.lineEdit().returnPressed.connect(self._add_output_language_from_input)
         self._out_lang_add_btn = QtWidgets.QPushButton(self._tr("btn_add"))
@@ -390,10 +400,14 @@ class MainWindow(QtWidgets.QMainWindow):
         controls.addWidget(self._close_action, 4, 1)
         controls.addWidget(self._btn_overlay_move, 4, 2)
         controls.addWidget(self._btn_overlay_reset, 4, 3)
-        controls.addWidget(self._label("label_add_out_lang"), 5, 0)
-        controls.addWidget(out_lang_add_widget, 5, 1)
-        controls.addWidget(self._label("label_add_sub_lang"), 5, 2)
-        controls.addWidget(sub_lang_add_widget, 5, 3)
+        controls.addWidget(self._label("label_mic_device"), 5, 0)
+        controls.addWidget(self._mic_device, 5, 1)
+        controls.addWidget(self._label("label_voice_out_device"), 5, 2)
+        controls.addWidget(self._voice_out_device, 5, 3)
+        controls.addWidget(self._label("label_add_out_lang"), 6, 0)
+        controls.addWidget(out_lang_add_widget, 6, 1)
+        controls.addWidget(self._label("label_add_sub_lang"), 6, 2)
+        controls.addWidget(sub_lang_add_widget, 6, 3)
         root.addLayout(controls)
         root.addWidget(self._dashboard_note)
 
@@ -425,6 +439,21 @@ class MainWindow(QtWidgets.QMainWindow):
         line_edit = combo.lineEdit()
         if line_edit is not None:
             line_edit.setPlaceholderText(text)
+
+    def _build_dashboard_device_combo(self, path: str, names: list[str], current: str) -> _NoWheelComboBox:
+        combo = _NoWheelComboBox()
+        combo.setEditable(True)
+        combo.setInsertPolicy(QtWidgets.QComboBox.InsertPolicy.NoInsert)
+        combo.setMinimumContentsLength(18)
+        self._sync_device_combo(combo, names, current or "")
+        combo.activated.connect(lambda _idx, p=path, c=combo: self._apply_dashboard_device(p, c))
+        line_edit = combo.lineEdit()
+        if line_edit is not None:
+            line_edit.returnPressed.connect(
+                lambda p=path, c=combo: self._apply_dashboard_device(p, c))
+            line_edit.editingFinished.connect(
+                lambda p=path, c=combo: self._apply_dashboard_device(p, c))
+        return combo
 
     def _build_language_add_control(self, edit: QtWidgets.QComboBox,
                                     button: QtWidgets.QPushButton) -> QtWidgets.QWidget:
@@ -959,8 +988,46 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _reload_devices(self) -> None:
         self._inputs, self._outputs = _device_names()
+        self._sync_dashboard_devices(force=True)
         self._populate_settings()
         self._settings_note.setText(self._tr("msg_devices_refreshed"))
+
+    def _apply_dashboard_device(self, path: str, combo: QtWidgets.QComboBox) -> None:
+        if self._device_applying:
+            self._sync_dashboard_devices()
+            return
+        value = combo.currentText().strip()
+        current = str(_get_path(self._controller.raw_cfg, path, "") or "")
+        if value == current:
+            return
+        try:
+            cfg = copy.deepcopy(self._controller.raw_cfg)
+            _set_path(cfg, path, value)
+            cfg = config_mod.apply_app_profile(cfg)
+            config_mod.save(cfg)
+        except Exception as e:
+            self._dashboard_note.setText(f"{self._tr('msg_device_failed')}: {e}")
+            self._sync_dashboard_devices()
+            return
+
+        self._dashboard_note.setText(self._tr("msg_device_applying"))
+        self._device_applying = True
+        self._set_dashboard_apply_enabled(False)
+
+        def run():
+            ok = self._controller.restart(cfg)
+            self._signals.device_done.emit(ok)
+
+        self._device_thread = threading.Thread(target=run, daemon=True, name="vrclt-device-restart")
+        self._device_thread.start()
+
+    def _device_done(self, ok: bool) -> None:
+        self._device_applying = False
+        self._set_dashboard_apply_enabled(True)
+        self._dashboard_note.setText(
+            self._tr("msg_applied") if ok else self._tr("msg_saved_start_failed"))
+        self._sync_dashboard_devices(force=True)
+        self._populate_settings()
 
     def _apply_app_mode(self, mode: str) -> None:
         mode = (mode or "").strip()
@@ -1007,6 +1074,10 @@ class MainWindow(QtWidgets.QMainWindow):
         for btn in self._app_mode_buttons.values():
             btn.setEnabled(enabled)
         self._text_only.setEnabled(enabled)
+        if hasattr(self, "_mic_device"):
+            self._mic_device.setEnabled(enabled)
+        if hasattr(self, "_voice_out_device"):
+            self._voice_out_device.setEnabled(enabled)
 
     def _set_app_mode_checked(self, mode: str) -> None:
         for key, btn in self._app_mode_buttons.items():
@@ -1243,6 +1314,7 @@ class MainWindow(QtWidgets.QMainWindow):
         ], language_label(st.inbound_language))
         self._sync_combo(self._ui_lang, [i18n.UI_LANG_LABELS[c] for c in i18n.LANGS],
                          i18n.UI_LANG_LABELS.get(st.ui_lang, st.ui_lang))
+        self._sync_dashboard_devices()
 
         finals, partial = self._controller.subtitles_snapshot()
         rows = []
@@ -1263,6 +1335,45 @@ class MainWindow(QtWidgets.QMainWindow):
             if existing != items:
                 combo.clear()
                 combo.addItems(items)
+            combo.setCurrentText(current)
+        finally:
+            combo.blockSignals(blocked)
+
+    def _sync_dashboard_devices(self, force: bool = False) -> None:
+        if not hasattr(self, "_mic_device") or not hasattr(self, "_voice_out_device"):
+            return
+        if self._device_applying and not force:
+            return
+        focus = QtWidgets.QApplication.focusWidget()
+        mic_active = focus is not None and (
+            focus is self._mic_device or self._mic_device.isAncestorOf(focus))
+        out_active = focus is not None and (
+            focus is self._voice_out_device or self._voice_out_device.isAncestorOf(focus))
+        if force or not mic_active:
+            self._sync_device_combo(
+                self._mic_device,
+                self._inputs,
+                self._controller.cfg.get("outbound", {}).get("mic_device", ""))
+        if force or not out_active:
+            self._sync_device_combo(
+                self._voice_out_device,
+                self._outputs,
+                self._controller.cfg.get("outbound", {}).get("tts_device", ""))
+
+    @staticmethod
+    def _sync_device_combo(combo: QtWidgets.QComboBox, items: list[str], current: str) -> None:
+        current = "" if current is None else str(current)
+        values = list(items or [""])
+        if "" not in values:
+            values.insert(0, "")
+        if current and current not in values:
+            values.append(current)
+        blocked = combo.blockSignals(True)
+        try:
+            existing = [combo.itemText(i) for i in range(combo.count())]
+            if existing != values:
+                combo.clear()
+                combo.addItems(values)
             combo.setCurrentText(current)
         finally:
             combo.blockSignals(blocked)

@@ -135,6 +135,7 @@ class OutboundPipeline:
         self.chatbox = None
         self._feedback_chatbox = cfg.get("control", {}).get("feedback_chatbox", True)
         self._chat_show_source = cfg["osc"].get("show_source", True)
+        self._last_chatbox_payload = ""
         if ob["chatbox"]:
             osc = cfg["osc"]
             self.chatbox = Chatbox(osc["ip"], osc["port"], osc["throttle_sec"],
@@ -218,19 +219,40 @@ class OutboundPipeline:
             self.tts_player.interrupt()
         if self.monitor:
             self.monitor.interrupt()
+        self._last_chatbox_payload = ""
+
+    def _chatbox_payload(self, src: str, dst: str, *, partial: bool = False) -> str:
+        src, dst = _clean(src), _clean(dst)
+        if partial and not dst:
+            return ""
+        if self._chat_show_source and src and dst:
+            return f"{src}\n{dst}"
+        return dst or src
+
+    def _send_chatbox_text(self, src: str, dst: str, *, partial: bool = False) -> bool:
+        if not self.chatbox:
+            return False
+        payload = self._chatbox_payload(src, dst, partial=partial)
+        if not payload or payload == self._last_chatbox_payload:
+            return False
+        self._last_chatbox_payload = payload
+        if self._chat_show_source and src and dst:
+            self.chatbox.send_pair(src, dst)
+        else:
+            self.chatbox.send(dst or src)
+        return True
 
     def _on_partial(self, src: str, dst: str) -> None:
         if self.chatbox:
             self.chatbox.typing(True)
+            self._send_chatbox_text(src, dst, partial=True)
 
     def _on_final(self, src: str, dst: str, lang: str) -> None:
         log.info("FINAL [%s] %s  ->  %s", lang, src, dst)
         if self.chatbox:
             self.chatbox.typing(False)
-            if self._chat_show_source and src and dst:
-                self.chatbox.send_pair(src, dst)  # source on top, translation below
-            else:
-                self.chatbox.send(dst or src)
+            self._send_chatbox_text(src, dst)
+            self._last_chatbox_payload = ""
 
     # -- main --
     async def run(self, stop: asyncio.Event) -> None:
@@ -363,14 +385,23 @@ class InboundPipeline:
                 self.player.stop()
 
     async def _tap_supervisor(self, stop: asyncio.Event) -> None:
-        """Start/stop the process tap as VRChat launches and exits."""
+        """Start/stop the process tap as the target app launches and exits."""
         waiting_logged = False
         while not stop.is_set():
             await asyncio.sleep(3.0)
             pid = find_pid(self._process_name)
-            if pid is not None and not self._tap_running:
+            if pid is not None and (not self._tap_running or self.tap.pid != pid):
+                if self._tap_running:
+                    log.info(
+                        "inbound: %s capture PID changed %s -> %s - restarting tap",
+                        self._process_name,
+                        self.tap.pid,
+                        pid,
+                    )
+                    self.tap.stop()
+                    self._tap_running = False
                 try:
-                    self.tap.start()
+                    self.tap.start(pid)
                     self._tap_running = True
                     waiting_logged = False
                     log.info("inbound: capturing %s audio", self._process_name)
