@@ -17,19 +17,58 @@
 - Discord 프로세스 오디오 캡처와 VRChat 전용 기능 자동 비활성화
 - 원음 송출은 48 kHz 원본 마이크 스트림을 바로 사용하고, Gemini 번역용 스트림은 별도로 리샘플링
 - GitHub Releases 업데이트 알림과 API 키, 저장 언어 목록, UI 언어, 창 닫기 동작, 선택한 오디오 장치를 보존하는 안전한 설정 리셋
-- 단일 exe 빌드: `dist\vrclt.exe`
+- [VRCLT Releases](https://github.com/shgeum/VRCLT/releases)에서 받을 수 있는 Windows exe
 - 사용자 설정 저장 위치: `%LOCALAPPDATA%\vrclt\config.yaml`
 
-## 0.8.0 주요 변경점
+## 설치 방법
 
-- passthrough 지연 감소: 원본 마이크 오디오는 캡처된 48 kHz 스트림을 바로 사용하고, 재생 버퍼링을 줄였습니다.
-- 번역 응답성 개선: 마이크 오디오를 Gemini로 더 자주 보내고, 실제 침묵이 감지되면 더 빨리 턴 종료 힌트를 보냅니다.
-- OSC 챗박스 실시간 출력: 말하는 도중 partial 번역 텍스트를 보내고, 같은 내용의 final 중복 전송은 막습니다.
-- Discord 캡처 안정화: Discord 다중 프로세스 트리를 루트 프로세스부터 캡처하고, 선택된 PID가 바뀌면 캡처를 다시 시작합니다.
-- 자막 지연 감소: 인바운드 VAD hangover를 줄이고, 실시간 자막 partial 갱신과 자막 확정 시점을 앞당겼습니다.
-- 모드 전환 안정화: 번역과 passthrough를 전환할 때 오래된 번역 음성, 모니터 음성, passthrough 버퍼를 비웁니다.
-- 업데이트 알림: 릴리스 빌드는 GitHub Releases를 확인하고 새 버전이 있으면 대시보드 배너, 트레이 메뉴, 알림을 표시합니다.
-- 설정 리셋 흐름: 앱 업데이트 후 API 키, 출력 언어 목록, 자막 언어 목록, UI 언어, 창 닫기 동작, 선택한 오디오 장치를 보존한 채 기본값으로 리셋할지 한 번 묻습니다. 같은 리셋은 설정에서도 실행할 수 있습니다.
+### 1. vrclt 다운로드
+
+최신 Windows 실행 파일은 [VRCLT Releases](https://github.com/shgeum/VRCLT/releases)에서 받을 수 있습니다.
+
+아래와 같은 이름의 파일을 다운로드합니다.
+
+```text
+vrclt-v<version>-windows-x64.exe
+```
+
+릴리스 exe는 설정을 다음 위치에 저장합니다.
+
+```text
+%LOCALAPPDATA%\vrclt\config.yaml
+```
+
+API 키는 이 파일에 평문으로 저장됩니다.
+
+### 2. VB-Audio Virtual Cable 설치
+
+VRChat 또는 Discord가 번역 음성을 마이크처럼 받게 하려면 VB-Audio Virtual Cable이 필요합니다.
+
+1. [VB-Audio Virtual Cable](https://vb-audio.com/Cable/)에서 **VB-CABLE**을 다운로드합니다.
+2. 다운로드한 ZIP 파일의 압축을 풉니다.
+3. `VBCABLE_Setup_x64.exe`를 우클릭하고 **관리자 권한으로 실행**합니다.
+4. **Install Driver**를 누릅니다.
+5. `CABLE Input` / `CABLE Output` 장치가 보이지 않으면 Windows를 재시작합니다.
+
+설치 후 Windows에는 다음 두 장치가 생깁니다.
+
+| 장치 | 의미 | 어디에서 선택하나 |
+| --- | --- | --- |
+| `CABLE Input` | 가상 케이블의 재생/출력 쪽 | vrclt의 번역 음성 출력 장치로 선택 |
+| `CABLE Output` | 가상 케이블의 녹음/마이크 쪽 | VRChat 또는 Discord의 마이크로 선택 |
+
+실제 마이크는 vrclt에서 선택합니다. 번역 음성을 상대에게 보내려면 VRChat/Discord의 마이크를 실제 마이크가 아니라 `CABLE Output`으로 설정해야 합니다.
+
+### 3. 첫 실행 설정
+
+1. `vrclt-v<version>-windows-x64.exe`를 실행합니다.
+2. 설정 탭을 엽니다.
+3. Gemini API 키를 붙여넣습니다.
+4. 앱 모드를 `vrchat` 또는 `discord`로 선택합니다.
+5. **마이크 입력**에는 실제 마이크를 선택합니다.
+6. **음성 출력** 또는 번역 음성 출력 장치에는 `CABLE Input`을 선택합니다.
+7. VRChat 또는 Discord의 마이크 입력을 **CABLE Output (VB-Audio Virtual Cable)**으로 설정합니다.
+8. 설정을 저장합니다. 런타임은 자동으로 재시작됩니다.
 
 ## 요구사항
 
@@ -57,26 +96,7 @@
 > **참고**: Gemini API는 무료 티어(분당 요청 수 제한)가 있어 개인 사용에는 충분합니다.
 > API 키는 타인에게 공유하지 않습니다. `config.yaml`에 평문으로 저장되므로 파일을 공개 저장소에 올리지 마세요.
 
-## 빠른 시작
-
-### 릴리스 exe
-
-1. `vrclt-v<version>-windows-x64.exe`를 실행합니다.
-2. 설정 탭을 엽니다.
-3. Gemini API 키, 앱 모드, 마이크, 번역 음성 출력 장치를 설정합니다.
-4. 번역 음성 출력 장치는 `CABLE Input`을 사용합니다.
-5. VRChat 또는 Discord의 마이크 입력을 **CABLE Output (VB-Audio Virtual Cable)**으로 설정합니다.
-6. 설정을 저장합니다. 런타임은 자동으로 재시작됩니다.
-
-릴리스 exe는 설정을 다음 위치에 저장합니다.
-
-```text
-%LOCALAPPDATA%\vrclt\config.yaml
-```
-
-API 키는 이 파일에 평문으로 저장됩니다.
-
-### 소스 체크아웃
+## 소스에서 실행
 
 ```powershell
 py -3.12 -m venv .venv

@@ -18,19 +18,58 @@ people's speech.
 - Discord mode with Discord process audio capture and VRChat-only features disabled
 - Low-latency raw mic passthrough with separate Gemini resampling for translation
 - GitHub Releases update notification and safe config reset that keeps your API key, saved language lists, UI language, close action, and selected audio devices
-- Single-file release build: `dist\vrclt.exe`
+- Downloadable Windows exe from [VRCLT Releases](https://github.com/shgeum/VRCLT/releases)
 - User settings stored in `%LOCALAPPDATA%\vrclt\config.yaml`
 
-## What's New In 0.8.0
+## Installation
 
-- Lower-latency passthrough: raw microphone audio now uses the captured 48 kHz stream directly, with less playback buffering.
-- More responsive translation: microphone audio is flushed to Gemini more often, and Gemini receives an earlier turn-end hint after real silence.
-- Live OSC chatbox output: partial translated text is sent while you are still speaking, and duplicate final sends are suppressed.
-- More reliable Discord capture: Discord's multi-process tree is captured from the root process, and capture restarts if the selected PID changes.
-- Faster subtitles: inbound VAD hangover is shorter, live subtitle partials refresh sooner, and subtitle lines finalize after less silence.
-- Safer mode switching: stale translated audio, monitor audio, and passthrough buffers are cleared when switching between translation and passthrough.
-- Update awareness: release builds check GitHub Releases and show an update banner, tray action, and notification when a newer release exists.
-- Config reset flow: after an app update, vrclt asks once whether to reset defaults while preserving the API key, output language list, subtitle language list, UI language, window close action, and selected audio devices. The same reset is available from Settings.
+### 1. Download vrclt
+
+Download the latest Windows executable from [VRCLT Releases](https://github.com/shgeum/VRCLT/releases).
+
+Use the file named like:
+
+```text
+vrclt-v<version>-windows-x64.exe
+```
+
+The release executable stores settings in:
+
+```text
+%LOCALAPPDATA%\vrclt\config.yaml
+```
+
+The API key is stored as plain text in that file.
+
+### 2. Install VB-Audio Virtual Cable
+
+VB-Audio Virtual Cable is required when you want VRChat or Discord to hear the translated voice as a microphone.
+
+1. Download **VB-CABLE** from [VB-Audio Virtual Cable](https://vb-audio.com/Cable/).
+2. Extract the downloaded ZIP file.
+3. Right-click `VBCABLE_Setup_x64.exe` and choose **Run as administrator**.
+4. Click **Install Driver**.
+5. Restart Windows if `CABLE Input` / `CABLE Output` do not appear.
+
+After installation, Windows will show two important devices:
+
+| Device | What it means | Use it in |
+| --- | --- | --- |
+| `CABLE Input` | Playback/output side of the virtual cable | Select this as vrclt's translated voice output |
+| `CABLE Output` | Recording/microphone side of the virtual cable | Select this as the microphone in VRChat or Discord |
+
+Keep your real microphone selected in vrclt. Do not set VRChat or Discord to your real microphone if you want them to receive translated voice; set them to `CABLE Output`.
+
+### 3. First Launch Setup
+
+1. Run `vrclt-v<version>-windows-x64.exe`.
+2. Open the Settings tab.
+3. Paste your Gemini API key.
+4. Choose the app mode: `vrchat` or `discord`.
+5. Select your physical microphone as **Mic input**.
+6. Select `CABLE Input` as **Voice output** / translated voice output.
+7. In VRChat or Discord, set the microphone input to **CABLE Output (VB-Audio Virtual Cable)**.
+8. Save settings. The runtime restarts automatically.
 
 ## Requirements
 
@@ -58,26 +97,7 @@ people's speech.
 > **Note**: The Gemini API has a free tier with per-minute request limits that is sufficient for personal use.
 > Do not share your API key. It is stored as plain text in `config.yaml`, so do not commit that file to a public repository.
 
-## Quick Start
-
-### Release Executable
-
-1. Run `vrclt-v<version>-windows-x64.exe`.
-2. Open the Settings tab.
-3. Set the Gemini API key, app mode, microphone, and translated voice output device.
-4. Use `CABLE Input` as the translated voice output device.
-5. In VRChat or Discord, set the microphone input to **CABLE Output (VB-Audio Virtual Cable)**.
-6. Save settings. The runtime restarts automatically.
-
-The release executable stores settings in:
-
-```text
-%LOCALAPPDATA%\vrclt\config.yaml
-```
-
-The API key is stored as plain text in that file.
-
-### Source Checkout
+## Running From Source
 
 ```powershell
 py -3.12 -m venv .venv
