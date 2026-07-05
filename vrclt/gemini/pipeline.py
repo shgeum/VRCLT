@@ -385,11 +385,16 @@ class InboundPipeline:
                 self.player.stop()
 
     async def _tap_supervisor(self, stop: asyncio.Event) -> None:
-        """Start/stop the process tap as the target app launches and exits."""
+        """Start/stop the process tap as the target app launches and exits.
+
+        tap.start()/stop() and find_pid() are blocking (first tap.start may
+        even download the Silero VAD model); run them in a thread so the
+        outbound session sharing this event loop never stalls.
+        """
         waiting_logged = False
         while not stop.is_set():
             await asyncio.sleep(3.0)
-            pid = find_pid(self._process_name)
+            pid = await asyncio.to_thread(find_pid, self._process_name)
             if pid is not None and (not self._tap_running or self.tap.pid != pid):
                 if self._tap_running:
                     log.info(
@@ -398,10 +403,10 @@ class InboundPipeline:
                         self.tap.pid,
                         pid,
                     )
-                    self.tap.stop()
+                    await asyncio.to_thread(self.tap.stop)
                     self._tap_running = False
                 try:
-                    self.tap.start(pid)
+                    await asyncio.to_thread(self.tap.start, pid)
                     self._tap_running = True
                     waiting_logged = False
                     log.info("inbound: capturing %s audio", self._process_name)
@@ -411,7 +416,7 @@ class InboundPipeline:
                         log.warning("inbound: tap start failed (%s) - will retry", e)
             elif pid is None and self._tap_running:
                 log.info("inbound: %s exited - tap stopped", self._process_name)
-                self.tap.stop()
+                await asyncio.to_thread(self.tap.stop)
                 self._tap_running = False
             elif pid is None and not waiting_logged:
                 waiting_logged = True

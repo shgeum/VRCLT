@@ -183,13 +183,19 @@ class GameAudioTap:
         log.info("game tap started: %s (pid %d)", self._exe, pid)
 
     def _on_data(self, pcm: bytes, _frames: int) -> None:
+        # snapshot: a late ProcTap callback can arrive after stop() nulled
+        # _rs (tap restart on PID change) - bail out instead of raising
+        rs = self._rs
+        vad = self._vad
+        if rs is None:
+            return
         try:
             x = np.frombuffer(pcm, dtype=np.float32)
             mono = x.reshape(-1, 2).mean(axis=1)          # 48k stereo f32 -> mono
-            y = self._rs.resample_chunk(mono)             # stateful 48k -> 16k
+            y = rs.resample_chunk(mono)                   # stateful 48k -> 16k
             if not y.size:
                 return
-            if self._vad is None:
+            if vad is None:
                 pcm16 = (np.clip(y, -1.0, 1.0) * 32767.0).astype(np.int16).tobytes()
                 self.buffer.append(pcm16)
                 self.last_chunk_time = time.time()
@@ -201,7 +207,7 @@ class GameAudioTap:
             while self._vad_buf.size >= FRAME:
                 frame = self._vad_buf[:FRAME]
                 self._vad_buf = self._vad_buf[FRAME:]
-                if self._vad.prob(frame) >= self._vad_threshold:
+                if vad.prob(frame) >= self._vad_threshold:
                     self._last_speech = now
                 if (now - self._last_speech) < self._vad_hangover:
                     pcm16 = (np.clip(frame, -1.0, 1.0) * 32767.0).astype(np.int16).tobytes()
@@ -235,6 +241,11 @@ class GameAudioTap:
                 return
 
     def stop(self) -> None:
+        # null _rs first so an in-flight _on_data bails at the guard instead
+        # of feeding a resampler that is being torn down. Also releases the
+        # soxr ResampleStream so its native object is collected (otherwise
+        # nanobind warns about a leaked CSoxr instance at exit).
+        self._rs = None
         if self._tap is not None:
             try:
                 self._tap.stop()
@@ -243,6 +254,3 @@ class GameAudioTap:
             self._tap = None
             self._pid = None
             log.info("game tap stopped")
-        # release the soxr ResampleStream so its native object is collected
-        # (otherwise nanobind warns about a leaked CSoxr instance at exit)
-        self._rs = None

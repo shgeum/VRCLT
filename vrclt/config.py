@@ -2,6 +2,8 @@
 import os
 import sys
 import copy
+import tempfile
+import threading
 from pathlib import Path
 
 import yaml
@@ -330,10 +332,27 @@ def _apply_outbound_output_mode(cfg: dict) -> None:
         ob["passthrough_while_translating"] = False
 
 
+# save() is called from several threads (Qt UI, OSC control, VR render);
+# serialize writers and swap atomically so a crash mid-write can't corrupt
+# the user's config
+_save_lock = threading.Lock()
+
+
 def save(cfg: dict) -> None:
-    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        yaml.safe_dump(cfg, f, allow_unicode=True, sort_keys=False)
+    with _save_lock:
+        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=CONFIG_PATH.name + ".", suffix=".tmp", dir=CONFIG_PATH.parent)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                yaml.safe_dump(cfg, f, allow_unicode=True, sort_keys=False)
+            os.replace(tmp_name, CONFIG_PATH)
+        except BaseException:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+            raise
 
 
 def api_key(cfg: dict) -> str:

@@ -1039,13 +1039,14 @@ class MainWindow(QtWidgets.QMainWindow):
             cfg = copy.deepcopy(self._controller.raw_cfg)
             cfg.setdefault("app", {})["mode"] = mode
             cfg = config_mod.apply_app_profile(cfg, force=True)
+            if mode == current and self._profile_runtime_snapshot(cfg) == \
+                    self._profile_runtime_snapshot(self._controller.cfg):
+                # clicking the already-selected mode: nothing to write or restart
+                self._set_app_mode_checked(current)
+                return
             config_mod.save(cfg)
         except Exception as e:
             self._dashboard_note.setText(f"{self._tr('msg_mode_failed')}: {e}")
-            self._set_app_mode_checked(current)
-            return
-        if mode == current and self._profile_runtime_snapshot(cfg) == \
-                self._profile_runtime_snapshot(self._controller.cfg):
             self._set_app_mode_checked(current)
             return
 
@@ -1281,19 +1282,22 @@ class MainWindow(QtWidgets.QMainWindow):
         connected = self._controller.connected()
         status = self._controller.status
         color = "#2ea043" if connected else ("#d29922" if status == "Running" else "#8b949e")
-        self._status_dot.setStyleSheet(f"background:{color}; border-radius:7px;")
+        self._set_style_if_changed(self._status_dot, f"background:{color}; border-radius:7px;")
         conn_key = "conn_on" if connected else "conn_off"
         self._status_text.setText(f"{self._status_label(status)} | {i18n.tr(st.ui_lang, conn_key)}")
         self._error_text.setText(self._error_label(self._controller.last_error))
 
         self._btn_trans.setText(i18n.tr(st.ui_lang, "btn_trans_on" if st.translation_on else "btn_trans_off"))
-        self._btn_trans.setStyleSheet(
+        self._set_style_if_changed(
+            self._btn_trans,
             "background:#2ea043;" if st.translation_on else "background:#78541e;")
         self._btn_sub.setText(i18n.tr(st.ui_lang, "btn_sub_on" if st.subtitles_on else "btn_sub_off"))
-        self._btn_sub.setStyleSheet("background:#2870aa;" if st.subtitles_on else "")
+        self._set_style_if_changed(
+            self._btn_sub, "background:#2870aa;" if st.subtitles_on else "")
         self._btn_overlay_move.setText(
             i18n.tr(st.ui_lang, "btn_overlay_done" if st.edit_mode else "btn_overlay_move"))
-        self._btn_overlay_move.setStyleSheet("background:#2870aa;" if st.edit_mode else "")
+        self._set_style_if_changed(
+            self._btn_overlay_move, "background:#2870aa;" if st.edit_mode else "")
 
         if not self._app_mode_applying:
             self._set_app_mode_checked(self._controller.cfg.get("app", {}).get("mode", "vrchat"))
@@ -1326,6 +1330,17 @@ class MainWindow(QtWidgets.QMainWindow):
         text = "\n".join(rows)
         if self._subtitle_view.toPlainText() != text:
             self._subtitle_view.setPlainText(text)
+
+    def _set_style_if_changed(self, widget: QtWidgets.QWidget, css: str) -> None:
+        # setStyleSheet forces a re-polish/repaint even when unchanged; the
+        # 250 ms refresh timer calls this constantly, so diff first
+        cache = getattr(self, "_style_cache", None)
+        if cache is None:
+            cache = self._style_cache = {}
+        key = id(widget)
+        if cache.get(key) != css:
+            cache[key] = css
+            widget.setStyleSheet(css)
 
     @staticmethod
     def _sync_combo(combo: QtWidgets.QComboBox, items: list[str], current: str) -> None:
@@ -1415,7 +1430,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._hotkeys.stop()
         self._desktop_overlay.close()
         self._tray.hide()
-        self._controller.stop()
+        # shutdown (not stop): a restart queued behind the lifecycle lock
+        # must not resurrect the runtime during interpreter teardown
+        self._controller.shutdown()
         QtWidgets.QApplication.quit()
 
     @staticmethod
@@ -1438,5 +1455,5 @@ def run_qt_app(controller, log_file: Path) -> int:
     win = MainWindow(controller, log_file)
     win.show()
     threading.Thread(target=controller.start, daemon=True, name="vrclt-start").start()
-    app.aboutToQuit.connect(controller.stop)
+    app.aboutToQuit.connect(controller.shutdown)
     return app.exec()

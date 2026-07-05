@@ -331,7 +331,6 @@ class SubtitlePanel:
         if not want_laser and self._cursor_visible:
             ovl.hideOverlay(self._h_cursor)
             self._cursor_visible = False
-        self._apply_texture_resize(openvr, ovl)
 
         if self._reset_requested and not self._dragging:
             self._reset_requested = False

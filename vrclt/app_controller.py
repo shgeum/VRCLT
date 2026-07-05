@@ -28,12 +28,28 @@ from .subtitles import SubtitleStore
 log = logging.getLogger(__name__)
 
 
+# polled from UI timers (desktop overlay: every 120 ms); scanning the whole
+# process table that often stalls the GUI thread, so cache the answer briefly.
+# The (result, expires) tuple is replaced atomically - benign if two threads
+# race, both just rescan.
+_STEAMVR_CACHE_TTL = 3.0
+_steamvr_cache: tuple[bool, float] = (False, 0.0)
+
+
 def steamvr_running() -> bool:
+    global _steamvr_cache
+    result, expires = _steamvr_cache
+    now = time.monotonic()
+    if now < expires:
+        return result
+    result = False
     for p in psutil.process_iter(["name"]):
         n = (p.info["name"] or "").lower()
         if n in ("vrmonitor.exe", "vrcompositor.exe", "vrserver.exe"):
-            return True
-    return False
+            result = True
+            break
+    _steamvr_cache = (result, now + _STEAMVR_CACHE_TTL)
+    return result
 
 
 def resolve_ui_mode(cfg: dict) -> str:
@@ -172,6 +188,11 @@ class AppController:
         self._control = None
         self._renderer = None
         self._restarting = False
+        # serializes restart()/stop(): they are called from Qt background
+        # threads, the wrist-panel path, and app quit; overlapping runs used
+        # to orphan the VR renderer/pipeline. RLock because restart -> stop.
+        self._lifecycle_lock = threading.RLock()
+        self._closed = False
 
     def subscribe(self, fn: Callable[[], None]) -> None:
         self._listeners.append(fn)
@@ -331,8 +352,9 @@ class AppController:
         with self._lock:
             self.raw_cfg.setdefault("overlay", {})["font_size"] = value
             self.cfg.setdefault("overlay", {})["font_size"] = value
+            cfg = copy.deepcopy(self.raw_cfg)
         try:
-            config_mod.save(self.raw_cfg)
+            config_mod.save(cfg)
             self._bump_config_revision()
         except Exception:
             log.debug("failed to persist overlay font size", exc_info=True)
@@ -497,6 +519,12 @@ class AppController:
         return self.restart(self.raw_cfg)
 
     def restart(self, cfg: dict | None = None) -> bool:
+        with self._lifecycle_lock:
+            if self._closed:
+                return False
+            return self._restart_locked(cfg)
+
+    def _restart_locked(self, cfg: dict | None) -> bool:
         with self._lock:
             self._restarting = True
         try:
@@ -529,31 +557,38 @@ class AppController:
             with self._lock:
                 self._restarting = False
 
+    def shutdown(self, timeout: float = 8.0) -> None:
+        """Stop for good: a queued restart() arriving after this is a no-op."""
+        with self._lifecycle_lock:
+            self._closed = True
+            self.stop(timeout=timeout)
+
     def stop(self, timeout: float = 8.0) -> None:
-        thread = self._thread
-        loop = self._loop
-        stop_event = self._stop_event
-        renderer = self._renderer
-        if loop is not None and stop_event is not None:
-            try:
-                loop.call_soon_threadsafe(stop_event.set)
-            except Exception:
-                pass
-        if renderer is not None:
-            renderer.stop()
-        if thread is not None and thread.is_alive():
-            thread.join(timeout=timeout)
-            if thread.is_alive():
-                log.warning("runtime thread did not stop within %.1fs", timeout)
-        self._thread = None
-        self._loop = None
-        self._stop_event = None
-        self._pipeline = None
-        self._inbound = None
-        self._control = None
-        self._renderer = None
-        if not self._restarting:
-            self._set_status("Stopped")
+        with self._lifecycle_lock:
+            thread = self._thread
+            loop = self._loop
+            stop_event = self._stop_event
+            renderer = self._renderer
+            if loop is not None and stop_event is not None:
+                try:
+                    loop.call_soon_threadsafe(stop_event.set)
+                except Exception:
+                    pass
+            if renderer is not None:
+                renderer.stop()
+            if thread is not None and thread.is_alive():
+                thread.join(timeout=timeout)
+                if thread.is_alive():
+                    log.warning("runtime thread did not stop within %.1fs", timeout)
+            self._thread = None
+            self._loop = None
+            self._stop_event = None
+            self._pipeline = None
+            self._inbound = None
+            self._control = None
+            self._renderer = None
+            if not self._restarting:
+                self._set_status("Stopped")
 
     def _start_runtime(self, key: str) -> bool:
         state = self.state

@@ -96,6 +96,12 @@ class MicCapture:
         return callback
 
     def _callback(self, indata, frames, time_info, status, rs: soxr.ResampleStream):
+        # currency guard: during a WASAPI hot-swap (or after stop()) a stale
+        # stream's callback may still fire; only the stream owning the live
+        # resampler may touch buffer/_preroll/_in_voice. An escaped exception
+        # here would make sounddevice abort the stream permanently.
+        if rs is not self._rs:
+            return
         if status:
             log.debug("mic status: %s", status)
         data = bytes(indata)
@@ -158,14 +164,16 @@ class MicCapture:
         self._preroll.append(gemini_data)
 
     # ---------------- stream open ----------------
-    def _open(self, idx: int, api: str, latency, rs: soxr.ResampleStream) -> sd.RawInputStream:
+    def _open(self, idx: int, api: str, latency, rs: soxr.ResampleStream,
+              start: bool = True) -> sd.RawInputStream:
         kwargs = dict(device=idx, samplerate=CAPTURE_RATE, channels=1, dtype="int16",
                       blocksize=self._blocksize, latency=latency,
                       callback=self._make_callback(rs))
         if api == "Windows WASAPI":
             kwargs["extra_settings"] = sd.WasapiSettings(auto_convert=True)
         s = sd.RawInputStream(**kwargs)
-        s.start()
+        if start:
+            s.start()
         return s
 
     def start(self) -> None:
@@ -179,8 +187,12 @@ class MicCapture:
             for latency in ("low", None):
                 try:
                     rs = soxr.ResampleStream(CAPTURE_RATE, RATE, 1, dtype="float32")
-                    self._stream = self._open(idx, api, latency, rs)
+                    # install the resampler before starting the stream so the
+                    # callback currency guard accepts the first frames
+                    s = self._open(idx, api, latency, rs, start=False)
                     self._rs = rs
+                    self._stream = s
+                    s.start()
                     self._current_api = api
                     log.info("mic capture started: [%d] %s via %s @ %d Hz mono "
                              "(Gemini %d Hz, gate RMS %.0f, hangover %.1fs, latency=%s)",
@@ -227,18 +239,44 @@ class MicCapture:
             for latency in ("low", None):
                 try:
                     new_rs = soxr.ResampleStream(CAPTURE_RATE, RATE, 1, dtype="float32")
-                    new = self._open(wasapi_idx, "Windows WASAPI", latency, new_rs)
+                    new = self._open(wasapi_idx, "Windows WASAPI", latency, new_rs,
+                                     start=False)
                     break
                 except Exception:
                     new = None
                     new_rs = None
             if new is None:
                 continue  # still busy, retry next interval
+            # swap-then-start under the lock: the new stream's callback cannot
+            # fire before start(), and the currency guard silences the old
+            # stream's callback the moment _rs is swapped - so the two streams
+            # never mutate buffer/_preroll concurrently. stop() sets
+            # _upgrade_stop before taking _swap_lock, so checking it here
+            # guarantees we never install a stream after stop().
+            stale = None
+            old = None
             with self._swap_lock:
-                old = self._stream
-                self._stream = new
-                self._rs = new_rs
-                self._current_api = "Windows WASAPI"
+                if self._upgrade_stop.is_set():
+                    stale = new
+                else:
+                    prev = (self._stream, self._rs, self._current_api)
+                    self._stream, self._rs, self._current_api = \
+                        new, new_rs, "Windows WASAPI"
+                    try:
+                        new.start()
+                    except Exception:
+                        self._stream, self._rs, self._current_api = prev
+                        stale = new
+                    else:
+                        old = prev[0]
+            if stale is not None:
+                try:
+                    stale.close()
+                except Exception:
+                    pass
+                if self._upgrade_stop.is_set():
+                    return
+                continue  # start() failed - retry next interval
             if old is not None:
                 try:
                     old.stop()

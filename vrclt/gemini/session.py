@@ -232,6 +232,10 @@ class LiveTranslateSession:
 
     async def _sender(self, session) -> None:
         speaking = False
+        # the connect pre-roll must be flushed even when the handshake took
+        # longer than turn_end_silence (active() already false) - otherwise a
+        # short utterance that triggered this very connection is dropped
+        flush_preroll = True
         while True:
             await asyncio.sleep(self._interval)
             if self._restart or not self._enabled():
@@ -242,40 +246,35 @@ class LiveTranslateSession:
                         pass
                 return
             chunks = self._source.drain()
-            if not chunks:
-                # no audio this tick: if speech just ended, tell the server the
-                # turn is over so it flushes the rest of the translation NOW
-                # instead of holding it until the session closes (which split a
-                # sentence into a partial phrase + a late suffix)
-                if speaking:
-                    speaking = False
-                    try:
-                        await session.send_realtime_input(audio_stream_end=True)
-                    except Exception:
-                        return
-                continue
-            if not self._source.active(self._turn_end_silence):
-                if speaking:
-                    speaking = False
-                    try:
-                        await session.send_realtime_input(audio_stream_end=True)
-                    except Exception:
-                        return
-                continue
-            speaking = True
-            pcm = b"".join(chunks)
-            sent = False
-            try:
-                await session.send_realtime_input(
-                    audio=types.Blob(data=pcm, mime_type="audio/pcm;rate=16000"))
-                sent = True
-                self._st_sent += 1
-                self._st_sent_bytes += len(pcm)
-            finally:
-                if not sent:
-                    # connection died or task cancelled mid-send:
-                    # requeue so the next session resends
-                    self._source.requeue(chunks)
+            if chunks and (flush_preroll or self._source.active(self._turn_end_silence)):
+                flush_preroll = False
+                pcm = b"".join(chunks)
+                sent = False
+                try:
+                    await session.send_realtime_input(
+                        audio=types.Blob(data=pcm, mime_type="audio/pcm;rate=16000"))
+                    sent = True
+                    self._st_sent += 1
+                    self._st_sent_bytes += len(pcm)
+                finally:
+                    if not sent:
+                        # connection died or task cancelled mid-send:
+                        # requeue so the next session resends
+                        self._source.requeue(chunks)
+                speaking = True
+            elif speaking and not self._source.active(self._turn_end_silence):
+                # turn over after real silence. Chunks drained this tick are
+                # sub-gate hangover bridge audio (real speech would have
+                # refreshed last_voice_time) - drop them rather than stream
+                # silence, and tell the server the turn is over so it flushes
+                # the rest of the translation NOW instead of holding it until
+                # the session closes (which split a sentence into a partial
+                # phrase + a late suffix).
+                speaking = False
+                try:
+                    await session.send_realtime_input(audio_stream_end=True)
+                except Exception:
+                    return
 
     async def _watchdog(self, session, stop: asyncio.Event) -> None:
         last_stats = time.time()

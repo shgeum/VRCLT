@@ -71,4 +71,10 @@ class OscControl:
                 self._server.shutdown()
             except Exception:
                 pass
+            # shutdown() only stops serve_forever; the UDP socket stays bound
+            # until closed, which made the next runtime restart lose port 9001
+            try:
+                self._server.server_close()
+            except Exception:
+                pass
             self._server = None

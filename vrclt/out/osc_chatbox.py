@@ -51,7 +51,9 @@ def make_parts(src: str, dst: str, limit: int = MAX_CHARS) -> list[str]:
     combined = f"{src}\n{dst}" if (src and dst) else (dst or src)
     if len(combined) <= limit:
         return [combined]
-    n = max(2, math.ceil((len(src) + len(dst) + 1) / limit))
+    # cap the starting part count at 9 so the loop always runs at least once
+    # and `parts` is defined for the fallback below
+    n = max(2, min(9, math.ceil((len(src) + len(dst) + 1) / limit)))
     while n <= 9:
         sp = _split_even(src, n)
         dp = _split_even(dst, n)
@@ -144,3 +146,7 @@ class Chatbox:
         self._wake.set()
         # join must cover one final throttled send
         self._thread.join(timeout=self._chunk_display + 1.0)
+        try:
+            self._client._sock.close()
+        except Exception:
+            pass
