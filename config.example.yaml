@@ -125,4 +125,10 @@ wrist_ui:                     # SteamVR wrist watch menu
   pointer_tilt_deg: 50.0
   font: bundled:NotoSansCJKkr-Bold.otf
 
+steamvr:
+  register: true              # list vrclt in SteamVR Settings > Startup/Overlay Apps
+                              # (the auto-launch on/off itself lives in SteamVR;
+                              # toggle it there or in vrclt Settings)
+  dashboard_panel: true       # settings panel inside the SteamVR dashboard
+
 log_level: INFO

@@ -35,7 +35,10 @@ def main() -> None:
     )
     parser.add_argument("cmd", nargs="?", choices=["run"], default="run")
     parser.add_argument("--app", choices=config_mod.APP_MODES)
-    args = parser.parse_args(sys.argv[1:] or ["run"])
+    # tolerate extra args (e.g. from a SteamVR auto-launch) instead of exiting
+    args, unknown = parser.parse_known_args(sys.argv[1:] or ["run"])
+    if unknown:
+        log.info("ignoring unknown arguments: %s", unknown)
     sys.exit(cmd_run(args))
 
 

@@ -174,6 +174,11 @@ DEFAULTS = {
         "pointer_tilt_deg": 50.0,       # laser tilts down from raw controller forward
         "font": bundled_font("NotoSansCJKkr-Bold.otf"),
     },
+    "steamvr": {
+        "register": True,               # list vrclt in SteamVR Settings > Startup/Overlay Apps
+                                        # (auto-launch itself is toggled there or in vrclt settings)
+        "dashboard_panel": True,        # settings panel inside the SteamVR dashboard
+    },
     "log_level": "INFO",
 }
 

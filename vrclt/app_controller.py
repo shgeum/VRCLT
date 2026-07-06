@@ -194,6 +194,14 @@ class AppController:
         self._lifecycle_lock = threading.RLock()
         self._closed = False
 
+        from .vr import steamvr_apps
+        self._steamvr_apps = steamvr_apps
+        self._auto_launch_cache: tuple[float, bool | None] = (0.0, None)
+        self._auto_launch_refreshing = False
+        self._app_registrar = steamvr_apps.SteamVrAppRegistrar(steamvr_running)
+        self._app_registrar.start(
+            lambda: bool(self.cfg.get("steamvr", {}).get("register", True)))
+
     def subscribe(self, fn: Callable[[], None]) -> None:
         self._listeners.append(fn)
 
@@ -536,10 +544,52 @@ class AppController:
             with self._lock:
                 self._restarting = False
 
+    def get_steamvr_auto_launch(self) -> bool | None:
+        """Cached SteamVR auto-launch state (SteamVR owns the truth);
+        None when unknown/unavailable. Refreshes in the background so the
+        Qt refresh timer never blocks on OpenVR."""
+        if not self._steamvr_apps.registration_supported() or not steamvr_running():
+            return None
+        ts, value = self._auto_launch_cache
+        if (time.monotonic() - ts) > 10.0 and not self._auto_launch_refreshing:
+            self._auto_launch_refreshing = True
+
+            def refresh():
+                old = self._auto_launch_cache[1]
+                new = old
+                try:
+                    new = self._steamvr_apps.get_auto_launch()
+                    self._auto_launch_cache = (time.monotonic(), new)
+                finally:
+                    self._auto_launch_refreshing = False
+                if new != old:
+                    self._notify()
+
+            threading.Thread(target=refresh, daemon=True,
+                             name="vrclt-autolaunch-poll").start()
+        return value
+
+    def set_steamvr_auto_launch(self, value: bool) -> None:
+        """Flip SteamVR auto-launch; runs on a worker thread (callable from
+        the VR render thread and the Qt thread without blocking)."""
+        value = bool(value)
+
+        def apply():
+            if self._steamvr_apps.set_auto_launch(value):
+                self._auto_launch_cache = (time.monotonic(), value)
+            else:
+                # force a re-read next poll
+                self._auto_launch_cache = (0.0, self._auto_launch_cache[1])
+            self._notify()
+
+        threading.Thread(target=apply, daemon=True,
+                         name="vrclt-steamvr-autolaunch").start()
+
     def shutdown(self, timeout: float = 8.0) -> None:
         """Stop for good: a queued restart() arriving after this is a no-op."""
         with self._lifecycle_lock:
             self._closed = True
+            self._app_registrar.stop()
             self.stop(timeout=timeout)
 
     def stop(self, timeout: float = 8.0) -> None:
@@ -602,6 +652,9 @@ class AppController:
                 languages=ctl.get("languages", ["en"]),
             )
             control.start()
+
+        self._app_registrar.reapply(
+            bool(cfg.get("steamvr", {}).get("register", True)))
 
         renderer = None
         if wants_vr_renderer(cfg):

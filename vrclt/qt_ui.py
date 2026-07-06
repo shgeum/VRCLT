@@ -720,7 +720,40 @@ class MainWindow(QtWidgets.QMainWindow):
             ("wrist_ui.roll_deg", "f.wrist_ui.roll_deg", "nullable_float"),
             ("wrist_ui.pointer_tilt_deg", "f.wrist_ui.pointer_tilt_deg", "float"),
         ], cfg)
+        self._add_steamvr_group(cfg)
         self._settings_layout.addStretch(1)
+
+    def _add_steamvr_group(self, cfg: dict) -> None:
+        group = QtWidgets.QGroupBox(self._tr("grp_steamvr"))
+        form = QtWidgets.QFormLayout(group)
+        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        for path, label_key, kind in (
+                ("steamvr.register", "f.steamvr.register", "bool"),
+                ("steamvr.dashboard_panel", "f.steamvr.dashboard_panel", "bool")):
+            widget = self._make_field(path, kind, _get_path(cfg, path))
+            self._fields[path] = (widget, kind)
+            form.addRow(self._tr(label_key), widget)
+        # Live toggle: SteamVR stores the auto-launch state, so this applies
+        # immediately (no save/restart) and mirrors SteamVR's own settings.
+        self._chk_autolaunch = QtWidgets.QCheckBox()
+        self._chk_autolaunch.clicked.connect(self._controller.set_steamvr_auto_launch)
+        form.addRow(self._tr("f.steamvr.auto_launch"), self._chk_autolaunch)
+        self._settings_layout.addWidget(group)
+        self._sync_steamvr_autolaunch()
+
+    def _sync_steamvr_autolaunch(self) -> None:
+        chk = getattr(self, "_chk_autolaunch", None)
+        if chk is None:
+            return
+        value = self._controller.get_steamvr_auto_launch()
+        available = value is not None
+        if chk.isEnabled() != available:
+            chk.setEnabled(available)
+            chk.setToolTip("" if available else self._tr("tip_steamvr_unavailable"))
+        if available and chk.isChecked() != bool(value):
+            blocked = chk.blockSignals(True)
+            chk.setChecked(bool(value))
+            chk.blockSignals(blocked)
 
     def _add_group(self, title_key: str, fields: list[tuple[str, str, str]], cfg: dict) -> None:
         group = QtWidgets.QGroupBox(self._tr(title_key))
@@ -1319,6 +1352,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sync_combo(self._ui_lang, [i18n.UI_LANG_LABELS[c] for c in i18n.LANGS],
                          i18n.UI_LANG_LABELS.get(st.ui_lang, st.ui_lang))
         self._sync_dashboard_devices()
+        self._sync_steamvr_autolaunch()
 
         finals, partial = self._controller.subtitles_snapshot()
         rows = []
