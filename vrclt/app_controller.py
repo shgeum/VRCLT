@@ -62,6 +62,8 @@ def resolve_ui_mode(cfg: dict) -> str:
 def vr_panels_enabled(cfg: dict) -> bool:
     if cfg.get("wrist_ui", {}).get("enabled", True):
         return True
+    if cfg.get("steamvr", {}).get("dashboard_panel", True):
+        return True
     return bool(
         cfg.get("inbound", {}).get("enabled", False)
         and cfg.get("overlay", {}).get("enabled", True)
@@ -120,6 +122,26 @@ def make_subtitle_panel(cfg, store, state, on_transform_changed=lambda matrix, r
         show_source=o.get("show_source", False),
         on_transform_changed=on_transform_changed,
         on_size_changed=on_size_changed,
+    )
+
+
+def make_dashboard_panel(cfg, state, get_status, on_text_only_toggle,
+                         on_font_size, get_font_size,
+                         get_auto_launch, set_auto_launch, on_restart):
+    from .vr.dashboard_panel import DashboardPanel
+    w = cfg.get("wrist_ui", {})
+    return DashboardPanel(
+        state,
+        languages=cfg.get("control", {}).get("languages", ["en"]),
+        inbound_languages=cfg.get("inbound", {}).get("languages", ["ko", "en"]),
+        font_path=resolve_font_path(w.get("font"), "NotoSansCJKkr-Bold.otf"),
+        get_status=get_status,
+        on_text_only_toggle=on_text_only_toggle,
+        on_font_size=on_font_size,
+        get_font_size=get_font_size,
+        get_auto_launch=get_auto_launch,
+        set_auto_launch=set_auto_launch,
+        on_restart=on_restart,
     )
 
 
@@ -548,6 +570,11 @@ class AppController:
                 return False
             return self._restart_locked(cfg)
 
+    def restart_async(self) -> None:
+        """Fire-and-forget restart; safe to call from the Qt or VR threads."""
+        threading.Thread(target=self.restart, daemon=True,
+                         name="vrclt-restart").start()
+
     def _restart_locked(self, cfg: dict | None) -> bool:
         with self._lock:
             self._restarting = True
@@ -732,6 +759,17 @@ class AppController:
                     get_status=self.connected,
                     on_text_only_toggle=self.set_text_only,
                     on_transform_changed=self.set_wrist_transform))
+            if cfg.get("steamvr", {}).get("dashboard_panel", True):
+                panels.append(make_dashboard_panel(
+                    cfg, state,
+                    get_status=self.connected,
+                    on_text_only_toggle=self.set_text_only,
+                    on_font_size=self.set_overlay_font_size,
+                    get_font_size=lambda: int(
+                        self.cfg.get("overlay", {}).get("font_size", 27)),
+                    get_auto_launch=self.get_steamvr_auto_launch,
+                    set_auto_launch=self.set_steamvr_auto_launch,
+                    on_restart=self.restart_async))
             if panels:
                 from .vr.render import VrRenderer
                 renderer = VrRenderer(panels, can_start=steamvr_running)

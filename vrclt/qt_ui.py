@@ -1016,8 +1016,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _restart_runtime(self) -> None:
         self._settings_note.setText(self._tr("msg_runtime_restarting"))
-        threading.Thread(target=self._controller.restart, daemon=True,
-                         name="vrclt-restart").start()
+        self._controller.restart_async()
 
     def _reload_devices(self) -> None:
         self._inputs, self._outputs = _device_names()
