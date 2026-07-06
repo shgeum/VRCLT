@@ -8,7 +8,6 @@
 - Texture is a persistent OpenGL texture (see vr/render.py for why), updated
   only when the visible content actually changes.
 """
-import json
 import logging
 import math
 import os
@@ -23,14 +22,17 @@ from ..resources import bundled_font, resolve_font_path
 from ..state import AppState
 from ..subtitles import SubtitleStore
 from .font_fallback import load_fallback_font
+from .panel_common import (
+    LASER_TEX_H, LASER_TEX_W, LASER_WIDTH_M,
+    coerce_transform, create_overlay_set, cursor_texture, haptic, laser_base,
+    laser_texture, load_saved_transform, np_to_hmd34, pointer_matrix,
+    pose_to_np, save_transform, translate,
+)
 from .render import GlTexture, flip_bounds
 
 log = logging.getLogger(__name__)
 
 TEX_W, TEX_H = 960, 240
-LASER_TEX_W, LASER_TEX_H = 4, 512
-LASER_WIDTH_M = 0.004
-LASER_LEN_M = LASER_WIDTH_M * LASER_TEX_H / LASER_TEX_W
 CURSOR_SIZE_M = 0.018
 MIN_WIDTH_M = 0.45
 MAX_WIDTH_M = 1.6
@@ -83,15 +85,10 @@ class SubtitlePanel:
         self._below_m = below_m
         self._tilt_deg = tilt_deg
         self._show_source = show_source
-        self._configured_transform = self._coerce_transform(transform)
+        self._configured_transform = coerce_transform(transform, "subtitle panel")
         self._on_transform_changed = on_transform_changed
         self._on_size_changed = on_size_changed
-        a = math.radians(-pointer_tilt_deg)
-        self._pointer_mat = np.identity(4)
-        self._pointer_mat[1][1] = math.cos(a)
-        self._pointer_mat[1][2] = -math.sin(a)
-        self._pointer_mat[2][1] = math.sin(a)
-        self._pointer_mat[2][2] = math.cos(a)
+        self._pointer_mat = pointer_matrix(pointer_tilt_deg)
         font_path = resolve_font_path(font_path, "NotoSansCJKkr-Regular.otf")
         self._font = load_fallback_font(font_path, font_size)
         self._font_small = load_fallback_font(font_path, max(20, font_size - 14))
@@ -117,22 +114,12 @@ class SubtitlePanel:
     # ---------------- component lifecycle ----------------
     def setup(self, ctx) -> bool:
         openvr, ovl = ctx.openvr, ctx.ovl
-        created = []
-        try:
-            for key, name in (("vrclt.subtitles", "vrclt subtitles"),
-                              ("vrclt.subtitles.laser", "vrclt subtitle laser"),
-                              ("vrclt.subtitles.cursor", "vrclt subtitle cursor")):
-                created.append(ovl.createOverlay(key, name))
-        except Exception as e:
-            for h in created:
-                try:
-                    ovl.destroyOverlay(h)
-                except Exception:
-                    pass
-            if "KeyInUse" in type(e).__name__:
-                log.warning("subtitle panel: overlay key in use - another vrclt instance running?")
-                return False
-            raise
+        created = create_overlay_set(ovl, (("vrclt.subtitles", "vrclt subtitles"),
+                                           ("vrclt.subtitles.laser", "vrclt subtitle laser"),
+                                           ("vrclt.subtitles.cursor", "vrclt subtitle cursor")),
+                                     "subtitle panel")
+        if created is None:
+            return False
         self._h, self._h_laser, self._h_cursor = created
 
         bounds = flip_bounds(openvr)
@@ -145,7 +132,7 @@ class SubtitlePanel:
         ovl.setOverlaySortOrder(self._h_laser, 210)
         ovl.setOverlayTextureBounds(self._h_laser, bounds)
         laser_tex = GlTexture(LASER_TEX_W, LASER_TEX_H)
-        laser_tex.update(self._laser_texture())
+        laser_tex.update(laser_texture())
         ovl.setOverlayTexture(self._h_laser, laser_tex.vr_texture(openvr))
         self._laser_tex = laser_tex
 
@@ -153,7 +140,7 @@ class SubtitlePanel:
         ovl.setOverlaySortOrder(self._h_cursor, 211)
         ovl.setOverlayTextureBounds(self._h_cursor, bounds)
         cursor_tex = GlTexture(64, 64)
-        cursor_tex.update(self._cursor_texture())
+        cursor_tex.update(cursor_texture())
         ovl.setOverlayTexture(self._h_cursor, cursor_tex.vr_texture(openvr))
         self._cursor_tex = cursor_tex
 
@@ -162,7 +149,7 @@ class SubtitlePanel:
             self._on_transform_changed(self._overlay_mat, False)
         ovl.setOverlayTransformTrackedDeviceRelative(
             self._h, openvr.k_unTrackedDeviceIndex_Hmd,
-            self._np_to_hmd34(openvr, self._overlay_mat))
+            np_to_hmd34(openvr, self._overlay_mat))
 
         self._pointer_role = openvr.TrackedControllerRole_RightHand \
             if self._pointer_hand == "right" else openvr.TrackedControllerRole_LeftHand
@@ -224,7 +211,7 @@ class SubtitlePanel:
             if self._pointer_idx != self._invalid and self._pointer_idx != self._laser_attached_to:
                 ovl.setOverlayTransformTrackedDeviceRelative(
                     self._h_laser, self._pointer_idx,
-                    self._np_to_hmd34(openvr, self._pointer_mat @ self._laser_base()))
+                    np_to_hmd34(openvr, self._pointer_mat @ laser_base()))
                 self._laser_attached_to = self._pointer_idx
 
         # ---- gaze + grab (only while visible) ----
@@ -260,15 +247,15 @@ class SubtitlePanel:
                             grip = bool(cs.ulButtonPressed & self._grip_mask)
                     except Exception:
                         pass
-                    h4 = self._pose_to_np(hp)
-                    f4 = self._pose_to_np(fp)
+                    h4 = pose_to_np(hp)
+                    f4 = pose_to_np(fp)
                     hit = self._ray_hit(h4, f4)
                     if hit is not None:
                         _mode, _corner, hit_xy = hit
-                        cur = self._overlay_mat @ self._translate(hit_xy[0], hit_xy[1], 0.004)
+                        cur = self._overlay_mat @ translate(hit_xy[0], hit_xy[1], 0.004)
                         ovl.setOverlayTransformTrackedDeviceRelative(
                             self._h_cursor, openvr.k_unTrackedDeviceIndex_Hmd,
-                            self._np_to_hmd34(openvr, cur))
+                            np_to_hmd34(openvr, cur))
                         if not self._cursor_visible:
                             ovl.showOverlay(self._h_cursor)
                             self._cursor_visible = True
@@ -281,14 +268,14 @@ class SubtitlePanel:
                             self._start_resize(corner)
                             self._dragging = True
                             self._drag_mode = "resize"
-                            self._haptic(vrsys, openvr, self._pointer_idx, 2000)
+                            haptic(vrsys, openvr, self._pointer_idx, 2000)
                             log.info("subtitle panel resize grabbed")
                         elif grip and not self._prev_grip and hit is not None:
                             pointer4 = f4 @ self._pointer_mat
                             self._drag_offset = np.linalg.inv(pointer4) @ h4 @ self._overlay_mat
                             self._dragging = True
                             self._drag_mode = "move"
-                            self._haptic(vrsys, openvr, self._pointer_idx, 2000)
+                            haptic(vrsys, openvr, self._pointer_idx, 2000)
                             log.info("subtitle panel grabbed")
                     if self._dragging:
                         active = trigger if self._drag_mode == "resize" else grip
@@ -298,14 +285,14 @@ class SubtitlePanel:
                                     ovl.setOverlayWidthInMeters(self._h, self._width_m)
                                     ovl.setOverlayTransformTrackedDeviceRelative(
                                         self._h, openvr.k_unTrackedDeviceIndex_Hmd,
-                                        self._np_to_hmd34(openvr, self._overlay_mat))
+                                        np_to_hmd34(openvr, self._overlay_mat))
                             elif self._drag_offset is not None:
                                 self._overlay_mat = (
                                     np.linalg.inv(h4) @ f4 @ self._pointer_mat @ self._drag_offset
                                 )
                                 ovl.setOverlayTransformTrackedDeviceRelative(
                                     self._h, openvr.k_unTrackedDeviceIndex_Hmd,
-                                    self._np_to_hmd34(openvr, self._overlay_mat))
+                                    np_to_hmd34(openvr, self._overlay_mat))
                         else:
                             resized = self._drag_mode == "resize"
                             self._dragging = False
@@ -315,11 +302,11 @@ class SubtitlePanel:
                             self._resize_anchor = None
                             self._resize_basis = None
                             self._resize_center = None
-                            self._save_transform(self._overlay_mat)
+                            save_transform(self._overlay_mat, TRANSFORM_PATH, "subtitle panel")
                             self._on_transform_changed(self._overlay_mat, False)
                             if resized:
                                 self._on_size_changed(self._width_m, self._height_m)
-                            self._haptic(vrsys, openvr, self._pointer_idx, 3000)
+                            haptic(vrsys, openvr, self._pointer_idx, 3000)
                             log.info("subtitle panel transformed (saved)"
                                      if resized else "subtitle panel placed (saved)")
                     self._prev_trigger, self._prev_grip = trigger, grip
@@ -341,7 +328,7 @@ class SubtitlePanel:
             self._overlay_mat = self._hmd_matrix()
             ovl.setOverlayTransformTrackedDeviceRelative(
                 self._h, openvr.k_unTrackedDeviceIndex_Hmd,
-                self._np_to_hmd34(openvr, self._overlay_mat))
+                np_to_hmd34(openvr, self._overlay_mat))
             try:
                 TRANSFORM_PATH.unlink(missing_ok=True)
             except OSError:
@@ -536,34 +523,7 @@ class SubtitlePanel:
         d.line([(x - length, y), (x, y)], fill=color, width=width)
         d.line([(x, y - length), (x, y)], fill=color, width=width)
 
-    @staticmethod
-    def _haptic(vrsys, openvr, device_idx, micros: int) -> None:
-        if device_idx == openvr.k_unTrackedDeviceIndexInvalid:
-            return
-        try:
-            vrsys.triggerHapticPulse(device_idx, 0, micros)
-        except Exception:
-            pass
-
     # ---------------- rendering ----------------
-    @staticmethod
-    def _laser_texture() -> Image.Image:
-        img = Image.new("RGBA", (LASER_TEX_W, LASER_TEX_H), (0, 0, 0, 0))
-        d = ImageDraw.Draw(img)
-        for y in range(LASER_TEX_H):
-            a = int(220 * (1.0 - y / LASER_TEX_H))
-            d.line([(0, y), (LASER_TEX_W, y)], fill=(120, 180, 255, a))
-        return img
-
-    @staticmethod
-    def _cursor_texture() -> Image.Image:
-        s = 64
-        img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-        d = ImageDraw.Draw(img)
-        d.ellipse((4, 4, s - 4, s - 4), outline=(255, 255, 255, 230), width=6)
-        d.ellipse((22, 22, s - 22, s - 22), fill=(120, 180, 255, 255))
-        return img
-
     def _wrap(self, draw, text: str, font, max_width: int) -> list[str]:
         lines = []
         line = ""
@@ -622,43 +582,8 @@ class SubtitlePanel:
         if self._configured_transform is not None:
             log.info("subtitle panel: restored configured position")
             return self._configured_transform.copy()
-        try:
-            rows = json.loads(TRANSFORM_PATH.read_text(encoding="utf-8"))
-            m = np.identity(4)
-            for r in range(3):
-                for c in range(4):
-                    m[r][c] = float(rows[r][c])
-            log.info("subtitle panel: restored saved position")
-            return m
-        except FileNotFoundError:
-            return self._hmd_matrix()
-        except Exception:
-            log.warning("subtitle panel: invalid saved transform - using defaults",
-                        exc_info=True)
-            return self._hmd_matrix()
-
-    @staticmethod
-    def _coerce_transform(rows) -> np.ndarray | None:
-        if not rows:
-            return None
-        try:
-            m = np.identity(4)
-            for r in range(3):
-                for c in range(4):
-                    m[r][c] = float(rows[r][c])
-            return m
-        except Exception:
-            log.warning("subtitle panel: invalid configured transform - ignoring", exc_info=True)
-            return None
-
-    @staticmethod
-    def _save_transform(m: np.ndarray) -> None:
-        try:
-            TRANSFORM_PATH.parent.mkdir(parents=True, exist_ok=True)
-            rows = [[float(m[r][c]) for c in range(4)] for r in range(3)]
-            TRANSFORM_PATH.write_text(json.dumps(rows), encoding="utf-8")
-        except Exception:
-            log.warning("subtitle panel: failed to save transform", exc_info=True)
+        m = load_saved_transform(TRANSFORM_PATH, "subtitle panel")
+        return m if m is not None else self._hmd_matrix()
 
     def _hmd_matrix(self) -> np.ndarray:
         a = math.radians(self._tilt_deg)
@@ -670,37 +595,3 @@ class SubtitlePanel:
         m[1][3] = -self._below_m
         m[2][3] = -self._distance_m
         return m
-
-    @staticmethod
-    def _translate(x: float, y: float, z: float) -> np.ndarray:
-        m = np.identity(4)
-        m[0][3], m[1][3], m[2][3] = x, y, z
-        return m
-
-    @staticmethod
-    def _laser_base() -> np.ndarray:
-        a = math.radians(-90.0)
-        m = np.identity(4)
-        m[1][1] = math.cos(a)
-        m[1][2] = -math.sin(a)
-        m[2][1] = math.sin(a)
-        m[2][2] = math.cos(a)
-        m[2][3] = -LASER_LEN_M / 2
-        return m
-
-    @staticmethod
-    def _pose_to_np(pose) -> np.ndarray:
-        m = pose.mDeviceToAbsoluteTracking
-        out = np.identity(4)
-        for r in range(3):
-            for c in range(4):
-                out[r][c] = m[r][c]
-        return out
-
-    @staticmethod
-    def _np_to_hmd34(openvr, m: np.ndarray):
-        t = openvr.HmdMatrix34_t()
-        for r in range(3):
-            for c in range(4):
-                t[r][c] = float(m[r][c])
-        return t

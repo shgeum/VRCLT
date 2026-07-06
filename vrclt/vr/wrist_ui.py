@@ -10,22 +10,26 @@ Interaction (no SteamVR input capture - the game keeps full control):
 
 Textures are persistent OpenGL textures (see vr/render.py for why).
 """
-import json
 import logging
 import math
 import os
-import time
 import threading
 from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw
 
-from ..languages import KNOWN_LANGUAGE_NAMES, canonical_language_code
 from ..resources import bundled_font, resolve_font_path
 from ..state import AppState
 from ..i18n import tr, LANGS as UI_LANGS, UI_LANG_LABELS
 from .font_fallback import load_fallback_font
+from .panel_common import (
+    COL_BG, COL_BTN, COL_DIM, COL_DRAG, COL_OFF, COL_ON, COL_SUB_ON, COL_TEXT,
+    LASER_TEX_H, LASER_TEX_W, LASER_WIDTH_M,
+    coerce_transform, create_overlay_set, cursor_texture, cycle, draw_fit_text,
+    haptic, language_label, laser_base, laser_texture, load_saved_transform,
+    np_to_hmd34, pointer_matrix, pose_to_np, save_transform, translate,
+)
 from .render import GlTexture, flip_bounds
 
 log = logging.getLogger(__name__)
@@ -59,18 +63,6 @@ BUTTONS = (("toggle", BTN_TOGGLE), ("prev", BTN_PREV), ("next", BTN_NEXT),
            ("reset", BTN_RESET),
            ("uilang", BTN_UILANG), ("text_only", BTN_TEXT_ONLY))
 
-COL_BG = (16, 18, 24, 235)
-COL_BTN = (38, 42, 54, 255)
-COL_ON = (46, 160, 67, 255)
-COL_OFF = (120, 84, 30, 255)
-COL_SUB_ON = (40, 110, 170, 255)
-COL_TEXT = (240, 240, 240, 255)
-COL_DIM = (150, 150, 150, 255)
-COL_DRAG = (70, 110, 180, 255)
-
-LASER_TEX_W, LASER_TEX_H = 4, 512
-LASER_WIDTH_M = 0.004
-LASER_LEN_M = LASER_WIDTH_M * LASER_TEX_H / LASER_TEX_W  # 0.512 m
 CURSOR_SIZE_M = 0.016
 
 
@@ -95,14 +87,9 @@ class WristPanel:
         self._offset = tuple(offset)
         self._tilt_deg = tilt_deg
         self._roll_deg = roll_deg if roll_deg is not None else (90.0 if hand == "left" else -90.0)
-        self._configured_transform = self._coerce_transform(transform)
+        self._configured_transform = coerce_transform(transform, "wrist panel")
         self._on_transform_changed = on_transform_changed
-        a = math.radians(-pointer_tilt_deg)
-        self._pointer_mat = np.identity(4)
-        self._pointer_mat[1][1] = math.cos(a)
-        self._pointer_mat[1][2] = -math.sin(a)
-        self._pointer_mat[2][1] = math.sin(a)
-        self._pointer_mat[2][2] = math.cos(a)
+        self._pointer_mat = pointer_matrix(pointer_tilt_deg)
         self._get_status = get_status
         self._on_text_only_toggle = on_text_only_toggle
         font_path = resolve_font_path(font_path, "NotoSansCJKkr-Bold.otf")
@@ -122,22 +109,11 @@ class WristPanel:
     # ---------------- component lifecycle ----------------
     def setup(self, ctx) -> bool:
         openvr, ovl = ctx.openvr, ctx.ovl
-        created = []
-        try:
-            for key, name in (("vrclt.wrist", "vrclt wrist menu"),
-                              ("vrclt.laser", "vrclt laser"),
-                              ("vrclt.cursor", "vrclt cursor")):
-                created.append(ovl.createOverlay(key, name))
-        except Exception as e:
-            for h in created:
-                try:
-                    ovl.destroyOverlay(h)
-                except Exception:
-                    pass
-            if "KeyInUse" in type(e).__name__:
-                log.warning("wrist panel: overlay key in use - another vrclt instance running?")
-                return False
-            raise
+        created = create_overlay_set(ovl, (("vrclt.wrist", "vrclt wrist menu"),
+                                           ("vrclt.laser", "vrclt laser"),
+                                           ("vrclt.cursor", "vrclt cursor")), "wrist panel")
+        if created is None:
+            return False
         self._h, self._h_laser, self._h_cursor = created
 
         bounds = flip_bounds(openvr)
@@ -150,7 +126,7 @@ class WristPanel:
         ovl.setOverlaySortOrder(self._h_laser, 200)
         ovl.setOverlayTextureBounds(self._h_laser, bounds)
         laser_tex = GlTexture(LASER_TEX_W, LASER_TEX_H)
-        laser_tex.update(self._laser_texture())
+        laser_tex.update(laser_texture())
         ovl.setOverlayTexture(self._h_laser, laser_tex.vr_texture(openvr))
         self._laser_tex = laser_tex
 
@@ -158,7 +134,7 @@ class WristPanel:
         ovl.setOverlaySortOrder(self._h_cursor, 201)
         ovl.setOverlayTextureBounds(self._h_cursor, bounds)
         cursor_tex = GlTexture(64, 64)
-        cursor_tex.update(self._cursor_texture())
+        cursor_tex.update(cursor_texture())
         ovl.setOverlayTexture(self._h_cursor, cursor_tex.vr_texture(openvr))
         self._cursor_tex = cursor_tex
 
@@ -218,13 +194,13 @@ class WristPanel:
             self._finger_idx = vrsys.getTrackedDeviceIndexForControllerRole(self._finger_role)
             if self._wrist_idx != self._invalid and self._wrist_idx != self._attached_to:
                 ovl.setOverlayTransformTrackedDeviceRelative(
-                    self._h, self._wrist_idx, self._np_to_hmd34(openvr, self._overlay_mat))
+                    self._h, self._wrist_idx, np_to_hmd34(openvr, self._overlay_mat))
                 self._attached_to = self._wrist_idx
                 log.info("wrist panel attached to controller %d", self._wrist_idx)
             if self._finger_idx != self._invalid and self._finger_idx != self._laser_attached_to:
                 ovl.setOverlayTransformTrackedDeviceRelative(
                     self._h_laser, self._finger_idx,
-                    self._np_to_hmd34(openvr, self._pointer_mat @ self._laser_base()))
+                    np_to_hmd34(openvr, self._pointer_mat @ laser_base()))
                 self._laser_attached_to = self._finger_idx
 
         status = bool(self._get_status())
@@ -244,8 +220,8 @@ class WristPanel:
             if self._engaged and poses_ok and self._finger_idx != self._invalid:
                 fp = poses[self._finger_idx]
                 if fp.bPoseIsValid:
-                    w4 = self._pose_to_np(wp)
-                    f4 = self._pose_to_np(fp)
+                    w4 = pose_to_np(wp)
+                    f4 = pose_to_np(fp)
                     new_hover, on_panel, hit_xy = self._ray_hit(w4, f4)
 
                     trigger = grip = False
@@ -266,7 +242,7 @@ class WristPanel:
                             not self._dragging and self._state.wrist_edit_mode:
                         self._drag_offset = np.linalg.inv(f4) @ w4 @ self._overlay_mat
                         self._dragging = True
-                        self._haptic(vrsys, openvr, self._finger_idx, 2000)
+                        haptic(vrsys, openvr, self._finger_idx, 2000)
                         self._dirty.set()
                         log.info("wrist panel grabbed")
                     if self._dragging:
@@ -274,13 +250,13 @@ class WristPanel:
                             self._overlay_mat = np.linalg.inv(w4) @ f4 @ self._drag_offset
                             ovl.setOverlayTransformTrackedDeviceRelative(
                                 self._h, self._wrist_idx,
-                                self._np_to_hmd34(openvr, self._overlay_mat))
+                                np_to_hmd34(openvr, self._overlay_mat))
                         else:
                             self._dragging = False
                             self._overlay_mat_inv = np.linalg.inv(self._overlay_mat)
-                            self._save_transform(self._overlay_mat, TRANSFORM_PATH)
+                            save_transform(self._overlay_mat, TRANSFORM_PATH, "wrist panel")
                             self._on_transform_changed(self._overlay_mat, False)
-                            self._haptic(vrsys, openvr, self._finger_idx, 3000)
+                            haptic(vrsys, openvr, self._finger_idx, 3000)
                             self._dirty.set()
                             log.info("wrist panel placed (saved)")
                         new_hover = None
@@ -288,15 +264,15 @@ class WristPanel:
                     if not self._dragging and new_hover is not None and \
                             trigger and not self._prev_trigger:
                         self._on_click(new_hover)
-                        self._haptic(vrsys, openvr, self._finger_idx, 3000)
+                        haptic(vrsys, openvr, self._finger_idx, 3000)
                         self._dirty.set()
 
                     self._prev_trigger, self._prev_grip = trigger, grip
 
                     if hit_xy is not None:
-                        cur = self._overlay_mat @ self._translate(hit_xy[0], hit_xy[1], 0.004)
+                        cur = self._overlay_mat @ translate(hit_xy[0], hit_xy[1], 0.004)
                         ovl.setOverlayTransformTrackedDeviceRelative(
-                            self._h_cursor, self._wrist_idx, self._np_to_hmd34(openvr, cur))
+                            self._h_cursor, self._wrist_idx, np_to_hmd34(openvr, cur))
                         if not self._cursor_visible:
                             ovl.showOverlay(self._h_cursor)
                             self._cursor_visible = True
@@ -314,7 +290,7 @@ class WristPanel:
 
         if new_hover != self._hover:
             if new_hover is not None:
-                self._haptic(vrsys, openvr, self._finger_idx, 600)
+                haptic(vrsys, openvr, self._finger_idx, 600)
             self._hover = new_hover
             # hover never re-renders the panel (texture swaps can flicker);
             # the cursor dot + haptics are the pointer feedback
@@ -325,7 +301,7 @@ class WristPanel:
             self._overlay_mat_inv = np.linalg.inv(self._overlay_mat)
             if self._attached_to != self._invalid:
                 ovl.setOverlayTransformTrackedDeviceRelative(
-                    self._h, self._attached_to, self._np_to_hmd34(openvr, self._overlay_mat))
+                    self._h, self._attached_to, np_to_hmd34(openvr, self._overlay_mat))
             try:
                 TRANSFORM_PATH.unlink(missing_ok=True)
             except OSError:
@@ -340,8 +316,8 @@ class WristPanel:
 
     # ---------------- gaze ----------------
     def _update_gaze(self, ovl, hp, wp) -> None:
-        h4 = self._pose_to_np(hp)
-        w4 = self._pose_to_np(wp)
+        h4 = pose_to_np(hp)
+        w4 = pose_to_np(wp)
         center = (w4 @ self._overlay_mat @ np.array([0.0, 0.0, 0.0, 1.0]))[:3]
         eye = h4[:3, 3]
         fwd = -h4[:3, 2]
@@ -395,17 +371,17 @@ class WristPanel:
         elif button == "sub_toggle":
             st.subtitles_on = not st.subtitles_on
         elif button in ("prev", "next"):
-            st.target_language = self._cycle(self._languages, st.target_language,
+            st.target_language = cycle(self._languages, st.target_language,
                                              1 if button == "next" else -1)
         elif button in ("sub_prev", "sub_next"):
-            st.inbound_language = self._cycle(self._inbound_languages, st.inbound_language,
+            st.inbound_language = cycle(self._inbound_languages, st.inbound_language,
                                               1 if button == "sub_next" else -1)
         elif button == "edit":
             st.wrist_edit_mode = not st.wrist_edit_mode
         elif button == "sub_edit":
             st.edit_mode = not st.edit_mode
         elif button == "uilang":
-            st.ui_lang = self._cycle(UI_LANGS, st.ui_lang, 1)
+            st.ui_lang = cycle(UI_LANGS, st.ui_lang, 1)
         elif button == "text_only":
             self._on_text_only_toggle(not st.text_only)
         elif button == "reset":
@@ -414,160 +390,22 @@ class WristPanel:
             else:
                 self._reset_requested = True
 
-    @staticmethod
-    def _cycle(langs: list[str], cur: str, step: int) -> str:
-        idx = langs.index(cur) if cur in langs else 0
-        return langs[(idx + step) % len(langs)]
-
-    @staticmethod
-    def _haptic(vrsys, openvr, device_idx, micros: int) -> None:
-        if device_idx == openvr.k_unTrackedDeviceIndexInvalid:
-            return
-        try:
-            vrsys.triggerHapticPulse(device_idx, 0, micros)
-        except Exception:
-            pass
-
     # ---------------- rendering ----------------
-    @staticmethod
-    def _laser_texture() -> Image.Image:
-        img = Image.new("RGBA", (LASER_TEX_W, LASER_TEX_H), (0, 0, 0, 0))
-        d = ImageDraw.Draw(img)
-        for y in range(LASER_TEX_H):
-            a = int(220 * (1.0 - y / LASER_TEX_H))
-            d.line([(0, y), (LASER_TEX_W, y)], fill=(120, 180, 255, a))
-        return img
-
-    @staticmethod
-    def _cursor_texture() -> Image.Image:
-        s = 64
-        img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-        d = ImageDraw.Draw(img)
-        d.ellipse((4, 4, s - 4, s - 4), outline=(255, 255, 255, 230), width=6)
-        d.ellipse((22, 22, s - 22, s - 22), fill=(120, 180, 255, 255))
-        return img
-
-    def _fit_font(self, draw, text: str, max_width: float, fonts=None):
-        for font in (fonts or (self._font_big, self._font_mid, self._font_small, self._font_tiny)):
-            if font.textlength(draw, text) <= max_width:
-                return font
-        return self._font_tiny
-
-    @staticmethod
-    def _line_height(draw, font) -> int:
-        try:
-            return font.line_height(draw)
-        except Exception:
-            return max(1, int(getattr(font, "size", 20)))
-
-    def _wrap_to_width(self, draw, text: str, font, max_width: float) -> list[str]:
-        if font.textlength(draw, text) <= max_width:
-            return [text]
-
-        if " " in text:
-            parts = text.split(" ")
-            sep = " "
-        else:
-            parts = list(text)
-            sep = ""
-
-        lines: list[str] = []
-        line = ""
-        for part in parts:
-            candidate = part if not line else f"{line}{sep}{part}"
-            if font.textlength(draw, candidate) <= max_width:
-                line = candidate
-                continue
-            if line:
-                lines.append(line)
-                line = ""
-            if font.textlength(draw, part) <= max_width:
-                line = part
-                continue
-            chunk = ""
-            for ch in part:
-                candidate = f"{chunk}{ch}"
-                if chunk and font.textlength(draw, candidate) > max_width:
-                    lines.append(chunk)
-                    chunk = ch
-                else:
-                    chunk = candidate
-            line = chunk
-        if line:
-            lines.append(line)
-        return lines or [text]
-
-    def _clip_line(self, draw, text: str, font, max_width: float) -> str:
-        if font.textlength(draw, text) <= max_width:
-            return text
-        suffix = "..."
-        while text and font.textlength(draw, text + suffix) > max_width:
-            text = text[:-1]
-        return (text + suffix) if text else suffix
-
-    def _draw_fit_text(self, d, box, text: str, *, fonts=None, fill=COL_TEXT,
-                       max_lines: int = 1, pad_x: int = 8, pad_y: int = 4,
-                       line_spacing: int = 2) -> None:
-        x0, y0, x1, y1 = box
-        max_width = max(1, x1 - x0 - pad_x * 2)
-        max_height = max(1, y1 - y0 - pad_y * 2)
-        candidates = fonts or (self._font_mid, self._font_small, self._font_tiny)
-
-        chosen_font = candidates[-1]
-        chosen_lines = [text]
-        chosen_spacing = 0
-        for font in candidates:
-            line_h = self._line_height(d, font)
-            spacing = line_spacing if max_lines > 1 else 0
-            lines = self._wrap_to_width(d, text, font, max_width)
-            if len(lines) > max_lines:
-                continue
-            total_h = len(lines) * line_h + max(0, len(lines) - 1) * spacing
-            if total_h <= max_height and all(font.textlength(d, line) <= max_width
-                                             for line in lines):
-                chosen_font = font
-                chosen_lines = lines
-                chosen_spacing = spacing
-                break
-
-        line_h = self._line_height(d, chosen_font)
-        lines = self._wrap_to_width(d, text, chosen_font, max_width)
-        truncated = len(lines) > max_lines
-        lines = lines[:max_lines]
-        if truncated and lines:
-            lines[-1] = self._clip_line(d, lines[-1], chosen_font, max_width)
-        lines = [self._clip_line(d, line, chosen_font, max_width) for line in lines]
-        total_h = len(lines) * line_h + max(0, len(lines) - 1) * chosen_spacing
-        while len(lines) > 1 and total_h > max_height:
-            lines = lines[:-1]
-            lines[-1] = self._clip_line(d, lines[-1], chosen_font, max_width)
-            total_h = len(lines) * line_h + max(0, len(lines) - 1) * chosen_spacing
-        y = (y0 + y1 - total_h) / 2
-        cx = (x0 + x1) / 2
-        for line in lines:
-            chosen_font.draw(d, (cx, y + line_h / 2), line, fill=fill, anchor="mm")
-            y += line_h + chosen_spacing
-
     def _lang_block(self, d, prev_box, lang_box, next_box, code: str, caption: str) -> None:
         for box, label in ((prev_box, "◀"), (next_box, "▶")):
             d.rounded_rectangle(box, 16, fill=COL_BTN)
             self._font_mid.draw(d, ((box[0] + box[2]) // 2, (box[1] + box[3]) // 2),
                                 label, fill=COL_TEXT, anchor="mm")
         d.rounded_rectangle(lang_box, 16, fill=(28, 30, 38, 255))
-        label = self._language_label(code)
-        self._draw_fit_text(
+        label = language_label(code)
+        draw_fit_text(
             d, (lang_box[0] + 4, lang_box[1] + 20, lang_box[2] - 4, lang_box[3] - 54),
             label, fonts=(self._font_big, self._font_mid, self._font_small, self._font_tiny),
             max_lines=1, pad_x=2, pad_y=2)
-        self._draw_fit_text(
+        draw_fit_text(
             d, (lang_box[0] + 4, lang_box[3] - 54, lang_box[2] - 4, lang_box[3] - 8),
             caption, fonts=(self._font_tiny,), fill=COL_DIM, max_lines=1,
             pad_x=2, pad_y=1, line_spacing=0)
-
-    @staticmethod
-    def _language_label(code: str) -> str:
-        code = canonical_language_code(code)
-        return KNOWN_LANGUAGE_NAMES.get(code, code)
 
     def _render(self, connected: bool, dragging: bool) -> Image.Image:
         lang = self._state.ui_lang
@@ -585,26 +423,26 @@ class WristPanel:
         # UI display-language cycle
         d.rounded_rectangle(BTN_UILANG, 12, fill=COL_BTN)
         ui_label = UI_LANG_LABELS.get(lang, lang)
-        self._draw_fit_text(d, BTN_UILANG, ui_label,
+        draw_fit_text(d, BTN_UILANG, ui_label,
                             fonts=(self._font_small, self._font_tiny), max_lines=1,
                             pad_x=5, pad_y=2, line_spacing=0)
         text_only = self._state.text_only
         d.rounded_rectangle(BTN_TEXT_ONLY, 12, fill=COL_SUB_ON if text_only else COL_BTN)
         text_label = tr(lang, "btn_text_only_on" if text_only else "btn_text_only_off")
-        self._draw_fit_text(d, BTN_TEXT_ONLY, text_label,
+        draw_fit_text(d, BTN_TEXT_ONLY, text_label,
                             fonts=(self._font_small, self._font_tiny), max_lines=1,
                             pad_x=6, pad_y=2, line_spacing=0)
         d.rounded_rectangle(BTN_EDIT, 12, fill=COL_DRAG if wrist_edit else COL_BTN)
         edit_label = tr(lang, "wrist_moving" if dragging else "wrist_move")
-        self._draw_fit_text(d, BTN_EDIT, edit_label,
+        draw_fit_text(d, BTN_EDIT, edit_label,
                             fonts=(self._font_small, self._font_tiny), max_lines=1,
                             pad_x=5, pad_y=2, line_spacing=0)
         d.rounded_rectangle(BTN_SUB_EDIT, 12, fill=COL_DRAG if sub_edit else COL_BTN)
-        self._draw_fit_text(d, BTN_SUB_EDIT, tr(lang, "sub_move"),
+        draw_fit_text(d, BTN_SUB_EDIT, tr(lang, "sub_move"),
                             fonts=(self._font_small, self._font_tiny), max_lines=1,
                             pad_x=5, pad_y=2, line_spacing=0)
         d.rounded_rectangle(BTN_RESET, 12, fill=COL_BTN)
-        self._draw_fit_text(d, BTN_RESET, tr(lang, "pos_reset"),
+        draw_fit_text(d, BTN_RESET, tr(lang, "pos_reset"),
                             fonts=(self._font_small, self._font_tiny), max_lines=1,
                             pad_x=5, pad_y=2, line_spacing=0)
 
@@ -612,12 +450,12 @@ class WristPanel:
         d.rounded_rectangle(BTN_TOGGLE, 18, fill=COL_ON if on else COL_OFF)
         cx = (BTN_TOGGLE[0] + BTN_TOGGLE[2]) // 2
         cy = (BTN_TOGGLE[1] + BTN_TOGGLE[3]) // 2
-        self._draw_fit_text(d, (BTN_TOGGLE[0] + 10, BTN_TOGGLE[1] + 36,
+        draw_fit_text(d, (BTN_TOGGLE[0] + 10, BTN_TOGGLE[1] + 36,
                                BTN_TOGGLE[2] - 10, cy + 16),
                             tr(lang, "btn_trans_on" if on else "btn_trans_off"),
                             fonts=(self._font_mid, self._font_small, self._font_tiny),
                             max_lines=1, pad_x=0, pad_y=0)
-        self._draw_fit_text(d, (BTN_TOGGLE[0] + 10, cy + 18,
+        draw_fit_text(d, (BTN_TOGGLE[0] + 10, cy + 18,
                                BTN_TOGGLE[2] - 10, BTN_TOGGLE[3] - 22),
                             tr(lang, "my_to_other"),
                             fonts=(self._font_small, self._font_tiny),
@@ -629,12 +467,12 @@ class WristPanel:
         d.rounded_rectangle(BTN_SUB_TOGGLE, 18, fill=COL_SUB_ON if sub_on else COL_BTN)
         cx = (BTN_SUB_TOGGLE[0] + BTN_SUB_TOGGLE[2]) // 2
         cy = (BTN_SUB_TOGGLE[1] + BTN_SUB_TOGGLE[3]) // 2
-        self._draw_fit_text(d, (BTN_SUB_TOGGLE[0] + 10, BTN_SUB_TOGGLE[1] + 36,
+        draw_fit_text(d, (BTN_SUB_TOGGLE[0] + 10, BTN_SUB_TOGGLE[1] + 36,
                                BTN_SUB_TOGGLE[2] - 10, cy + 16),
                             tr(lang, "btn_sub_on" if sub_on else "btn_sub_off"),
                             fonts=(self._font_mid, self._font_small, self._font_tiny),
                             max_lines=1, pad_x=0, pad_y=0)
-        self._draw_fit_text(d, (BTN_SUB_TOGGLE[0] + 10, cy + 18,
+        draw_fit_text(d, (BTN_SUB_TOGGLE[0] + 10, cy + 18,
                                BTN_SUB_TOGGLE[2] - 10, BTN_SUB_TOGGLE[3] - 22),
                             tr(lang, "other_to_sub"),
                             fonts=(self._font_small, self._font_tiny),
@@ -648,59 +486,8 @@ class WristPanel:
         if self._configured_transform is not None:
             log.info("wrist panel: restored configured position")
             return self._configured_transform.copy()
-        try:
-            rows = json.loads(TRANSFORM_PATH.read_text(encoding="utf-8"))
-            m = np.identity(4)
-            for r in range(3):
-                for c in range(4):
-                    m[r][c] = float(rows[r][c])
-            log.info("wrist panel: restored saved position")
-            return m
-        except FileNotFoundError:
-            return self._watch_matrix()
-        except Exception:
-            log.warning("wrist panel: invalid saved transform - using defaults", exc_info=True)
-            return self._watch_matrix()
-
-    @staticmethod
-    def _coerce_transform(rows) -> np.ndarray | None:
-        if not rows:
-            return None
-        try:
-            m = np.identity(4)
-            for r in range(3):
-                for c in range(4):
-                    m[r][c] = float(rows[r][c])
-            return m
-        except Exception:
-            log.warning("wrist panel: invalid configured transform - ignoring", exc_info=True)
-            return None
-
-    @staticmethod
-    def _save_transform(m: np.ndarray, path: Path) -> None:
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            rows = [[float(m[r][c]) for c in range(4)] for r in range(3)]
-            path.write_text(json.dumps(rows), encoding="utf-8")
-        except Exception:
-            log.warning("failed to save transform to %s", path, exc_info=True)
-
-    @staticmethod
-    def _translate(x: float, y: float, z: float) -> np.ndarray:
-        m = np.identity(4)
-        m[0][3], m[1][3], m[2][3] = x, y, z
-        return m
-
-    @staticmethod
-    def _laser_base() -> np.ndarray:
-        a = math.radians(-90.0)
-        m = np.identity(4)
-        m[1][1] = math.cos(a)
-        m[1][2] = -math.sin(a)
-        m[2][1] = math.sin(a)
-        m[2][2] = math.cos(a)
-        m[2][3] = -LASER_LEN_M / 2
-        return m
+        m = load_saved_transform(TRANSFORM_PATH, "wrist panel")
+        return m if m is not None else self._watch_matrix()
 
     def _watch_matrix(self) -> np.ndarray:
         a = math.radians(-90.0 + self._tilt_deg)
@@ -724,20 +511,3 @@ class WristPanel:
         if self._configured_transform is not None:
             return self._configured_transform.copy()
         return self._watch_matrix()
-
-    @staticmethod
-    def _pose_to_np(pose) -> np.ndarray:
-        m = pose.mDeviceToAbsoluteTracking
-        out = np.identity(4)
-        for r in range(3):
-            for c in range(4):
-                out[r][c] = m[r][c]
-        return out
-
-    @staticmethod
-    def _np_to_hmd34(openvr, m: np.ndarray):
-        t = openvr.HmdMatrix34_t()
-        for r in range(3):
-            for c in range(4):
-                t[r][c] = float(m[r][c])
-        return t
