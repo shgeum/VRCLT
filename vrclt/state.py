@@ -24,6 +24,12 @@ class AppState:
         """fn(field_name, new_value) - called from the mutating thread."""
         self._listeners.append(fn)
 
+    def unsubscribe(self, fn) -> None:
+        try:
+            self._listeners.remove(fn)
+        except ValueError:
+            pass
+
     def _notify(self, field: str, value) -> None:
         for fn in self._listeners:
             try:

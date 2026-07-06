@@ -162,6 +162,11 @@ class OutboundPipeline:
         )
         self.state.subscribe(self._on_state_change)
 
+    def detach(self) -> None:
+        """Stop reacting to state changes (the AppState outlives pipelines
+        across runtime restarts)."""
+        self.state.unsubscribe(self._on_state_change)
+
     # -- state changes (called from OSC control / UI threads) --
     def _on_state_change(self, field: str, value) -> None:
         if field == "target_language":
@@ -348,6 +353,9 @@ class InboundPipeline:
             on_interrupted=self._on_interrupted,
         )
         state.subscribe(self._on_state_change)
+
+    def detach(self) -> None:
+        self.state.unsubscribe(self._on_state_change)
 
     def _on_state_change(self, field: str, value) -> None:
         if field == "inbound_language":

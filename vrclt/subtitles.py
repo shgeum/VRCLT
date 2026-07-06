@@ -18,6 +18,15 @@ class SubtitleStore:
     def subscribe(self, fn) -> None:
         self._listeners.append(fn)
 
+    def configure(self, max_lines: int, display_sec: float) -> None:
+        """Re-apply display settings in place (the store persists across
+        runtime restarts so overlay panels can keep their reference)."""
+        with self._lock:
+            if max_lines != self._lines.maxlen:
+                self._lines = collections.deque(self._lines, maxlen=max_lines)
+            self._display_sec = display_sec
+        self._notify()
+
     def _notify(self) -> None:
         for fn in self._listeners:
             try:

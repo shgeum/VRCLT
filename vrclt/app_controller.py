@@ -187,6 +187,7 @@ class AppController:
         self._inbound = None
         self._control = None
         self._renderer = None
+        self._renderer_signature = None
         self._restarting = False
         # serializes restart()/stop(): they are called from Qt background
         # threads, the wrist-panel path, and app quit; overlapping runs used
@@ -229,6 +230,44 @@ class AppController:
         st.subscribe(self._persist_runtime_state)
         st.subscribe(lambda *_: self._notify())
         return st
+
+    def _sync_state_from_cfg(self, cfg: dict) -> None:
+        """Update the persistent AppState in place from a (re)loaded config.
+        The object is reused across restarts so VR panels and other
+        subscribers keep a valid reference (no overlay blink on restart)."""
+        dashboard = cfg.get("dashboard", {})
+        st = self.state
+        st.translation_on = dashboard.get(
+            "translation_on", cfg.get("outbound", {}).get("enabled", True))
+        st.target_language = language_code_from_text(
+            cfg.get("outbound", {}).get("target_language", "en"))
+        st.subtitles_on = dashboard.get(
+            "subtitles_on", cfg.get("inbound", {}).get("enabled", True))
+        st.inbound_language = language_code_from_text(
+            cfg.get("inbound", {}).get("target_language", "ko"))
+        st.ui_lang = i18n.detect(cfg.get("ui", {}).get("lang", ""))
+        st.text_only = self._is_text_only(cfg)
+
+    @staticmethod
+    def _vr_config_signature(cfg: dict):
+        """The config subset VR panels capture at construction; the renderer
+        is rebuilt on restart only when this changes."""
+        def freeze(v):
+            if isinstance(v, dict):
+                return tuple(sorted((k, freeze(x)) for k, x in v.items()))
+            if isinstance(v, (list, tuple)):
+                return tuple(freeze(x) for x in v)
+            return v
+
+        return freeze({
+            "overlay": cfg.get("overlay", {}),
+            "wrist_ui": cfg.get("wrist_ui", {}),
+            "dashboard_panel": cfg.get("steamvr", {}).get("dashboard_panel", True),
+            "out_langs": cfg.get("control", {}).get("languages", []),
+            "in_langs": cfg.get("inbound", {}).get("languages", []),
+            "inbound_enabled": cfg.get("inbound", {}).get("enabled", False),
+            "ui_mode": cfg.get("ui", {}).get("mode", "auto"),
+        })
 
     @staticmethod
     def _make_store(cfg: dict) -> SubtitleStore:
@@ -389,18 +428,13 @@ class AppController:
             return False
         return self.restart(cfg)
 
-    def set_overlay_width(self, value: float) -> None:
-        try:
-            value = float(value)
-        except Exception:
-            return
-        value = round(max(0.45, min(1.6, value)), 2)
-
-        def mutate():
-            self.raw_cfg.setdefault("overlay", {})["width_m"] = value
-            self.cfg.setdefault("overlay", {})["width_m"] = value
-
-        self._persist("overlay width", mutate)
+    def _refresh_renderer_signature(self) -> None:
+        """Panel-initiated config writes (move/resize in VR) are already live
+        in the running panels; fold them into the renderer signature so the
+        next restart does not rebuild the renderer for nothing."""
+        with self._lock:
+            if self._renderer is not None:
+                self._renderer_signature = self._vr_config_signature(self.cfg)
 
     def set_overlay_size(self, width_m: float, height_m: float) -> None:
         try:
@@ -420,6 +454,7 @@ class AppController:
             cfg_overlay["height_m"] = height_m
 
         self._persist("overlay size", mutate)
+        self._refresh_renderer_signature()
 
     def set_wrist_transform(self, matrix, reset: bool = False) -> None:
         try:
@@ -449,6 +484,7 @@ class AppController:
             self.cfg = config_mod.apply_app_profile(self.raw_cfg)
 
         self._persist("wrist transform", mutate)
+        self._refresh_renderer_signature()
 
     def set_subtitle_transform(self, matrix, reset: bool = False) -> None:
         try:
@@ -476,6 +512,7 @@ class AppController:
             self.cfg = config_mod.apply_app_profile(self.raw_cfg)
 
         self._persist("subtitle transform", mutate)
+        self._refresh_renderer_signature()
 
     def set_text_only(self, value: bool) -> None:
         value = bool(value)
@@ -515,13 +552,25 @@ class AppController:
         with self._lock:
             self._restarting = True
         try:
-            self.stop(timeout=8.0)
+            # Keep the VR renderer alive across restarts (e.g. the text-only
+            # toggle) unless VR-relevant config changed - tearing it down
+            # makes the wrist menu / subtitles visibly blink off and on.
+            new_cfg = config_mod.apply_app_profile(
+                copy.deepcopy(cfg) if cfg is not None else self.raw_cfg)
+            keep_renderer = (
+                self._renderer is not None
+                and wants_vr_renderer(new_cfg)
+                and self._vr_config_signature(new_cfg) == self._renderer_signature
+            )
+            self.stop(timeout=8.0, keep_renderer=keep_renderer)
             with self._lock:
                 if cfg is not None:
                     self.raw_cfg = copy.deepcopy(cfg)
                 self.cfg = config_mod.apply_app_profile(self.raw_cfg)
-                self.state = self._make_state(self.cfg)
-                self.store = self._make_store(self.cfg)
+                self._sync_state_from_cfg(self.cfg)
+                o = self.cfg.get("overlay", {})
+                self.store.configure(max_lines=o.get("lines", 3),
+                                     display_sec=o.get("display_sec", 7.0))
                 self.last_error = ""
                 self.status = "Starting"
                 self._notify()
@@ -592,19 +641,27 @@ class AppController:
             self._app_registrar.stop()
             self.stop(timeout=timeout)
 
-    def stop(self, timeout: float = 8.0) -> None:
+    def stop(self, timeout: float = 8.0, keep_renderer: bool = False) -> None:
         with self._lifecycle_lock:
             thread = self._thread
             loop = self._loop
             stop_event = self._stop_event
             renderer = self._renderer
+            # the AppState outlives pipelines; stop their state reactions
+            for p in (self._pipeline, self._inbound):
+                if p is not None:
+                    try:
+                        p.detach()
+                    except Exception:
+                        pass
             if loop is not None and stop_event is not None:
                 try:
                     loop.call_soon_threadsafe(stop_event.set)
                 except Exception:
                     pass
-            if renderer is not None:
+            if renderer is not None and not keep_renderer:
                 renderer.stop()
+                self._renderer_signature = None
             if thread is not None and thread.is_alive():
                 thread.join(timeout=timeout)
                 if thread.is_alive():
@@ -615,7 +672,8 @@ class AppController:
             self._pipeline = None
             self._inbound = None
             self._control = None
-            self._renderer = None
+            if not keep_renderer:
+                self._renderer = None
             if not self._restarting:
                 self._set_status("Stopped")
 
@@ -656,8 +714,11 @@ class AppController:
         self._app_registrar.reapply(
             bool(cfg.get("steamvr", {}).get("register", True)))
 
-        renderer = None
-        if wants_vr_renderer(cfg):
+        # a renderer surviving from the previous run (unchanged VR config)
+        # keeps its panels: they read the persistent state/store and query
+        # status via self.connected, so no rebuild is needed
+        renderer = self._renderer
+        if renderer is None and wants_vr_renderer(cfg):
             panels = []
             o = cfg.get("overlay", {})
             if inbound and o.get("enabled", True):
@@ -668,13 +729,14 @@ class AppController:
             if cfg.get("wrist_ui", {}).get("enabled", True):
                 panels.insert(0, make_wrist_panel(
                     cfg, state,
-                    get_status=lambda: pipeline.session.connected,
+                    get_status=self.connected,
                     on_text_only_toggle=self.set_text_only,
                     on_transform_changed=self.set_wrist_transform))
             if panels:
                 from .vr.render import VrRenderer
                 renderer = VrRenderer(panels, can_start=steamvr_running)
                 renderer.start()
+                self._renderer_signature = self._vr_config_signature(cfg)
 
         self._pipeline = pipeline
         self._inbound = inbound
