@@ -31,7 +31,7 @@ class AppState:
             pass
 
     def _notify(self, field: str, value) -> None:
-        for fn in self._listeners:
+        for fn in list(self._listeners):
             try:
                 fn(field, value)
             except Exception:

@@ -89,9 +89,10 @@ class SubtitlePanel:
         self._on_transform_changed = on_transform_changed
         self._on_size_changed = on_size_changed
         self._pointer_mat = pointer_matrix(pointer_tilt_deg)
-        font_path = resolve_font_path(font_path, "NotoSansCJKkr-Regular.otf")
-        self._font = load_fallback_font(font_path, font_size)
-        self._font_small = load_fallback_font(font_path, max(20, font_size - 14))
+        self._font_path = resolve_font_path(font_path, "NotoSansCJKkr-Regular.otf")
+        self._font_size = int(font_size)
+        self._font = load_fallback_font(self._font_path, self._font_size)
+        self._font_small = load_fallback_font(self._font_path, max(20, self._font_size - 14))
 
         self._dirty = threading.Event()
         self._reset_requested = False
@@ -109,6 +110,27 @@ class SubtitlePanel:
         elif field == "edit_mode" and _value:
             self._prev_grip = False
             self._prev_trigger = True
+        self._dirty.set()
+
+    def detach(self) -> None:
+        """Drop the state/store subscriptions (both outlive panels)."""
+        self._state.unsubscribe(self._on_state)
+        self._store.unsubscribe(self._dirty.set)
+
+    def set_font_size(self, size: int) -> None:
+        """Apply a new subtitle font size live (called off the render thread;
+        the font references are swapped atomically and picked up next tick)."""
+        try:
+            size = int(size)
+        except Exception:
+            return
+        if size == self._font_size:
+            return
+        self._font_size = size
+        self._font = load_fallback_font(self._font_path, size)
+        self._font_small = load_fallback_font(self._font_path, max(20, size - 14))
+        if hasattr(self, "_last_sig"):
+            self._last_sig = object()  # force re-render even with identical text
         self._dirty.set()
 
     # ---------------- component lifecycle ----------------

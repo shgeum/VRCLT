@@ -13,6 +13,13 @@ _lock = threading.Lock()
 _count = 0
 
 
+def active() -> bool:
+    """True while at least one user holds the context (acquire is then just
+    a refcount bump instead of a full OpenVR init)."""
+    with _lock:
+        return _count > 0
+
+
 def acquire():
     """Init OpenVR (overlay app) if needed; returns the openvr module.
     Raises if SteamVR is not available."""

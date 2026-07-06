@@ -19,6 +19,7 @@ import os
 import sys
 import tempfile
 import threading
+from pathlib import Path
 
 from ..config import APPDATA_DIR
 from . import openvr_ctx
@@ -36,6 +37,14 @@ def registration_supported() -> bool:
     return bool(getattr(sys, "frozen", False) or os.environ.get("VRCLT_DEV_VRMANIFEST"))
 
 
+def _launch_arguments() -> str:
+    if getattr(sys, "frozen", False):
+        return "run"
+    # dev override: sys.executable is the venv python, which needs the script
+    script = Path(__file__).resolve().parents[2] / "run_vrclt.py"
+    return f'"{script}" run'
+
+
 def _manifest_dict() -> dict:
     return {
         "source": "builtin",
@@ -43,7 +52,7 @@ def _manifest_dict() -> dict:
             "app_key": APP_KEY,
             "launch_type": "binary",
             "binary_path_windows": str(sys.executable),
-            "arguments": "run",
+            "arguments": _launch_arguments(),
             "is_dashboard_overlay": True,  # required for setApplicationAutoLaunch
             "strings": {
                 "en_us": {"name": "vrclt",
@@ -118,11 +127,16 @@ def unregister() -> bool:
 
 
 def get_auto_launch() -> bool | None:
-    """Live auto-launch state from SteamVR; None when unavailable."""
+    """Live auto-launch state from SteamVR; None when unavailable or the
+    app is not registered (so an opted-out install shows 'unknown', not
+    a toggle that would silently re-register)."""
     try:
         openvr = openvr_ctx.acquire()
         try:
-            return bool(openvr.VRApplications().getApplicationAutoLaunch(APP_KEY))
+            apps = openvr.VRApplications()
+            if not apps.isApplicationInstalled(APP_KEY):
+                return None
+            return bool(apps.getApplicationAutoLaunch(APP_KEY))
         finally:
             openvr_ctx.release()
     except Exception:
@@ -151,51 +165,60 @@ def set_auto_launch(enabled: bool) -> bool:
 
 
 class SteamVrAppRegistrar:
-    """Registers the manifest once SteamVR is up (or removes it when the
-    user opted out). Polls in a daemon thread; exits after the first apply."""
+    """Keeps SteamVR's app registration in sync with the desired state.
+
+    A single worker thread applies the latest desired value (register or
+    unregister) once SteamVR is up, retrying on failure; rapid toggles are
+    serialized so the final state always matches the last request."""
 
     def __init__(self, steamvr_running, poll_sec: float = 20.0):
         self._steamvr_running = steamvr_running
         self._poll_sec = poll_sec
         self._stop = threading.Event()
-        self._thread = None
+        self._lock = threading.Lock()
+        self._desired = None          # bool once known
+        self._worker_running = False
 
     def start(self, get_enabled) -> None:
         if not registration_supported():
             log.info("SteamVR app registration skipped (dev build)")
             return
-        if self._thread is not None:
-            return
-
-        def worker():
-            while not self._stop.is_set():
-                if self._steamvr_running():
-                    if get_enabled():
-                        register()
-                    else:
-                        unregister()
-                    return
-                self._stop.wait(self._poll_sec)
-
-        self._thread = threading.Thread(target=worker, name="steamvr-registrar",
-                                        daemon=True)
-        self._thread.start()
+        # keep binary_path_windows current even if SteamVR never starts
+        # this session (the release exe filename changes per version)
+        write_manifest()
+        self.reapply(bool(get_enabled()))
 
     def reapply(self, enabled: bool) -> None:
-        """One-shot re-apply after a settings change (fire-and-forget)."""
-        if not registration_supported():
+        """Set the desired registration state; applied asynchronously."""
+        if not registration_supported() or self._stop.is_set():
             return
-
-        def worker():
-            if not self._steamvr_running():
+        with self._lock:
+            self._desired = bool(enabled)
+            if self._worker_running:
                 return
-            if enabled:
-                register()
-            else:
-                unregister()
-
-        threading.Thread(target=worker, name="steamvr-registrar-reapply",
+            self._worker_running = True
+        threading.Thread(target=self._worker, name="steamvr-registrar",
                          daemon=True).start()
+
+    def _worker(self) -> None:
+        while True:
+            if self._stop.is_set():
+                with self._lock:
+                    self._worker_running = False
+                return
+            with self._lock:
+                desired = self._desired
+            if self._steamvr_running():
+                ok = register() if desired else unregister()
+            else:
+                ok = False
+            # exit decision and the running flag flip must be atomic, or a
+            # reapply() racing the exit could be dropped
+            with self._lock:
+                if ok and self._desired == desired:
+                    self._worker_running = False
+                    return
+            self._stop.wait(self._poll_sec)
 
     def stop(self) -> None:
         self._stop.set()

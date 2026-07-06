@@ -118,10 +118,17 @@ class DashboardPanel:
 
         self._dirty = threading.Event()
         self._dirty.set()
-        state.subscribe(lambda *_: self._dirty.set())
+        state.subscribe(self._on_state)
 
         self._h = self._h_thumb = None
         self._tex = None
+
+    def _on_state(self, _field: str, _value) -> None:
+        self._dirty.set()
+
+    def detach(self) -> None:
+        """Drop the AppState subscription (the state outlives panels)."""
+        self._state.unsubscribe(self._on_state)
 
     # ---------------- component lifecycle ----------------
     def setup(self, ctx) -> bool:
@@ -154,6 +161,7 @@ class DashboardPanel:
         self._pressed = None
         self._hover_px = None
         self._last_status = None
+        self._last_auto = object()  # sentinel: first poll always renders
         self._last_shown_check = 0.0
         self._dirty.set()
         log.info("dashboard panel ready (GL texture)")
@@ -187,6 +195,10 @@ class DashboardPanel:
             status = bool(self._get_status())
             if status != self._last_status:
                 self._last_status = status
+                self._dirty.set()
+            auto = self._get_auto_launch()  # cached in the controller, cheap
+            if auto != self._last_auto:
+                self._last_auto = auto
                 self._dirty.set()
             # events are authoritative, but resync visibility defensively
             try:

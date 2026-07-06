@@ -210,6 +210,7 @@ class AppController:
         self._control = None
         self._renderer = None
         self._renderer_signature = None
+        self._panels: list = []
         self._restarting = False
         # serializes restart()/stop(): they are called from Qt background
         # threads, the wrist-panel path, and app quit; overlapping runs used
@@ -221,6 +222,7 @@ class AppController:
         self._steamvr_apps = steamvr_apps
         self._auto_launch_cache: tuple[float, bool | None] = (0.0, None)
         self._auto_launch_refreshing = False
+        self._auto_launch_gen = 0
         self._app_registrar = steamvr_apps.SteamVrAppRegistrar(steamvr_running)
         self._app_registrar.start(
             lambda: bool(self.cfg.get("steamvr", {}).get("register", True)))
@@ -424,6 +426,16 @@ class AppController:
             self.cfg.setdefault("overlay", {})["font_size"] = value
 
         self._persist("overlay font size", mutate)
+        # apply live to the running VR subtitle panel (it reads the size at
+        # construction otherwise), then fold into the renderer signature
+        for panel in list(self._panels):
+            setter = getattr(panel, "set_font_size", None)
+            if setter is not None:
+                try:
+                    setter(value)
+                except Exception:
+                    log.debug("live font-size apply failed", exc_info=True)
+        self._refresh_renderer_signature()
 
     def last_config_version(self) -> str:
         try:
@@ -582,18 +594,21 @@ class AppController:
             # Keep the VR renderer alive across restarts (e.g. the text-only
             # toggle) unless VR-relevant config changed - tearing it down
             # makes the wrist menu / subtitles visibly blink off and on.
-            new_cfg = config_mod.apply_app_profile(
-                copy.deepcopy(cfg) if cfg is not None else self.raw_cfg)
+            # raw_cfg is mutated under self._lock by the VR/OSC/Qt threads,
+            # so snapshot it under the lock before walking it.
+            with self._lock:
+                base_cfg = copy.deepcopy(cfg if cfg is not None else self.raw_cfg)
+                renderer_sig = self._renderer_signature
+            new_cfg = config_mod.apply_app_profile(base_cfg)
             keep_renderer = (
                 self._renderer is not None
                 and wants_vr_renderer(new_cfg)
-                and self._vr_config_signature(new_cfg) == self._renderer_signature
+                and self._vr_config_signature(new_cfg) == renderer_sig
             )
             self.stop(timeout=8.0, keep_renderer=keep_renderer)
             with self._lock:
-                if cfg is not None:
-                    self.raw_cfg = copy.deepcopy(cfg)
-                self.cfg = config_mod.apply_app_profile(self.raw_cfg)
+                self.raw_cfg = base_cfg
+                self.cfg = new_cfg
                 self._sync_state_from_cfg(self.cfg)
                 o = self.cfg.get("overlay", {})
                 self.store.configure(max_lines=o.get("lines", 3),
@@ -601,6 +616,10 @@ class AppController:
                 self.last_error = ""
                 self.status = "Starting"
                 self._notify()
+
+            # apply registration intent even if the key check below aborts
+            self._app_registrar.reapply(
+                bool(self.cfg.get("steamvr", {}).get("register", True)))
 
             key = config_mod.api_key(self.cfg)
             if not key:
@@ -623,39 +642,55 @@ class AppController:
     def get_steamvr_auto_launch(self) -> bool | None:
         """Cached SteamVR auto-launch state (SteamVR owns the truth);
         None when unknown/unavailable. Refreshes in the background so the
-        Qt refresh timer never blocks on OpenVR."""
+        Qt refresh timer never blocks on OpenVR, and only while an OpenVR
+        context is already alive - a cold poll would otherwise cycle a full
+        openvr init/shutdown every TTL."""
         if not self._steamvr_apps.registration_supported() or not steamvr_running():
             return None
-        ts, value = self._auto_launch_cache
-        if (time.monotonic() - ts) > 10.0 and not self._auto_launch_refreshing:
+        from .vr import openvr_ctx
+        with self._lock:
+            ts, value = self._auto_launch_cache
+            stale = (time.monotonic() - ts) > 10.0
+            if not stale or self._auto_launch_refreshing or not openvr_ctx.active():
+                return value
             self._auto_launch_refreshing = True
+            gen = self._auto_launch_gen
 
-            def refresh():
-                old = self._auto_launch_cache[1]
-                new = old
-                try:
-                    new = self._steamvr_apps.get_auto_launch()
+        def refresh():
+            new = self._steamvr_apps.get_auto_launch()
+            changed = False
+            with self._lock:
+                self._auto_launch_refreshing = False
+                # a set_steamvr_auto_launch() during the read wins
+                if gen == self._auto_launch_gen:
+                    changed = new != self._auto_launch_cache[1]
                     self._auto_launch_cache = (time.monotonic(), new)
-                finally:
-                    self._auto_launch_refreshing = False
-                if new != old:
-                    self._notify()
+            if changed:
+                self._notify()
 
-            threading.Thread(target=refresh, daemon=True,
-                             name="vrclt-autolaunch-poll").start()
+        threading.Thread(target=refresh, daemon=True,
+                         name="vrclt-autolaunch-poll").start()
         return value
 
     def set_steamvr_auto_launch(self, value: bool) -> None:
         """Flip SteamVR auto-launch; runs on a worker thread (callable from
-        the VR render thread and the Qt thread without blocking)."""
+        the VR render thread and the Qt thread without blocking). The cache
+        is updated optimistically so UIs reflect the click immediately."""
         value = bool(value)
+        with self._lock:
+            self._auto_launch_gen += 1
+            gen = self._auto_launch_gen
+            self._auto_launch_cache = (time.monotonic(), value)
 
         def apply():
-            if self._steamvr_apps.set_auto_launch(value):
-                self._auto_launch_cache = (time.monotonic(), value)
-            else:
-                # force a re-read next poll
-                self._auto_launch_cache = (0.0, self._auto_launch_cache[1])
+            ok = self._steamvr_apps.set_auto_launch(value)
+            with self._lock:
+                if gen == self._auto_launch_gen:
+                    if ok:
+                        self._auto_launch_cache = (time.monotonic(), value)
+                    else:
+                        # roll back the optimistic value; re-read next poll
+                        self._auto_launch_cache = (0.0, None)
             self._notify()
 
         threading.Thread(target=apply, daemon=True,
@@ -689,6 +724,14 @@ class AppController:
             if renderer is not None and not keep_renderer:
                 renderer.stop()
                 self._renderer_signature = None
+                # panels die with the renderer; drop their subscriptions on
+                # the persistent state/store so they can be collected
+                for p in self._panels:
+                    try:
+                        p.detach()
+                    except Exception:
+                        pass
+                self._panels = []
             if thread is not None and thread.is_alive():
                 thread.join(timeout=timeout)
                 if thread.is_alive():
@@ -709,72 +752,85 @@ class AppController:
         store = self.store
         cfg = self.cfg
 
-        pipeline = OutboundPipeline(cfg, key, state)
-        inbound = None
-        if cfg.get("inbound", {}).get("enabled", False):
-            inbound = InboundPipeline(cfg, key, store, state)
-            audio_cfg = cfg.get("audio", {})
-            mult = float(audio_cfg.get("echo_guard_multiplier", 4.0))
-            hold_sec = float(audio_cfg.get("echo_guard_hold_sec", 1.2))
-            barge_mult = float(audio_cfg.get("echo_guard_barge_in_multiplier", 3.0))
-            ib = inbound
-            if mult > 1.0:
-                pipeline.mic.set_threshold_boost(
-                    lambda: mult if (state.translation_on and ib.tap.active(hold_sec)) else 1.0)
-            if hold_sec > 0.0:
-                pipeline.mic.set_suppressed(
-                    lambda: ib.tap.active(hold_sec),
-                    barge_in_multiplier=barge_mult)
+        pipeline = inbound = control = None
+        panels: list = []
+        try:
+            pipeline = OutboundPipeline(cfg, key, state)
+            if cfg.get("inbound", {}).get("enabled", False):
+                inbound = InboundPipeline(cfg, key, store, state)
+                audio_cfg = cfg.get("audio", {})
+                mult = float(audio_cfg.get("echo_guard_multiplier", 4.0))
+                hold_sec = float(audio_cfg.get("echo_guard_hold_sec", 1.2))
+                barge_mult = float(audio_cfg.get("echo_guard_barge_in_multiplier", 3.0))
+                ib = inbound
+                if mult > 1.0:
+                    pipeline.mic.set_threshold_boost(
+                        lambda: mult if (state.translation_on and ib.tap.active(hold_sec)) else 1.0)
+                if hold_sec > 0.0:
+                    pipeline.mic.set_suppressed(
+                        lambda: ib.tap.active(hold_sec),
+                        barge_in_multiplier=barge_mult)
 
-        control = None
-        ctl = cfg.get("control", {})
-        if ctl.get("enabled", True):
-            control = OscControl(
-                state,
-                listen_port=ctl.get("osc_listen_port", 9001),
-                param_enabled=ctl.get("param_enabled", "VRCLT_Enabled"),
-                param_lang=ctl.get("param_lang", "VRCLT_Lang"),
-                languages=ctl.get("languages", ["en"]),
-            )
-            control.start()
+            ctl = cfg.get("control", {})
+            if ctl.get("enabled", True):
+                control = OscControl(
+                    state,
+                    listen_port=ctl.get("osc_listen_port", 9001),
+                    param_enabled=ctl.get("param_enabled", "VRCLT_Enabled"),
+                    param_lang=ctl.get("param_lang", "VRCLT_Lang"),
+                    languages=ctl.get("languages", ["en"]),
+                )
+                control.start()
 
-        self._app_registrar.reapply(
-            bool(cfg.get("steamvr", {}).get("register", True)))
-
-        # a renderer surviving from the previous run (unchanged VR config)
-        # keeps its panels: they read the persistent state/store and query
-        # status via self.connected, so no rebuild is needed
-        renderer = self._renderer
-        if renderer is None and wants_vr_renderer(cfg):
-            panels = []
-            o = cfg.get("overlay", {})
-            if inbound and o.get("enabled", True):
-                panels.append(make_subtitle_panel(
-                    cfg, store, state,
-                    on_transform_changed=self.set_subtitle_transform,
-                    on_size_changed=self.set_overlay_size))
-            if cfg.get("wrist_ui", {}).get("enabled", True):
-                panels.insert(0, make_wrist_panel(
-                    cfg, state,
-                    get_status=self.connected,
-                    on_text_only_toggle=self.set_text_only,
-                    on_transform_changed=self.set_wrist_transform))
-            if cfg.get("steamvr", {}).get("dashboard_panel", True):
-                panels.append(make_dashboard_panel(
-                    cfg, state,
-                    get_status=self.connected,
-                    on_text_only_toggle=self.set_text_only,
-                    on_font_size=self.set_overlay_font_size,
-                    get_font_size=lambda: int(
-                        self.cfg.get("overlay", {}).get("font_size", 27)),
-                    get_auto_launch=self.get_steamvr_auto_launch,
-                    set_auto_launch=self.set_steamvr_auto_launch,
-                    on_restart=self.restart_async))
-            if panels:
-                from .vr.render import VrRenderer
-                renderer = VrRenderer(panels, can_start=steamvr_running)
-                renderer.start()
-                self._renderer_signature = self._vr_config_signature(cfg)
+            # a renderer surviving from the previous run (unchanged VR config)
+            # keeps its panels: they read the persistent state/store and query
+            # status via self.connected, so no rebuild is needed
+            renderer = self._renderer
+            if renderer is None and wants_vr_renderer(cfg):
+                o = cfg.get("overlay", {})
+                if inbound and o.get("enabled", True):
+                    panels.append(make_subtitle_panel(
+                        cfg, store, state,
+                        on_transform_changed=self.set_subtitle_transform,
+                        on_size_changed=self.set_overlay_size))
+                if cfg.get("wrist_ui", {}).get("enabled", True):
+                    panels.insert(0, make_wrist_panel(
+                        cfg, state,
+                        get_status=self.connected,
+                        on_text_only_toggle=self.set_text_only,
+                        on_transform_changed=self.set_wrist_transform))
+                if cfg.get("steamvr", {}).get("dashboard_panel", True):
+                    panels.append(make_dashboard_panel(
+                        cfg, state,
+                        get_status=self.connected,
+                        on_text_only_toggle=self.set_text_only,
+                        on_font_size=self.set_overlay_font_size,
+                        get_font_size=lambda: int(
+                            self.cfg.get("overlay", {}).get("font_size", 27)),
+                        get_auto_launch=self.get_steamvr_auto_launch,
+                        set_auto_launch=self.set_steamvr_auto_launch,
+                        on_restart=self.restart_async))
+                if panels:
+                    from .vr.render import VrRenderer
+                    renderer = VrRenderer(panels, can_start=steamvr_running)
+                    renderer.start()
+                    self._panels = panels
+                    self._renderer_signature = self._vr_config_signature(cfg)
+        except Exception:
+            # unwind subscriptions on the persistent state/store, or every
+            # failed start would leak (and duplicate) listeners forever
+            for p in (pipeline, inbound, *panels):
+                if p is not None:
+                    try:
+                        p.detach()
+                    except Exception:
+                        pass
+            if control is not None:
+                try:
+                    control.stop()
+                except Exception:
+                    pass
+            raise
 
         self._pipeline = pipeline
         self._inbound = inbound

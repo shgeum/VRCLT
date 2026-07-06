@@ -18,6 +18,12 @@ class SubtitleStore:
     def subscribe(self, fn) -> None:
         self._listeners.append(fn)
 
+    def unsubscribe(self, fn) -> None:
+        try:
+            self._listeners.remove(fn)
+        except ValueError:
+            pass
+
     def configure(self, max_lines: int, display_sec: float) -> None:
         """Re-apply display settings in place (the store persists across
         runtime restarts so overlay panels can keep their reference)."""
@@ -28,7 +34,7 @@ class SubtitleStore:
         self._notify()
 
     def _notify(self) -> None:
-        for fn in self._listeners:
+        for fn in list(self._listeners):
             try:
                 fn()
             except Exception:

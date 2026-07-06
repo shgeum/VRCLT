@@ -101,10 +101,19 @@ class WristPanel:
         self._dirty = threading.Event()
         self._dirty.set()
         self._reset_requested = False
-        state.subscribe(lambda *_: self._dirty.set())
+        state.subscribe(self._on_state)
 
         self._h = self._h_laser = self._h_cursor = None
         self._tex = None
+
+    def _on_state(self, field: str, _value) -> None:
+        if field == "reset_positions":
+            self._reset_requested = True
+        self._dirty.set()
+
+    def detach(self) -> None:
+        """Drop the AppState subscription (the state outlives panels)."""
+        self._state.unsubscribe(self._on_state)
 
     # ---------------- component lifecycle ----------------
     def setup(self, ctx) -> bool:
