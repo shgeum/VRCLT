@@ -208,6 +208,7 @@ VRChat mode can use:
 - SteamVR wrist menu for in-VR controls
 - SteamVR dashboard settings panel (open the SteamVR menu and pick the vrclt icon)
 - Auto-start with SteamVR: the release exe registers itself in SteamVR Settings > Startup/Overlay Apps; toggle auto-launch there or in vrclt Settings
+- After updating to a new release, run the new exe once so auto-start points at the new file (the registration itself survives updates; only the recorded exe path needs that first run to refresh)
 - Visible VR subtitle edit laser/cursor with corner resize handles
 
 With `ui.mode: auto`, SteamVR features activate when SteamVR is running. Use

@@ -203,6 +203,7 @@ VRChat 模式可使用:
 - 可在 VR 内控制的 SteamVR 手腕菜单
 - SteamVR 仪表板设置面板（打开 SteamVR 菜单并选择 vrclt 图标）
 - 随 SteamVR 自动启动: 发布版 exe 会自动注册到 SteamVR 设置 > 启动/叠加层应用，可在 SteamVR 设置或 vrclt 设置中开关自动启动
+- 更新到新版本后请先运行一次新 exe。注册本身会保留，但自动启动指向的 exe 路径需要首次运行时才会更新为新文件
 - VR 字幕编辑 laser/cursor 显示和角落尺寸调整手柄
 
 使用 `ui.mode: auto` 时，SteamVR 运行后会启用 VR 功能。使用 `ui.mode: vr`

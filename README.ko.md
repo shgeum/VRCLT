@@ -204,6 +204,7 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 - VR 안에서 제어할 수 있는 SteamVR 손목 메뉴
 - SteamVR 대시보드 설정 패널 (SteamVR 메뉴를 열고 vrclt 아이콘 선택)
 - SteamVR 자동 시작: 릴리스 exe가 SteamVR 설정 > 시작/오버레이 앱에 자동 등록되며, 자동 시작은 SteamVR 설정 또는 vrclt 설정에서 켜고 끕니다
+- 새 버전으로 업데이트한 뒤에는 새 exe를 한 번 실행해 주세요. 등록 자체는 유지되지만, 자동 시작이 가리키는 exe 경로는 첫 실행 때 새 파일로 갱신됩니다
 - VR 자막 편집 laser/cursor 표시와 모서리 크기 조절 핸들
 
 `ui.mode: auto`에서는 SteamVR이 실행 중일 때 VR 기능이 활성화됩니다. 강제로 VR
