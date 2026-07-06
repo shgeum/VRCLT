@@ -228,8 +228,23 @@ class AppController:
         return SubtitleStore(max_lines=o.get("lines", 3),
                              display_sec=o.get("display_sec", 7.0))
 
-    def _persist_runtime_state(self, field: str, value) -> None:
+    def _persist(self, log_label: str, mutate) -> None:
+        """Apply mutate() to the config under the lock, then save a snapshot.
+
+        mutate may return False to skip saving (nothing to persist).
+        """
         with self._lock:
+            if mutate() is False:
+                return
+            cfg = copy.deepcopy(self.raw_cfg)
+        try:
+            config_mod.save(cfg)
+            self._bump_config_revision()
+        except Exception:
+            log.debug("failed to persist %s", log_label, exc_info=True)
+
+    def _persist_runtime_state(self, field: str, value) -> None:
+        def mutate():
             if field == "ui_lang":
                 self.raw_cfg.setdefault("ui", {})["lang"] = value
             elif field == "target_language":
@@ -241,13 +256,9 @@ class AppController:
             elif field == "subtitles_on":
                 self.raw_cfg.setdefault("dashboard", {})["subtitles_on"] = bool(value)
             else:
-                return
-            cfg = copy.deepcopy(self.raw_cfg)
-        try:
-            config_mod.save(cfg)
-            self._bump_config_revision()
-        except Exception:
-            log.debug("failed to persist runtime state", exc_info=True)
+                return False
+
+        self._persist("runtime state", mutate)
 
     def _bump_config_revision(self) -> None:
         with self._lock:
@@ -300,15 +311,11 @@ class AppController:
         languages = _language_list(values)
         if not languages:
             return
-        with self._lock:
+        def mutate():
             self.raw_cfg.setdefault("control", {})["languages"] = languages
             self.cfg.setdefault("control", {})["languages"] = list(languages)
-            cfg = copy.deepcopy(self.raw_cfg)
-        try:
-            config_mod.save(cfg)
-            self._bump_config_revision()
-        except Exception:
-            log.debug("failed to persist output languages", exc_info=True)
+
+        self._persist("output languages", mutate)
         if self.state.target_language not in languages:
             self.state.target_language = languages[0]
 
@@ -316,15 +323,11 @@ class AppController:
         languages = _language_list(values)
         if not languages:
             return
-        with self._lock:
+        def mutate():
             self.raw_cfg.setdefault("inbound", {})["languages"] = languages
             self.cfg.setdefault("inbound", {})["languages"] = list(languages)
-            cfg = copy.deepcopy(self.raw_cfg)
-        try:
-            config_mod.save(cfg)
-            self._bump_config_revision()
-        except Exception:
-            log.debug("failed to persist inbound languages", exc_info=True)
+
+        self._persist("inbound languages", mutate)
         if self.state.inbound_language not in languages:
             self.state.inbound_language = languages[0]
 
@@ -337,27 +340,21 @@ class AppController:
 
     def set_close_action(self, value: str) -> None:
         value = config_mod.normalize_close_action(value)
-        with self._lock:
+
+        def mutate():
             self.raw_cfg.setdefault("ui", {})["close_action"] = value
             self.cfg.setdefault("ui", {})["close_action"] = value
-            cfg = copy.deepcopy(self.raw_cfg)
-        try:
-            config_mod.save(cfg)
-            self._bump_config_revision()
-        except Exception:
-            log.debug("failed to persist close action", exc_info=True)
+
+        self._persist("close action", mutate)
 
     def set_overlay_font_size(self, value: int) -> None:
         value = max(18, min(72, int(value)))
-        with self._lock:
+
+        def mutate():
             self.raw_cfg.setdefault("overlay", {})["font_size"] = value
             self.cfg.setdefault("overlay", {})["font_size"] = value
-            cfg = copy.deepcopy(self.raw_cfg)
-        try:
-            config_mod.save(cfg)
-            self._bump_config_revision()
-        except Exception:
-            log.debug("failed to persist overlay font size", exc_info=True)
+
+        self._persist("overlay font size", mutate)
 
     def last_config_version(self) -> str:
         try:
@@ -366,15 +363,11 @@ class AppController:
             return ""
 
     def mark_config_version_seen(self, version: str) -> None:
-        with self._lock:
+        def mutate():
             self.raw_cfg = config_mod.mark_version_seen(self.raw_cfg, version)
             self.cfg = config_mod.mark_version_seen(self.cfg, version)
-            cfg = copy.deepcopy(self.raw_cfg)
-        try:
-            config_mod.save(cfg)
-            self._bump_config_revision()
-        except Exception:
-            log.debug("failed to persist config version marker", exc_info=True)
+
+        self._persist("config version marker", mutate)
 
     def reset_config_preserving_language_lists(self, version: str = "") -> bool:
         try:
@@ -394,15 +387,12 @@ class AppController:
         except Exception:
             return
         value = round(max(0.45, min(1.6, value)), 2)
-        with self._lock:
+
+        def mutate():
             self.raw_cfg.setdefault("overlay", {})["width_m"] = value
             self.cfg.setdefault("overlay", {})["width_m"] = value
-            cfg = copy.deepcopy(self.raw_cfg)
-        try:
-            config_mod.save(cfg)
-            self._bump_config_revision()
-        except Exception:
-            log.debug("failed to persist overlay width", exc_info=True)
+
+        self._persist("overlay width", mutate)
 
     def set_overlay_size(self, width_m: float, height_m: float) -> None:
         try:
@@ -412,19 +402,16 @@ class AppController:
             return
         width_m = round(max(0.45, min(1.6, width_m)), 2)
         height_m = round(max(0.10, min(0.60, height_m)), 2)
-        with self._lock:
+
+        def mutate():
             overlay = self.raw_cfg.setdefault("overlay", {})
             overlay["width_m"] = width_m
             overlay["height_m"] = height_m
             cfg_overlay = self.cfg.setdefault("overlay", {})
             cfg_overlay["width_m"] = width_m
             cfg_overlay["height_m"] = height_m
-            cfg = copy.deepcopy(self.raw_cfg)
-        try:
-            config_mod.save(cfg)
-            self._bump_config_revision()
-        except Exception:
-            log.debug("failed to persist overlay size", exc_info=True)
+
+        self._persist("overlay size", mutate)
 
     def set_wrist_transform(self, matrix, reset: bool = False) -> None:
         try:
@@ -435,7 +422,7 @@ class AppController:
             log.debug("invalid wrist transform", exc_info=True)
             return
 
-        with self._lock:
+        def mutate():
             w = self.raw_cfg.setdefault("wrist_ui", {})
             if reset:
                 defaults = config_mod.DEFAULTS["wrist_ui"]
@@ -452,12 +439,8 @@ class AppController:
                 w["roll_deg"] = round(roll, 3)
                 w["transform"] = rows
             self.cfg = config_mod.apply_app_profile(self.raw_cfg)
-            cfg = copy.deepcopy(self.raw_cfg)
-        try:
-            config_mod.save(cfg)
-            self._bump_config_revision()
-        except Exception:
-            log.debug("failed to persist wrist transform", exc_info=True)
+
+        self._persist("wrist transform", mutate)
 
     def set_subtitle_transform(self, matrix, reset: bool = False) -> None:
         try:
@@ -469,7 +452,7 @@ class AppController:
             log.debug("invalid subtitle transform", exc_info=True)
             return
 
-        with self._lock:
+        def mutate():
             o = self.raw_cfg.setdefault("overlay", {})
             if reset:
                 defaults = config_mod.DEFAULTS["overlay"]
@@ -483,12 +466,8 @@ class AppController:
                 o["tilt_deg"] = tilt
                 o["transform"] = rows
             self.cfg = config_mod.apply_app_profile(self.raw_cfg)
-            cfg = copy.deepcopy(self.raw_cfg)
-        try:
-            config_mod.save(cfg)
-            self._bump_config_revision()
-        except Exception:
-            log.debug("failed to persist subtitle transform", exc_info=True)
+
+        self._persist("subtitle transform", mutate)
 
     def set_text_only(self, value: bool) -> None:
         value = bool(value)
