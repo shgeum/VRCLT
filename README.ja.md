@@ -13,6 +13,7 @@ Cable 経由で対象アプリのマイク入力へ送り、相手の発話は�
 - 送信側翻訳: 自分のマイク -> Gemini Live -> 翻訳音声 -> 対象アプリのマイク
 - 受信側字幕: 対象アプリの音声 -> Gemini Live -> 翻訳字幕
 - VRChat OSC チャットボックス、アバター OSC 制御、SteamVR 字幕、手首メニュー対応
+- SteamVR ダッシュボード設定パネルと SteamVR 自動起動（スタートアップ/オーバーレイアプリ登録）対応
 - 元の声をそのまま通し、OSC チャットボックスに翻訳テキストだけを追加する VRChat テキストのみモード
 - Discord プロセス音声キャプチャと、VRChat 専用機能の自動無効化
 - 原音送出は 48 kHz の元マイクストリームを直接使い、Gemini 翻訳用ストリームは別にリサンプリング
@@ -201,6 +202,8 @@ VRChat モードでは次の機能を使えます。
 - `VRCLT_Enabled`、`VRCLT_Lang` などのアバター OSC パラメーター
 - 受信側字幕用の SteamVR 字幕オーバーレイ
 - VR 内で操作できる SteamVR 手首メニュー
+- SteamVR ダッシュボード設定パネル（SteamVR メニューを開いて vrclt アイコンを選択）
+- SteamVR 自動起動: リリース版 exe は SteamVR 設定 > スタートアップ/オーバーレイアプリに自動登録され、自動起動は SteamVR 設定または vrclt 設定で切り替えます
 - VR 字幕編集 laser/cursor 表示と角ハンドルでのサイズ調整
 
 `ui.mode: auto` では、SteamVR 実行中に VR 機能が有効になります。

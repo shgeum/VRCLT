@@ -13,6 +13,7 @@
 - 아웃바운드 번역: 내 마이크 -> Gemini Live -> 번역 음성 -> 대상 앱 마이크
 - 인바운드 자막: 대상 앱 오디오 -> Gemini Live -> 번역 자막
 - VRChat OSC 챗박스, 아바타 OSC 제어, SteamVR 자막, 손목 메뉴 지원
+- SteamVR 대시보드 설정 패널과 SteamVR 자동 시작(시작/오버레이 앱 등록) 지원
 - 원래 목소리는 그대로 보내고 OSC 챗박스 번역 텍스트만 추가하는 VRChat 텍스트 전용 모드
 - Discord 프로세스 오디오 캡처와 VRChat 전용 기능 자동 비활성화
 - 원음 송출은 48 kHz 원본 마이크 스트림을 바로 사용하고, Gemini 번역용 스트림은 별도로 리샘플링
@@ -201,6 +202,8 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 - `VRCLT_Enabled`, `VRCLT_Lang` 같은 아바타 OSC 파라미터
 - 인바운드 자막용 SteamVR 자막 오버레이
 - VR 안에서 제어할 수 있는 SteamVR 손목 메뉴
+- SteamVR 대시보드 설정 패널 (SteamVR 메뉴를 열고 vrclt 아이콘 선택)
+- SteamVR 자동 시작: 릴리스 exe가 SteamVR 설정 > 시작/오버레이 앱에 자동 등록되며, 자동 시작은 SteamVR 설정 또는 vrclt 설정에서 켜고 끕니다
 - VR 자막 편집 laser/cursor 표시와 모서리 크기 조절 핸들
 
 `ui.mode: auto`에서는 SteamVR이 실행 중일 때 VR 기능이 활성화됩니다. 강제로 VR

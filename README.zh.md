@@ -13,6 +13,7 @@ Live API 翻译你的麦克风音频，通过 VB-Audio Virtual Cable 将翻译�
 - 出站翻译: 你的麦克风 -> Gemini Live -> 翻译语音 -> 目标应用麦克风
 - 入站字幕: 目标应用音频 -> Gemini Live -> 翻译字幕
 - 支持 VRChat OSC 聊天框输出、角色 OSC 控制、SteamVR 字幕和手腕菜单
+- 支持 SteamVR 仪表板设置面板和随 SteamVR 自动启动（注册到启动/叠加层应用）
 - VRChat 仅文本模式: 保留原始语音直通，只向 OSC 聊天框追加翻译文本
 - Discord 模式: 捕获 Discord 进程音频，并自动禁用 VRChat 专用功能
 - 原声直通直接使用 48 kHz 原始麦克风流，Gemini 翻译流单独重采样
@@ -200,6 +201,8 @@ VRChat 模式可使用:
 - `VRCLT_Enabled`、`VRCLT_Lang` 等角色 OSC 参数
 - 用于入站字幕的 SteamVR 字幕叠加层
 - 可在 VR 内控制的 SteamVR 手腕菜单
+- SteamVR 仪表板设置面板（打开 SteamVR 菜单并选择 vrclt 图标）
+- 随 SteamVR 自动启动: 发布版 exe 会自动注册到 SteamVR 设置 > 启动/叠加层应用，可在 SteamVR 设置或 vrclt 设置中开关自动启动
 - VR 字幕编辑 laser/cursor 显示和角落尺寸调整手柄
 
 使用 `ui.mode: auto` 时，SteamVR 运行后会启用 VR 功能。使用 `ui.mode: vr`

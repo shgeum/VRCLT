@@ -14,6 +14,7 @@ people's speech.
 - Outbound translation: your microphone -> Gemini Live -> translated voice -> target app mic
 - Inbound subtitles: target app audio -> Gemini Live -> translated subtitles
 - VRChat support for OSC chatbox output, avatar OSC controls, SteamVR subtitles, and the wrist menu
+- SteamVR dashboard settings panel and auto-start with SteamVR (Startup/Overlay Apps registration)
 - VRC Text Only mode for sending translated chatbox text while passing your original voice through
 - Discord mode with Discord process audio capture and VRChat-only features disabled
 - Low-latency raw mic passthrough with separate Gemini resampling for translation
@@ -205,6 +206,8 @@ VRChat mode can use:
 - Avatar OSC parameters such as `VRCLT_Enabled` and `VRCLT_Lang`
 - SteamVR subtitle overlay for inbound subtitles
 - SteamVR wrist menu for in-VR controls
+- SteamVR dashboard settings panel (open the SteamVR menu and pick the vrclt icon)
+- Auto-start with SteamVR: the release exe registers itself in SteamVR Settings > Startup/Overlay Apps; toggle auto-launch there or in vrclt Settings
 - Visible VR subtitle edit laser/cursor with corner resize handles
 
 With `ui.mode: auto`, SteamVR features activate when SteamVR is running. Use
