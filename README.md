@@ -24,6 +24,15 @@ people's speech.
 
 ## Installation
 
+### Requirements
+
+- Windows 11 recommended
+- Google Gemini API key (see instructions below)
+- [VB-Audio Virtual Cable](https://vb-audio.com/Cable/)
+- SteamVR for VR overlays and wrist UI
+- VRChat OSC enabled for chatbox/avatar-control features
+- Python 3.12 only if running from source
+
 ### 1. Download vrclt
 
 Download the latest Windows executable from [VRCLT Releases](https://github.com/shgeum/VRCLT/releases).
@@ -61,27 +70,7 @@ After installation, Windows will show two important devices:
 
 Keep your real microphone selected in vrclt. Do not set VRChat or Discord to your real microphone if you want them to receive translated voice; set them to `CABLE Output`.
 
-### 3. First Launch Setup
-
-1. Run `vrclt-v<version>-windows-x64.exe`.
-2. Open the Settings tab.
-3. Paste your Gemini API key.
-4. Choose the app mode: `vrchat` or `discord`.
-5. Select your physical microphone as **Mic input**.
-6. Select `CABLE Input` as **Voice output** / translated voice output.
-7. In VRChat or Discord, set the microphone input to **CABLE Output (VB-Audio Virtual Cable)**.
-8. Save settings. The runtime restarts automatically.
-
-## Requirements
-
-- Windows 11 recommended
-- Google Gemini API key (see instructions below)
-- [VB-Audio Virtual Cable](https://vb-audio.com/Cable/)
-- SteamVR for VR overlays and wrist UI
-- VRChat OSC enabled for chatbox/avatar-control features
-- Python 3.12 only if running from source
-
-### How to Get a Gemini API Key
+### 3. How to Get a Gemini API Key
 
 1. Go to [Google AI Studio](https://aistudio.google.com/) and sign in with your Google account.
    - If you do not have a Google account, create one first.
@@ -98,24 +87,25 @@ Keep your real microphone selected in vrclt. Do not set VRChat or Discord to you
 > **Note**: The Gemini API has a free tier with per-minute request limits that is sufficient for personal use.
 > Do not share your API key. It is stored as plain text in `config.yaml`, so do not commit that file to a public repository.
 
-## Running From Source
+### 4. First Launch Setup
 
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m vrclt run --app vrchat
-```
+1. Run `vrclt-v<version>-windows-x64.exe`.
+2. Open the Settings tab.
+3. Paste your Gemini API key.
+4. Choose the app mode: `vrchat` or `discord`.
+5. Select your physical microphone as **Mic input**.
+6. Select `CABLE Input` as **Voice output** / translated voice output.
+7. In VRChat or Discord, set the microphone input to **CABLE Output (VB-Audio Virtual Cable)**.
+8. Save settings. The runtime restarts automatically.
 
-Source checkouts read `config.yaml` from the repository root. Copy
-`config.example.yaml` to `config.yaml` if you want local defaults before opening
-the app:
+## Troubleshooting
 
-```powershell
-Copy-Item config.example.yaml config.yaml
-```
-
-`VRCLT_CONFIG` can override the config path for development and debugging.
+- No translated voice in the target app: confirm `outbound.tts_device` is `CABLE Input` and the target app microphone is `CABLE Output`.
+- No inbound subtitles: confirm the target process name matches the running app, for example `VRChat.exe` or `Discord.exe`.
+- Runtime says API key is required: enter the key in Settings or set `GEMINI_API_KEY`.
+- VR overlays do not appear: confirm SteamVR is running and `overlay.enabled` / `wrist_ui.enabled` are enabled.
+- Passthrough or subtitles feel late: start from the defaults in this README, then lower `audio.turn_end_silence_sec`, `audio.inbound_turn_end_silence_sec`, or `audio.subtitle_finalize_silence_sec` carefully if your connection is stable.
+- Need a clean config: use **Reset defaults** in Settings. It resets current settings while preserving the API key, output language list, subtitle language list, UI language, window close action, and selected audio devices. After an app update, vrclt also asks once whether to do this reset.
 
 ## App Modes
 
@@ -206,7 +196,7 @@ VRChat mode can use:
 - Avatar OSC parameters such as `VRCLT_Enabled` and `VRCLT_Lang`
 - SteamVR subtitle overlay for inbound subtitles
 - SteamVR wrist menu for in-VR controls
-- SteamVR dashboard settings panel (open the SteamVR menu and pick the vrclt icon)
+- SteamVR dashboard settings panel (open the SteamVR menu and pick the vrclt icon); includes mic and voice-output device pickers — changes apply shortly after the last click with a runtime restart
 - Auto-start with SteamVR: the release exe registers itself in SteamVR Settings > Startup/Overlay Apps; toggle auto-launch there or in vrclt Settings
 - After updating to a new release, run the new exe once so auto-start points at the new file (the registration itself survives updates; only the recorded exe path needs that first run to refresh)
 - Visible VR subtitle edit laser/cursor with corner resize handles
@@ -352,6 +342,25 @@ Audio, control, UI, and wrist menu:
 | `wrist_ui.pointer_tilt_deg` | `50.0` | Pointer ray downward tilt angle. |
 | `wrist_ui.font` | `bundled:NotoSansCJKkr-Bold.otf` | Wrist menu font. |
 
+## Running From Source
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m vrclt run --app vrchat
+```
+
+Source checkouts read `config.yaml` from the repository root. Copy
+`config.example.yaml` to `config.yaml` if you want local defaults before opening
+the app:
+
+```powershell
+Copy-Item config.example.yaml config.yaml
+```
+
+`VRCLT_CONFIG` can override the config path for development and debugging.
+
 ## Build
 
 ```powershell
@@ -390,15 +399,6 @@ release\vrclt-v0.1.0-windows-x64.exe.sha256
 For a real runtime test, run the exe, save settings in the native UI, confirm
 that `%LOCALAPPDATA%\vrclt\config.yaml` is written, and verify that the target
 app receives audio from `CABLE Output`.
-
-## Troubleshooting
-
-- No translated voice in the target app: confirm `outbound.tts_device` is `CABLE Input` and the target app microphone is `CABLE Output`.
-- No inbound subtitles: confirm the target process name matches the running app, for example `VRChat.exe` or `Discord.exe`.
-- Runtime says API key is required: enter the key in Settings or set `GEMINI_API_KEY`.
-- VR overlays do not appear: confirm SteamVR is running and `overlay.enabled` / `wrist_ui.enabled` are enabled.
-- Passthrough or subtitles feel late: start from the defaults in this README, then lower `audio.turn_end_silence_sec`, `audio.inbound_turn_end_silence_sec`, or `audio.subtitle_finalize_silence_sec` carefully if your connection is stable.
-- Need a clean config: use **Reset defaults** in Settings. It resets current settings while preserving the API key, output language list, subtitle language list, UI language, window close action, and selected audio devices. After an app update, vrclt also asks once whether to do this reset.
 
 ## Thanks To
 

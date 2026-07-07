@@ -76,6 +76,11 @@ STRINGS = {
     "btn_sub_off": {"ko": "자막 OFF", "en": "Subtitles OFF", "ja": "字幕 OFF", "zh": "字幕 关"},
     "btn_text_only_on": {"ko": "텍스트 전용", "en": "Text only", "ja": "テキストのみ", "zh": "仅文本"},
     "btn_text_only_off": {"ko": "음성 번역", "en": "Voice mode", "ja": "音声翻訳", "zh": "语音模式"},
+    # dashboard panel device pickers (captions reuse label_mic_device /
+    # label_voice_out_device; the default entry reuses default_device)
+    "dash_applying": {"ko": "적용 중…", "en": "Applying…", "ja": "適用中…", "zh": "应用中…"},
+    "dash_apply_failed": {"ko": "적용 실패", "en": "Apply failed",
+                          "ja": "適用失敗", "zh": "应用失败"},
     "card_subs": {"ko": "자막 (상대 말)", "en": "Subtitles (others)",
                   "ja": "字幕 (相手)", "zh": "字幕 (对方)"},
     # ---- wrist menu captions / buttons ----

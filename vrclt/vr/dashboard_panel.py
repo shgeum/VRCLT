@@ -9,6 +9,7 @@ Texture is a persistent OpenGL texture (see vr/render.py for why).
 """
 import logging
 import threading
+import time
 
 from PIL import Image, ImageDraw
 
@@ -26,11 +27,18 @@ from .render import GlTexture, flip_bounds
 
 log = logging.getLogger(__name__)
 
-TEX_W, TEX_H = 1024, 640
+TEX_W, TEX_H = 1024, 756
 OVERLAY_KEY = "shgeum.vrclt.dashboard"
 OVERLAY_NAME = "vrclt"
 WIDTH_M = 2.4  # advisory; the dashboard scales overlays itself
 ICON_PATH = APPDATA_DIR / "dashboard_icon.png"
+# device cycling saves + restarts the runtime; batch rapid clicks into one
+# apply this long after the last click
+DEVICE_APPLY_DELAY_SEC = 1.8
+
+COL_PENDING = (130, 175, 255, 255)  # selected but not applied yet
+COL_WARN = (230, 168, 70, 255)      # configured device not present
+COL_ERR = (224, 100, 80, 255)
 
 # OpenVR overlay mouse coords use a bottom-left origin; our button rects are
 # top-left. Flip determined empirically - if rows ever hit mirrored, flip this.
@@ -51,14 +59,21 @@ BTN_SUB_TOGGLE = (16, 320, 500, 526)
 BTN_SUB_PREV = (516, 320, 596, 526)
 BTN_SUB_LANG = (604, 320, 924, 526)  # label only
 BTN_SUB_NEXT = (932, 320, 1008, 526)
+# devices row (mic / voice output pickers)
+BTN_MIC_PREV = (16, 546, 80, 642)
+LBL_MIC_DEVICE = (88, 546, 424, 642)   # label only
+BTN_MIC_NEXT = (432, 546, 496, 642)
+BTN_OUT_PREV = (528, 546, 592, 642)
+LBL_OUT_DEVICE = (600, 546, 936, 642)  # label only
+BTN_OUT_NEXT = (944, 546, 1008, 642)
 # bottom row
-BTN_TEXT_ONLY = (16, 546, 240, 624)
-BTN_FONT_MINUS = (264, 546, 344, 624)
-LBL_FONT_SIZE = (352, 546, 452, 624)  # label only
-BTN_FONT_PLUS = (460, 546, 540, 624)
-BTN_SUB_EDIT = (564, 546, 724, 624)
-BTN_WRIST_EDIT = (748, 546, 908, 624)
-BTN_RESET = (924, 546, 1008, 624)
+BTN_TEXT_ONLY = (16, 662, 240, 740)
+BTN_FONT_MINUS = (264, 662, 344, 740)
+LBL_FONT_SIZE = (352, 662, 452, 740)  # label only
+BTN_FONT_PLUS = (460, 662, 540, 740)
+BTN_SUB_EDIT = (564, 662, 724, 740)
+BTN_WRIST_EDIT = (748, 662, 908, 740)
+BTN_RESET = (924, 662, 1008, 740)
 
 BUTTONS = (("toggle", BTN_TOGGLE), ("prev", BTN_PREV), ("next", BTN_NEXT),
            ("sub_toggle", BTN_SUB_TOGGLE), ("sub_prev", BTN_SUB_PREV),
@@ -66,7 +81,9 @@ BUTTONS = (("toggle", BTN_TOGGLE), ("prev", BTN_PREV), ("next", BTN_NEXT),
            ("font_minus", BTN_FONT_MINUS), ("font_plus", BTN_FONT_PLUS),
            ("sub_edit", BTN_SUB_EDIT), ("wrist_edit", BTN_WRIST_EDIT),
            ("reset", BTN_RESET), ("uilang", BTN_UILANG),
-           ("autostart", BTN_AUTOSTART), ("restart", BTN_RESTART))
+           ("autostart", BTN_AUTOSTART), ("restart", BTN_RESTART),
+           ("mic_prev", BTN_MIC_PREV), ("mic_next", BTN_MIC_NEXT),
+           ("out_prev", BTN_OUT_PREV), ("out_next", BTN_OUT_NEXT))
 
 
 def _ensure_icon() -> bool:
@@ -98,7 +115,11 @@ class DashboardPanel:
                  get_font_size=lambda: 27,
                  get_auto_launch=lambda: None,
                  set_auto_launch=lambda enabled: None,
-                 on_restart=lambda: None):
+                 on_restart=lambda: None,
+                 get_devices=lambda: ([""], [""]),
+                 get_mic_device=lambda: "",
+                 get_tts_device=lambda: "",
+                 set_audio_devices=lambda mic, tts, on_done: on_done(False)):
         self._state = state
         self._languages = languages or ["en"]
         self._inbound_languages = inbound_languages or ["ko", "en"]
@@ -109,6 +130,18 @@ class DashboardPanel:
         self._get_auto_launch = get_auto_launch
         self._set_auto_launch = set_auto_launch
         self._on_restart = on_restart
+        self._get_devices = get_devices
+        self._get_mic_device = get_mic_device
+        self._get_tts_device = get_tts_device
+        self._set_audio_devices = set_audio_devices
+        # device pickers: pending selections apply (save + runtime restart)
+        # once, DEVICE_APPLY_DELAY_SEC after the last click
+        self._dev_inputs, self._dev_outputs = get_devices()
+        self._pending_mic: str | None = None
+        self._pending_out: str | None = None
+        self._devices_apply_at = 0.0
+        self._devices_applying = False
+        self._devices_error_until = 0.0
 
         font_path = resolve_font_path(font_path, "NotoSansCJKkr-Bold.otf")
         self._font_big = load_fallback_font(font_path, 64, bold=True)
@@ -163,6 +196,7 @@ class DashboardPanel:
         self._last_status = None
         self._last_auto = object()  # sentinel: first poll always renders
         self._last_shown_check = 0.0
+        self._dev_inputs, self._dev_outputs = self._get_devices()
         self._dirty.set()
         log.info("dashboard panel ready (GL texture)")
         return True
@@ -205,6 +239,11 @@ class DashboardPanel:
                 self._visible = bool(ovl.isOverlayVisible(self._h))
             except Exception:
                 pass
+
+        self._maybe_apply_devices(now)
+        if self._devices_error_until and now >= self._devices_error_until:
+            self._devices_error_until = 0.0
+            self._dirty.set()
 
         if self._visible and self._dirty.is_set():
             self._dirty.clear()
@@ -281,6 +320,85 @@ class DashboardPanel:
             self._on_restart()
         elif button == "reset":
             st.request_position_reset()
+        elif button in ("mic_prev", "mic_next"):
+            self._cycle_device("mic", 1 if button == "mic_next" else -1)
+        elif button in ("out_prev", "out_next"):
+            self._cycle_device("out", 1 if button == "out_next" else -1)
+
+    # ---------------- audio device pickers ----------------
+    @staticmethod
+    def _resolve_device(names: list[str], value: str) -> int:
+        """Index of a configured device in the picker list. '' -> 0 (the
+        default entry); exact match preferred, then first substring match
+        (mirrors devices.find_input/find_output); -1 = not present."""
+        if not value:
+            return 0
+        low = value.lower()
+        for i, name in enumerate(names):
+            if name.lower() == low:
+                return i
+        for i, name in enumerate(names):
+            if name and low in name.lower():
+                return i
+        return -1
+
+    def _cycle_device(self, kind: str, step: int) -> None:
+        if self._devices_applying:
+            return  # arrows render dimmed; ignore clicks until the restart ends
+        names = self._dev_inputs if kind == "mic" else self._dev_outputs
+        if not names:
+            return
+        pending = self._pending_mic if kind == "mic" else self._pending_out
+        current = pending if pending is not None else (
+            self._get_mic_device() if kind == "mic" else self._get_tts_device())
+        idx = self._resolve_device(names, current)
+        if idx < 0:
+            # configured device not in the list (unplugged / hand-edited
+            # config): enter the list at either end
+            new = 0 if step > 0 else len(names) - 1
+        else:
+            new = (idx + step) % len(names)
+        if kind == "mic":
+            self._pending_mic = names[new]
+        else:
+            self._pending_out = names[new]
+        self._devices_apply_at = time.time() + DEVICE_APPLY_DELAY_SEC
+        self._devices_error_until = 0.0
+
+    def _maybe_apply_devices(self, now: float) -> None:
+        if self._devices_applying:
+            return
+        if self._pending_mic is None and self._pending_out is None:
+            return
+        if now < self._devices_apply_at:
+            return
+        # drop pendings that resolve to the already-configured device (the
+        # substring config "CABLE Input" equals its full enumerated name)
+        mic = self._pending_mic
+        if mic is not None and self._resolve_device(self._dev_inputs, mic) == \
+                self._resolve_device(self._dev_inputs, self._get_mic_device()):
+            self._pending_mic = mic = None
+        out = self._pending_out
+        if out is not None and self._resolve_device(self._dev_outputs, out) == \
+                self._resolve_device(self._dev_outputs, self._get_tts_device()):
+            self._pending_out = out = None
+        if mic is None and out is None:
+            self._dirty.set()
+            return
+        log.info("dashboard panel: applying devices (mic=%r, out=%r)", mic, out)
+        self._devices_applying = True
+        self._dirty.set()
+        self._set_audio_devices(mic, out, self._devices_done)
+
+    def _devices_done(self, ok: bool) -> None:
+        # runs on the controller worker thread: plain attribute writes only.
+        # Pendings are cleared BEFORE the applying flag so an interleaved
+        # tick cannot re-apply stale values.
+        self._pending_mic = self._pending_out = None
+        if not ok:
+            self._devices_error_until = time.time() + 4.0
+        self._devices_applying = False
+        self._dirty.set()
 
     # ---------------- rendering ----------------
     def _btn(self, d, box, text: str, *, fill=COL_BTN, fonts=None, text_fill=COL_TEXT,
@@ -306,6 +424,39 @@ class DashboardPanel:
             d, (lang_box[0] + 6, lang_box[3] - 62, lang_box[2] - 6, lang_box[3] - 12),
             caption, fonts=(self._font_tiny,), fill=COL_DIM, max_lines=1,
             pad_x=4, pad_y=2, line_spacing=0)
+
+    def _device_block(self, d, lang, prev_box, label_box, next_box,
+                      names, cfg_value, pending, caption: str) -> None:
+        arrow_fill = COL_DIM if self._devices_applying else COL_TEXT
+        for box, glyph in ((prev_box, "◀"), (next_box, "▶")):
+            d.rounded_rectangle(box, 16, fill=COL_BTN)
+            self._font_mid.draw(d, ((box[0] + box[2]) // 2, (box[1] + box[3]) // 2),
+                                glyph, fill=arrow_fill, anchor="mm")
+        d.rounded_rectangle(label_box, 16, fill=(28, 30, 38, 255))
+        value = pending if pending is not None else cfg_value
+        idx = self._resolve_device(names, value)
+        if idx == 0:
+            name, name_fill = tr(lang, "default_device"), COL_TEXT
+        elif idx > 0:
+            name, name_fill = names[idx], COL_TEXT
+        else:
+            name, name_fill = value, COL_WARN  # configured device not present
+        if pending is not None and not self._devices_applying:
+            name_fill = COL_PENDING  # selected, applies after the click pause
+        draw_fit_text(d, (label_box[0] + 8, label_box[1] + 8,
+                          label_box[2] - 8, label_box[3] - 40),
+                      name, fonts=(self._font_small, self._font_tiny),
+                      fill=name_fill, max_lines=1, pad_x=4, pad_y=2)
+        if self._devices_applying:
+            cap, cap_fill = tr(lang, "dash_applying"), COL_PENDING
+        elif time.time() < self._devices_error_until:
+            cap, cap_fill = tr(lang, "dash_apply_failed"), COL_ERR
+        else:
+            cap, cap_fill = caption, COL_DIM
+        draw_fit_text(d, (label_box[0] + 8, label_box[3] - 36,
+                          label_box[2] - 8, label_box[3] - 8),
+                      cap, fonts=(self._font_tiny,), fill=cap_fill, max_lines=1,
+                      pad_x=4, pad_y=1, line_spacing=0)
 
     def _render(self, connected: bool) -> Image.Image:
         st = self._state
@@ -363,6 +514,14 @@ class DashboardPanel:
                       max_lines=1, pad_x=0, pad_y=0, line_spacing=0)
         self._lang_block(d, lang, BTN_SUB_PREV, BTN_SUB_LANG, BTN_SUB_NEXT,
                          st.inbound_language, tr(lang, "sub_lang"))
+
+        # devices row
+        self._device_block(d, lang, BTN_MIC_PREV, LBL_MIC_DEVICE, BTN_MIC_NEXT,
+                           self._dev_inputs, self._get_mic_device(),
+                           self._pending_mic, tr(lang, "label_mic_device"))
+        self._device_block(d, lang, BTN_OUT_PREV, LBL_OUT_DEVICE, BTN_OUT_NEXT,
+                           self._dev_outputs, self._get_tts_device(),
+                           self._pending_out, tr(lang, "label_voice_out_device"))
 
         # bottom row
         text_only = st.text_only

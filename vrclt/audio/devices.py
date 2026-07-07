@@ -68,6 +68,32 @@ def find_input_candidates(name_substr: str) -> list[tuple[int, str]]:
     return out
 
 
+def device_names() -> tuple[list[str], list[str]]:
+    """Full device names for UI pickers: (inputs, outputs). WASAPI-only when
+    available, deduped by name, '' (system default) first in each list.
+    Never raises - returns ([""], [""]) on enumeration failure."""
+    try:
+        try:
+            wi = wasapi_index()
+        except Exception:
+            wi = None
+        ins, outs, seen_i, seen_o = [""], [""], {""}, {""}
+        for d in sd.query_devices():
+            if wi is not None and d["hostapi"] != wi:
+                continue
+            name = d["name"]
+            if d["max_input_channels"] > 0 and name not in seen_i:
+                seen_i.add(name)
+                ins.append(name)
+            if d["max_output_channels"] > 0 and name not in seen_o:
+                seen_o.add(name)
+                outs.append(name)
+        return ins, outs
+    except Exception:
+        log.exception("device enumeration failed")
+        return [""], [""]
+
+
 def list_devices() -> str:
     wi = wasapi_index()
     api = sd.query_hostapis(wi)

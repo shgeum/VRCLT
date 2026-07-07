@@ -11,12 +11,14 @@ import copy
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Callable
 
 import psutil
 
 from . import config as config_mod
 from . import i18n
+from .audio.devices import device_names
 from .control.osc_listener import OscControl
 from .gemini.pipeline import InboundPipeline, OutboundPipeline
 from .gemini.session import FatalSessionError
@@ -118,7 +120,7 @@ def make_subtitle_panel(cfg, store, state, on_transform_changed=lambda matrix, r
         transform=o.get("transform"),
         pointer_tilt_deg=w.get("pointer_tilt_deg", 50.0),
         font_path=resolve_font_path(o.get("font"), "NotoSansCJKkr-Regular.otf"),
-        font_size=o.get("font_size", 36),
+        font_size=o.get("font_size", 27),
         show_source=o.get("show_source", False),
         on_transform_changed=on_transform_changed,
         on_size_changed=on_size_changed,
@@ -127,7 +129,9 @@ def make_subtitle_panel(cfg, store, state, on_transform_changed=lambda matrix, r
 
 def make_dashboard_panel(cfg, state, get_status, on_text_only_toggle,
                          on_font_size, get_font_size,
-                         get_auto_launch, set_auto_launch, on_restart):
+                         get_auto_launch, set_auto_launch, on_restart,
+                         get_devices, get_mic_device, get_tts_device,
+                         set_audio_devices):
     from .vr.dashboard_panel import DashboardPanel
     w = cfg.get("wrist_ui", {})
     return DashboardPanel(
@@ -142,6 +146,10 @@ def make_dashboard_panel(cfg, state, get_status, on_text_only_toggle,
         get_auto_launch=get_auto_launch,
         set_auto_launch=set_auto_launch,
         on_restart=on_restart,
+        get_devices=get_devices,
+        get_mic_device=get_mic_device,
+        get_tts_device=get_tts_device,
+        set_audio_devices=set_audio_devices,
     )
 
 
@@ -217,6 +225,11 @@ class AppController:
         # to orphan the VR renderer/pipeline. RLock because restart -> stop.
         self._lifecycle_lock = threading.RLock()
         self._closed = False
+        # config saves run off-thread (dashboard-panel clicks call _persist
+        # from the 30 Hz VR render thread; disk I/O there stalls the overlay).
+        # Single worker = submission order preserved.
+        self._persist_executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="vrclt-persist")
 
         from .vr import steamvr_apps
         self._steamvr_apps = steamvr_apps
@@ -300,7 +313,9 @@ class AppController:
                              display_sec=o.get("display_sec", 7.0))
 
     def _persist(self, log_label: str, mutate) -> None:
-        """Apply mutate() to the config under the lock, then save a snapshot.
+        """Apply mutate() to the config under the lock, then save a snapshot
+        on the persist worker (callers include the VR render thread, which
+        must never block on disk I/O).
 
         mutate may return False to skip saving (nothing to persist).
         """
@@ -308,11 +323,18 @@ class AppController:
             if mutate() is False:
                 return
             cfg = copy.deepcopy(self.raw_cfg)
+
+        def save():
+            try:
+                config_mod.save(cfg)
+                self._bump_config_revision()
+            except Exception:
+                log.debug("failed to persist %s", log_label, exc_info=True)
+
         try:
-            config_mod.save(cfg)
-            self._bump_config_revision()
-        except Exception:
-            log.debug("failed to persist %s", log_label, exc_info=True)
+            self._persist_executor.submit(save)
+        except RuntimeError:
+            save()  # executor already shut down: save synchronously
 
     def _persist_runtime_state(self, field: str, value) -> None:
         def mutate():
@@ -573,6 +595,42 @@ class AppController:
 
         threading.Thread(target=apply, daemon=True, name="vrclt-text-only-restart").start()
 
+    def set_audio_devices(self, mic: str | None, tts: str | None,
+                          on_done: Callable[[bool], None] = lambda ok: None) -> None:
+        """Persist outbound.mic_device / outbound.tts_device (None = leave
+        unchanged) and restart the runtime. Runs on a worker thread; safe to
+        call from the VR render thread. on_done(ok) fires on the worker."""
+        def apply():
+            ok = False
+            try:
+                # snapshot/save/restart under the lifecycle lock so an
+                # in-flight restart from another UI can't be clobbered
+                with self._lifecycle_lock:
+                    if self._closed:
+                        return
+                    with self._lock:
+                        cfg = copy.deepcopy(self.raw_cfg)
+                    ob = cfg.setdefault("outbound", {})
+                    if mic is not None:
+                        ob["mic_device"] = mic
+                    if tts is not None:
+                        ob["tts_device"] = tts
+                    cfg = config_mod.apply_app_profile(cfg)
+                    config_mod.save(cfg)
+                    ok = self._restart_locked(cfg)
+            except Exception as e:
+                log.exception("failed to apply audio devices")
+                self.last_error = str(e)
+                self._notify()
+            finally:
+                try:
+                    on_done(ok)
+                except Exception:
+                    log.debug("audio-device done callback failed", exc_info=True)
+
+        threading.Thread(target=apply, daemon=True,
+                         name="vrclt-audio-device-restart").start()
+
     def start(self) -> bool:
         return self.restart(self.raw_cfg)
 
@@ -702,6 +760,8 @@ class AppController:
             self._closed = True
             self._app_registrar.stop()
             self.stop(timeout=timeout)
+        # flush queued config saves (late _persist calls fall back to sync)
+        self._persist_executor.shutdown(wait=True)
 
     def stop(self, timeout: float = 8.0, keep_renderer: bool = False) -> None:
         with self._lifecycle_lock:
@@ -809,7 +869,13 @@ class AppController:
                             self.cfg.get("overlay", {}).get("font_size", 27)),
                         get_auto_launch=self.get_steamvr_auto_launch,
                         set_auto_launch=self.set_steamvr_auto_launch,
-                        on_restart=self.restart_async))
+                        on_restart=self.restart_async,
+                        get_devices=device_names,
+                        get_mic_device=lambda: str(
+                            self.cfg.get("outbound", {}).get("mic_device", "") or ""),
+                        get_tts_device=lambda: str(
+                            self.cfg.get("outbound", {}).get("tts_device", "") or ""),
+                        set_audio_devices=self.set_audio_devices))
                 if panels:
                     from .vr.render import VrRenderer
                     renderer = VrRenderer(panels, can_start=steamvr_running)

@@ -1,4 +1,5 @@
 """Configuration: yaml file + env fallback + defaults."""
+import logging
 import os
 import sys
 import copy
@@ -9,6 +10,8 @@ from pathlib import Path
 import yaml
 
 from .resources import bundled_font
+
+log = logging.getLogger(__name__)
 
 APP_MODES = ("vrchat", "discord")
 CLOSE_ACTIONS = ("tray", "exit")
@@ -230,8 +233,24 @@ def mark_version_seen(cfg: dict, version: str) -> dict:
 def load() -> dict:
     cfg = copy.deepcopy(DEFAULTS)
     if CONFIG_PATH.exists():
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            cfg = _merge(cfg, yaml.safe_load(f) or {})
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            if not isinstance(data, dict):
+                raise ValueError(f"config root is {type(data).__name__}, expected mapping")
+        except Exception:
+            # a corrupt config must not crash startup (this runs before the
+            # GUI exists); keep the bad file for inspection and use defaults
+            log.warning("failed to load %s - starting with defaults", CONFIG_PATH,
+                        exc_info=True)
+            try:
+                os.replace(CONFIG_PATH, CONFIG_PATH.with_suffix(".yaml.bad"))
+                log.warning("corrupt config moved to %s",
+                            CONFIG_PATH.with_suffix(".yaml.bad"))
+            except OSError:
+                pass
+            return cfg
+        cfg = _merge(cfg, data)
     return cfg
 
 

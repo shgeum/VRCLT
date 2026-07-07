@@ -67,28 +67,8 @@ def _from_float_list(value: str) -> list[float]:
 
 
 def _device_names() -> tuple[list[str], list[str]]:
-    try:
-        import sounddevice as sd
-        from .audio.devices import wasapi_index
-        try:
-            wi = wasapi_index()
-        except Exception:
-            wi = None
-        ins, outs, seen_i, seen_o = [""], [""], {""}, {""}
-        for d in sd.query_devices():
-            if wi is not None and d["hostapi"] != wi:
-                continue
-            name = d["name"]
-            if d["max_input_channels"] > 0 and name not in seen_i:
-                seen_i.add(name)
-                ins.append(name)
-            if d["max_output_channels"] > 0 and name not in seen_o:
-                seen_o.add(name)
-                outs.append(name)
-        return ins, outs
-    except Exception:
-        log.exception("device enumeration failed")
-        return [""], [""]
+    from .audio.devices import device_names
+    return device_names()
 
 
 def _install_app_font(app: QtWidgets.QApplication, lang: str = "") -> None:

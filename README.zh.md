@@ -23,6 +23,15 @@ Live API 翻译你的麦克风音频，通过 VB-Audio Virtual Cable 将翻译�
 
 ## 安装
 
+### 要求
+
+- 推荐 Windows 11
+- Google Gemini API 密钥 (获取方式见下方)
+- [VB-Audio Virtual Cable](https://vb-audio.com/Cable/)
+- 使用 VR 叠加层和手腕 UI 时需要 SteamVR
+- 使用 VRChat 聊天框/角色控制功能时需要启用 VRChat OSC
+- 从源码运行时需要 Python 3.12
+
 ### 1. 下载 vrclt
 
 最新 Windows 可执行文件可在 [VRCLT Releases](https://github.com/shgeum/VRCLT/releases) 下载。
@@ -60,27 +69,7 @@ API 密钥会以明文保存在该文件中。
 
 真实麦克风应在 vrclt 中选择。若要让对方听到翻译语音，VRChat/Discord 的麦克风不要选真实麦克风，而要选 `CABLE Output`。
 
-### 3. 首次启动设置
-
-1. 运行 `vrclt-v<version>-windows-x64.exe`。
-2. 打开设置标签页。
-3. 粘贴 Gemini API 密钥。
-4. 选择应用模式: `vrchat` 或 `discord`。
-5. **麦克风输入**选择你的真实麦克风。
-6. **语音输出**或翻译语音输出设备选择 `CABLE Input`。
-7. 在 VRChat 或 Discord 中，将麦克风输入设置为 **CABLE Output (VB-Audio Virtual Cable)**。
-8. 保存设置。运行时会自动重启。
-
-## 要求
-
-- 推荐 Windows 11
-- Google Gemini API 密钥 (获取方式见下方)
-- [VB-Audio Virtual Cable](https://vb-audio.com/Cable/)
-- 使用 VR 叠加层和手腕 UI 时需要 SteamVR
-- 使用 VRChat 聊天框/角色控制功能时需要启用 VRChat OSC
-- 从源码运行时需要 Python 3.12
-
-### 获取 Gemini API 密钥
+### 3. 获取 Gemini API 密钥
 
 1. 打开 [Google AI Studio](https://aistudio.google.com/) 并使用 Google 账号登录。
    - 如果没有 Google 账号，请先创建。
@@ -97,23 +86,25 @@ API 密钥会以明文保存在该文件中。
 > **注意**: Gemini API 有带每分钟请求限制的免费层，个人使用通常足够。
 > 不要分享你的 API 密钥。它会以明文保存在 `config.yaml` 中，因此不要把该文件提交到公开仓库。
 
-## 从源码运行
+### 4. 首次启动设置
 
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m vrclt run --app vrchat
-```
+1. 运行 `vrclt-v<version>-windows-x64.exe`。
+2. 打开设置标签页。
+3. 粘贴 Gemini API 密钥。
+4. 选择应用模式: `vrchat` 或 `discord`。
+5. **麦克风输入**选择你的真实麦克风。
+6. **语音输出**或翻译语音输出设备选择 `CABLE Input`。
+7. 在 VRChat 或 Discord 中，将麦克风输入设置为 **CABLE Output (VB-Audio Virtual Cable)**。
+8. 保存设置。运行时会自动重启。
 
-源码检出会读取仓库根目录下的 `config.yaml`。如果想在打开应用前创建本地默认值，
-请复制 `config.example.yaml`。
+## 故障排查
 
-```powershell
-Copy-Item config.example.yaml config.yaml
-```
-
-开发/调试时可以使用 `VRCLT_CONFIG` 环境变量覆盖配置文件路径。
+- 目标应用没有收到翻译语音: 确认 `outbound.tts_device` 是 `CABLE Input`，且目标应用麦克风是 `CABLE Output`。
+- 入站字幕不显示: 确认目标进程名与正在运行的应用一致，例如 `VRChat.exe` 或 `Discord.exe`。
+- 运行时提示需要 API 密钥: 在设置中输入密钥，或设置 `GEMINI_API_KEY`。
+- VR 叠加层不显示: 确认 SteamVR 正在运行，且 `overlay.enabled` / `wrist_ui.enabled` 已启用。
+- passthrough 或字幕延迟较大: 先使用本 README 中的默认值；如果连接稳定，再谨慎降低 `audio.turn_end_silence_sec`、`audio.inbound_turn_end_silence_sec` 或 `audio.subtitle_finalize_silence_sec`。
+- 想重置设置: 使用设置标签页中的 **恢复默认设置**。它会保留 API 密钥、输出语言列表、字幕语言列表、UI 语言、窗口关闭行为和已选择音频设备，并将其他设置恢复默认。应用更新后，vrclt 也会就此重置询问一次。
 
 ## 应用模式
 
@@ -201,7 +192,7 @@ VRChat 模式可使用:
 - `VRCLT_Enabled`、`VRCLT_Lang` 等角色 OSC 参数
 - 用于入站字幕的 SteamVR 字幕叠加层
 - 可在 VR 内控制的 SteamVR 手腕菜单
-- SteamVR 仪表板设置面板（打开 SteamVR 菜单并选择 vrclt 图标）
+- SteamVR 仪表板设置面板（打开 SteamVR 菜单并选择 vrclt 图标）；包含麦克风和语音输出设备选择 — 最后一次点击稍后会随运行时重启一起生效
 - 随 SteamVR 自动启动: 发布版 exe 会自动注册到 SteamVR 设置 > 启动/叠加层应用，可在 SteamVR 设置或 vrclt 设置中开关自动启动
 - 更新到新版本后请先运行一次新 exe。注册本身会保留，但自动启动指向的 exe 路径需要首次运行时才会更新为新文件
 - VR 字幕编辑 laser/cursor 显示和角落尺寸调整手柄
@@ -345,6 +336,24 @@ PC 热键:
 | `wrist_ui.pointer_tilt_deg` | `50.0` | 指针射线向下倾斜角度。 |
 | `wrist_ui.font` | `bundled:NotoSansCJKkr-Bold.otf` | 手腕菜单字体。 |
 
+## 从源码运行
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m vrclt run --app vrchat
+```
+
+源码检出会读取仓库根目录下的 `config.yaml`。如果想在打开应用前创建本地默认值，
+请复制 `config.example.yaml`。
+
+```powershell
+Copy-Item config.example.yaml config.yaml
+```
+
+开发/调试时可以使用 `VRCLT_CONFIG` 环境变量覆盖配置文件路径。
+
 ## 构建
 
 ```powershell
@@ -383,15 +392,6 @@ release\vrclt-v0.1.0-windows-x64.exe.sha256
 实际运行时测试流程: 运行 exe，在原生 UI 中保存设置，确认
 `%LOCALAPPDATA%\vrclt\config.yaml` 已写入，并验证目标应用能从
 `CABLE Output` 接收音频。
-
-## 故障排查
-
-- 目标应用没有收到翻译语音: 确认 `outbound.tts_device` 是 `CABLE Input`，且目标应用麦克风是 `CABLE Output`。
-- 入站字幕不显示: 确认目标进程名与正在运行的应用一致，例如 `VRChat.exe` 或 `Discord.exe`。
-- 运行时提示需要 API 密钥: 在设置中输入密钥，或设置 `GEMINI_API_KEY`。
-- VR 叠加层不显示: 确认 SteamVR 正在运行，且 `overlay.enabled` / `wrist_ui.enabled` 已启用。
-- passthrough 或字幕延迟较大: 先使用本 README 中的默认值；如果连接稳定，再谨慎降低 `audio.turn_end_silence_sec`、`audio.inbound_turn_end_silence_sec` 或 `audio.subtitle_finalize_silence_sec`。
-- 想重置设置: 使用设置标签页中的 **恢复默认设置**。它会保留 API 密钥、输出语言列表、字幕语言列表、UI 语言、窗口关闭行为和已选择音频设备，并将其他设置恢复默认。应用更新后，vrclt 也会就此重置询问一次。
 
 ## 致谢
 

@@ -23,6 +23,15 @@
 
 ## 설치 방법
 
+### 요구사항
+
+- Windows 11 권장
+- Google Gemini API 키 (아래 발급 방법 참고)
+- [VB-Audio Virtual Cable](https://vb-audio.com/Cable/)
+- VR 오버레이와 손목 UI를 사용할 경우 SteamVR
+- VRChat 챗박스/아바타 제어를 사용할 경우 VRChat OSC 활성화
+- 소스 실행 시 Python 3.12
+
 ### 1. vrclt 다운로드
 
 최신 Windows 실행 파일은 [VRCLT Releases](https://github.com/shgeum/VRCLT/releases)에서 받을 수 있습니다.
@@ -60,27 +69,7 @@ VRChat 또는 Discord가 번역 음성을 마이크처럼 받게 하려면 VB-Au
 
 실제 마이크는 vrclt에서 선택합니다. 번역 음성을 상대에게 보내려면 VRChat/Discord의 마이크를 실제 마이크가 아니라 `CABLE Output`으로 설정해야 합니다.
 
-### 3. 첫 실행 설정
-
-1. `vrclt-v<version>-windows-x64.exe`를 실행합니다.
-2. 설정 탭을 엽니다.
-3. Gemini API 키를 붙여넣습니다.
-4. 앱 모드를 `vrchat` 또는 `discord`로 선택합니다.
-5. **마이크 입력**에는 실제 마이크를 선택합니다.
-6. **음성 출력** 또는 번역 음성 출력 장치에는 `CABLE Input`을 선택합니다.
-7. VRChat 또는 Discord의 마이크 입력을 **CABLE Output (VB-Audio Virtual Cable)**으로 설정합니다.
-8. 설정을 저장합니다. 런타임은 자동으로 재시작됩니다.
-
-## 요구사항
-
-- Windows 11 권장
-- Google Gemini API 키 (아래 발급 방법 참고)
-- [VB-Audio Virtual Cable](https://vb-audio.com/Cable/)
-- VR 오버레이와 손목 UI를 사용할 경우 SteamVR
-- VRChat 챗박스/아바타 제어를 사용할 경우 VRChat OSC 활성화
-- 소스 실행 시 Python 3.12
-
-### Gemini API 키 발급 방법
+### 3. Gemini API 키 발급 방법
 
 1. [Google AI Studio](https://aistudio.google.com/)에 접속합니다.
    - Google 계정으로 로그인합니다. 계정이 없으면 새로 만듭니다.
@@ -97,23 +86,25 @@ VRChat 또는 Discord가 번역 음성을 마이크처럼 받게 하려면 VB-Au
 > **참고**: Gemini API는 무료 티어(분당 요청 수 제한)가 있어 개인 사용에는 충분합니다.
 > API 키는 타인에게 공유하지 않습니다. `config.yaml`에 평문으로 저장되므로 파일을 공개 저장소에 올리지 마세요.
 
-## 소스에서 실행
+### 4. 첫 실행 설정
 
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m vrclt run --app vrchat
-```
+1. `vrclt-v<version>-windows-x64.exe`를 실행합니다.
+2. 설정 탭을 엽니다.
+3. Gemini API 키를 붙여넣습니다.
+4. 앱 모드를 `vrchat` 또는 `discord`로 선택합니다.
+5. **마이크 입력**에는 실제 마이크를 선택합니다.
+6. **음성 출력** 또는 번역 음성 출력 장치에는 `CABLE Input`을 선택합니다.
+7. VRChat 또는 Discord의 마이크 입력을 **CABLE Output (VB-Audio Virtual Cable)**으로 설정합니다.
+8. 설정을 저장합니다. 런타임은 자동으로 재시작됩니다.
 
-소스 체크아웃은 저장소 루트의 `config.yaml`을 읽습니다. 앱을 열기 전에 로컬
-기본값을 만들고 싶다면 `config.example.yaml`을 복사합니다.
+## 문제 해결
 
-```powershell
-Copy-Item config.example.yaml config.yaml
-```
-
-개발/디버그 용도로 `VRCLT_CONFIG` 환경 변수를 사용해 설정 경로를 강제로 지정할 수 있습니다.
+- 대상 앱에 번역 음성이 안 들어감: `outbound.tts_device`가 `CABLE Input`인지, 대상 앱 마이크가 `CABLE Output`인지 확인합니다.
+- 인바운드 자막이 안 뜸: 대상 프로세스 이름이 실제 실행 중인 앱과 맞는지 확인합니다. 예: `VRChat.exe`, `Discord.exe`.
+- API 키 필요 상태: 설정에 키를 입력하거나 `GEMINI_API_KEY`를 설정합니다.
+- VR 오버레이가 안 뜸: SteamVR이 실행 중이고 `overlay.enabled` / `wrist_ui.enabled`가 켜져 있는지 확인합니다.
+- passthrough나 자막 지연이 큼: 먼저 이 README의 기본값을 사용하고, 연결이 안정적이면 `audio.turn_end_silence_sec`, `audio.inbound_turn_end_silence_sec`, `audio.subtitle_finalize_silence_sec`를 조심해서 낮춥니다.
+- 설정을 초기화하고 싶음: 설정 탭의 **기본값 리셋**을 사용합니다. API 키, 출력 언어 목록, 자막 언어 목록, UI 언어, 창 닫기 동작, 선택한 오디오 장치는 유지하고 나머지를 기본값으로 되돌립니다. 앱 업데이트 후에도 vrclt가 이 리셋을 한 번 물어봅니다.
 
 ## 앱 모드
 
@@ -202,7 +193,7 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 - `VRCLT_Enabled`, `VRCLT_Lang` 같은 아바타 OSC 파라미터
 - 인바운드 자막용 SteamVR 자막 오버레이
 - VR 안에서 제어할 수 있는 SteamVR 손목 메뉴
-- SteamVR 대시보드 설정 패널 (SteamVR 메뉴를 열고 vrclt 아이콘 선택)
+- SteamVR 대시보드 설정 패널 (SteamVR 메뉴를 열고 vrclt 아이콘 선택); 마이크·음성 출력 디바이스 선택 포함 — 마지막 클릭 후 잠시 뒤 런타임 재시작과 함께 적용됩니다
 - SteamVR 자동 시작: 릴리스 exe가 SteamVR 설정 > 시작/오버레이 앱에 자동 등록되며, 자동 시작은 SteamVR 설정 또는 vrclt 설정에서 켜고 끕니다
 - 새 버전으로 업데이트한 뒤에는 새 exe를 한 번 실행해 주세요. 등록 자체는 유지되지만, 자동 시작이 가리키는 exe 경로는 첫 실행 때 새 파일로 갱신됩니다
 - VR 자막 편집 laser/cursor 표시와 모서리 크기 조절 핸들
@@ -346,6 +337,24 @@ PC 핫키:
 | `wrist_ui.pointer_tilt_deg` | `50.0` | 포인터 레이의 아래쪽 기울기 각도. |
 | `wrist_ui.font` | `bundled:NotoSansCJKkr-Bold.otf` | 손목 메뉴 폰트. |
 
+## 소스에서 실행
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m vrclt run --app vrchat
+```
+
+소스 체크아웃은 저장소 루트의 `config.yaml`을 읽습니다. 앱을 열기 전에 로컬
+기본값을 만들고 싶다면 `config.example.yaml`을 복사합니다.
+
+```powershell
+Copy-Item config.example.yaml config.yaml
+```
+
+개발/디버그 용도로 `VRCLT_CONFIG` 환경 변수를 사용해 설정 경로를 강제로 지정할 수 있습니다.
+
 ## 빌드
 
 ```powershell
@@ -384,15 +393,6 @@ release\vrclt-v0.1.0-windows-x64.exe.sha256
 실제 런타임 테스트는 exe 실행, 자체 UI에서 설정 저장,
 `%LOCALAPPDATA%\vrclt\config.yaml` 생성 확인, 대상 앱이 `CABLE Output`에서
 오디오를 받는지 확인하는 순서로 진행합니다.
-
-## 문제 해결
-
-- 대상 앱에 번역 음성이 안 들어감: `outbound.tts_device`가 `CABLE Input`인지, 대상 앱 마이크가 `CABLE Output`인지 확인합니다.
-- 인바운드 자막이 안 뜸: 대상 프로세스 이름이 실제 실행 중인 앱과 맞는지 확인합니다. 예: `VRChat.exe`, `Discord.exe`.
-- API 키 필요 상태: 설정에 키를 입력하거나 `GEMINI_API_KEY`를 설정합니다.
-- VR 오버레이가 안 뜸: SteamVR이 실행 중이고 `overlay.enabled` / `wrist_ui.enabled`가 켜져 있는지 확인합니다.
-- passthrough나 자막 지연이 큼: 먼저 이 README의 기본값을 사용하고, 연결이 안정적이면 `audio.turn_end_silence_sec`, `audio.inbound_turn_end_silence_sec`, `audio.subtitle_finalize_silence_sec`를 조심해서 낮춥니다.
-- 설정을 초기화하고 싶음: 설정 탭의 **기본값 리셋**을 사용합니다. API 키, 출력 언어 목록, 자막 언어 목록, UI 언어, 창 닫기 동작, 선택한 오디오 장치는 유지하고 나머지를 기본값으로 되돌립니다. 앱 업데이트 후에도 vrclt가 이 리셋을 한 번 물어봅니다.
 
 ## 감사
 

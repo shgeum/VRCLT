@@ -22,16 +22,22 @@ class AppState:
 
     def subscribe(self, fn) -> None:
         """fn(field_name, new_value) - called from the mutating thread."""
-        self._listeners.append(fn)
+        with self._lock:
+            self._listeners.append(fn)
 
     def unsubscribe(self, fn) -> None:
-        try:
-            self._listeners.remove(fn)
-        except ValueError:
-            pass
+        with self._lock:
+            try:
+                self._listeners.remove(fn)
+            except ValueError:
+                pass
 
     def _notify(self, field: str, value) -> None:
-        for fn in list(self._listeners):
+        # subscribe/unsubscribe happen on the VR/Qt threads while another
+        # thread notifies; snapshot under the lock, call outside it
+        with self._lock:
+            listeners = list(self._listeners)
+        for fn in listeners:
             try:
                 fn(field, value)
             except Exception:
@@ -126,8 +132,8 @@ class AppState:
             self._notify("edit_mode", False)
 
     def request_position_reset(self) -> None:
-        """Reset subtitle overlay positions to defaults."""
-        log.info("state: subtitle position reset requested")
+        """Reset overlay positions (subtitle panel AND wrist menu) to defaults."""
+        log.info("state: overlay position reset requested")
         self._notify("reset_positions", True)
 
     @property

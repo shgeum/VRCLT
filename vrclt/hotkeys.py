@@ -184,8 +184,9 @@ class WindowsGlobalHotkeys:
         self._ready.wait(2.0)
 
     def stop(self) -> None:
-        thread = self._thread
-        thread_id = self._thread_id
+        with self._lock:
+            thread = self._thread
+            thread_id = self._thread_id
         if thread is not None and thread.is_alive() and thread_id:
             try:
                 user32 = ctypes.WinDLL("user32", use_last_error=True)
@@ -225,7 +226,8 @@ class WindowsGlobalHotkeys:
             ctypes.POINTER(MSG), ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint]
         user32.PeekMessageW.restype = ctypes.c_bool
 
-        self._thread_id = int(kernel32.GetCurrentThreadId())
+        with self._lock:
+            self._thread_id = int(kernel32.GetCurrentThreadId())
         msg = MSG()
         user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, PM_NOREMOVE)
 

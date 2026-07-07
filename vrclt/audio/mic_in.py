@@ -118,6 +118,11 @@ class MicCapture:
             threshold = self._threshold * float(self._boost())
         except Exception:
             threshold = self._threshold
+        # raw passthrough taps always get the mic: the echo guard only
+        # protects the Gemini send path below, so the user's real voice never
+        # cuts out of passthrough while inbound audio is playing
+        for tap in list(self._raw_taps):
+            tap.append(data)
         try:
             suppressed = bool(self._suppress())
         except Exception:
@@ -133,9 +138,6 @@ class MicCapture:
                 self._in_voice = False
                 return
             threshold = min(threshold, barge_threshold)
-
-        for tap in list(self._raw_taps):
-            tap.append(data)
         if not gemini_data:
             return
         if not self._gate_enabled():

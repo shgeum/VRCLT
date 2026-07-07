@@ -112,8 +112,8 @@ class OutboundPipeline:
         self.state = state
         self.voice_output = ob.get("voice_output", True)
         self.passthrough_while_translating = ob.get("passthrough_while_translating", False)
-        self.mic = MicCapture(ob["mic_device"], au.get("voice_rms_threshold", 200.0),
-                              hangover_sec=au.get("voice_hangover_sec", 0.5))
+        self.mic = MicCapture(ob["mic_device"], au.get("voice_rms_threshold", 90.0),
+                              hangover_sec=au.get("voice_hangover_sec", 2.5))
         # Voice mode: gate only while translating; passthrough sends raw audio
         # continuously while translation is off. VRC text-only keeps the gate
         # enabled for Gemini text translation and uses a raw tap for passthrough.
@@ -321,7 +321,7 @@ class InboundPipeline:
             self._process_name,
             use_vad=ib.get("vad_enabled", True),
             vad_threshold=ib.get("vad_threshold", 0.5),
-            vad_hangover_sec=ib.get("vad_hangover_sec", 0.6),
+            vad_hangover_sec=ib.get("vad_hangover_sec", 0.35),
         )
         self._tap_running = False
         self.player = PcmPlayer(ib["audio_device"], name="inbound-audio") if ib["play_audio"] else None

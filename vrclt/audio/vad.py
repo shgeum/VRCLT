@@ -16,22 +16,44 @@ log = logging.getLogger(__name__)
 MODEL_PATH = Path(os.environ.get("LOCALAPPDATA", ".")) / "vrclt" / "silero_vad.onnx"
 MODEL_URL = ("https://github.com/snakers4/silero-vad/raw/master/"
              "src/silero_vad/data/silero_vad.onnx")
+MODEL_MIN_BYTES = 500_000  # real model is ~2.3 MB; smaller = truncated/error page
 FRAME = 512    # new samples per inference @ 16 kHz (~32 ms)
 CONTEXT = 64   # Silero v5 prepends the previous 64 samples to each frame
+
+
+def _download_model() -> None:
+    """Download to a temp file, validate, then atomically promote: an
+    interrupted download must never leave a corrupt file at MODEL_PATH
+    (its existence is what skips re-downloading on the next run)."""
+    MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = MODEL_PATH.with_name(MODEL_PATH.name + ".tmp")
+    log.info("downloading Silero VAD model -> %s", MODEL_PATH)
+    try:
+        urllib.request.urlretrieve(MODEL_URL, tmp)
+        if tmp.stat().st_size < MODEL_MIN_BYTES:
+            raise RuntimeError(
+                f"VAD model download too small ({tmp.stat().st_size} bytes)")
+        os.replace(tmp, MODEL_PATH)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 class SileroVAD:
     def __init__(self):
         import onnxruntime as ort
         if not MODEL_PATH.exists():
-            MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
-            log.info("downloading Silero VAD model -> %s", MODEL_PATH)
-            urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
+            _download_model()
         opts = ort.SessionOptions()
         opts.inter_op_num_threads = 1
         opts.intra_op_num_threads = 1
-        self._sess = ort.InferenceSession(
-            str(MODEL_PATH), sess_options=opts, providers=["CPUExecutionProvider"])
+        try:
+            self._sess = ort.InferenceSession(
+                str(MODEL_PATH), sess_options=opts, providers=["CPUExecutionProvider"])
+        except Exception:
+            # a corrupt file (e.g. from an old non-atomic download) would
+            # otherwise disable VAD forever; drop it so the next run re-downloads
+            MODEL_PATH.unlink(missing_ok=True)
+            raise
         self._state = np.zeros((2, 1, 128), dtype=np.float32)
         self._context = np.zeros((1, CONTEXT), dtype=np.float32)
         self._sr = np.array(16000, dtype=np.int64)

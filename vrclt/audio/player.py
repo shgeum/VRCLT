@@ -42,16 +42,33 @@ class PcmPlayer:
         self._thread.start()
         log.info("%s: -> [%d] %s @ %d Hz", self._name, idx, sd.query_devices(idx)["name"], self._rate)
 
+    def _open_stream(self) -> sd.RawOutputStream | None:
+        """Open with retries: the device can be transiently busy (exclusive-mode
+        holder, WASAPI probe at app startup). A silent give-up here used to kill
+        the playback thread while the app still reported Running."""
+        for attempt, backoff in enumerate((1.0, 2.0, 4.0, 0.0)):
+            try:
+                stream = sd.RawOutputStream(
+                    device=self._device_index, samplerate=self._rate, channels=1,
+                    dtype="int16", blocksize=self._blocksize, latency="low",
+                    extra_settings=sd.WasapiSettings(auto_convert=True),
+                )
+                stream.start()
+                return stream
+            except Exception:
+                if backoff <= 0.0:
+                    break
+                log.warning("%s: output stream open failed (attempt %d), retrying in %.0fs",
+                            self._name, attempt + 1, backoff, exc_info=True)
+                if self._stop.wait(backoff):
+                    return None
+        log.error("%s: could not open output stream - playback disabled "
+                  "(restart the runtime after freeing the device)", self._name)
+        return None
+
     def _run(self) -> None:
-        try:
-            stream = sd.RawOutputStream(
-                device=self._device_index, samplerate=self._rate, channels=1, dtype="int16",
-                blocksize=self._blocksize, latency="low",
-                extra_settings=sd.WasapiSettings(auto_convert=True),
-            )
-            stream.start()
-        except Exception:
-            log.exception("%s: failed to open output stream", self._name)
+        stream = self._open_stream()
+        if stream is None:
             return
         pending = bytearray()
         playing = False
