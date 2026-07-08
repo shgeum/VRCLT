@@ -99,6 +99,8 @@ overlay:                  # inbound subtitle overlay (SteamVR, HMD-locked)
 osc:
   ip: 127.0.0.1
   port: 9000
+  stream_sentences: true  # chatbox updates sentence-by-sentence as you speak
+                          # (rolling bubble); false = old chunked replay
   throttle_sec: 1.5
   notification_sfx: false
   show_source: true       # chatbox: source on top, translation below

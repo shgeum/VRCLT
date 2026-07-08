@@ -385,6 +385,7 @@ Overlay and OSC:
 | `osc.throttle_sec` | `1.5` | Minimum chatbox send interval, including live partial updates. |
 | `osc.notification_sfx` | `false` | Requests VRChat chatbox notification sound. |
 | `osc.show_source` | `true` | Shows source text above translation in the chatbox. |
+| `osc.stream_sentences` | `true` | Sends each finished sentence to the chatbox immediately, rolling recent sentences through one bubble. `false` restores the old behavior (long segments replayed in `chunk_display_sec`-paced parts). |
 | `osc.chunk_display_sec` | `4.0` | Display time per chunk for long chatbox messages. |
 
 Audio, control, UI, and wrist menu:

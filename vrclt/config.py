@@ -157,6 +157,9 @@ DEFAULTS = {
     "osc": {
         "ip": "127.0.0.1",
         "port": 9000,
+        "stream_sentences": True,       # flush each finished sentence to the chatbox
+                                        # immediately (rolling bubble) instead of
+                                        # replaying long segments in delayed parts
         "throttle_sec": 1.5,
         "notification_sfx": False,
         "show_source": True,            # chatbox: source on top, translation below

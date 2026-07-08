@@ -22,7 +22,7 @@ from . import i18n
 from .gemini.session import LiveTranslateSession
 from .qwen.session import QwenLiveTranslateSession
 from .languages import language_label
-from .out.osc_chatbox import Chatbox
+from .out.osc_chatbox import Chatbox, MAX_CHARS as CHATBOX_MAX_CHARS
 from .state import AppState
 from .subtitles import SubtitleStore
 
@@ -32,6 +32,12 @@ log = logging.getLogger(__name__)
 # sentence punctuation (the chatbox caps at 144 chars - never truncate there)
 FORCE_FINALIZE_CHARS = 120
 HARD_FINALIZE_CHARS = 140
+# sentence streaming (osc.stream_sentences): flush every completed sentence
+# at least this long, so the chatbox updates as you speak instead of
+# replaying a big segment in chunk_display_sec-paced parts afterwards
+SENTENCE_STREAM_MIN_CHARS = 8
+CHAT_TAIL_MAX_AGE_SEC = 15.0   # rolling-bubble sentences older than this drop
+CHAT_TAIL_MAX_SEGMENTS = 6
 SENTENCE_END_CHARS = (".", "!", "?", "。", "！", "？", "…")
 PASSTHROUGH_POLL_SEC = 0.008
 PASSTHROUGH_PREBUFFER_MS = 0
@@ -65,9 +71,16 @@ class Segmenter:
     or when the text outgrows the chatbox limit."""
 
     def __init__(self, finalize_silence_sec: float, on_final, on_partial=None,
-                 partial_interval_sec: float = 0.3):
+                 partial_interval_sec: float = 0.3,
+                 sentence_min_chars: int = 0,
+                 max_combined_chars: int = 0):
         self._silence = finalize_silence_sec
         self._partial_interval = max(0.05, float(partial_interval_sec))
+        # 0 disables; >0 finalizes every completed sentence of at least this
+        # many chars (sentence streaming for the chatbox)
+        self._sentence_min = int(sentence_min_chars)
+        # 0 disables; >0 finalizes before src+dst outgrow one chatbox message
+        self._max_combined = int(max_combined_chars)
         self._on_final = on_final
         self._on_partial = on_partial
         self._src = ""
@@ -89,8 +102,16 @@ class Segmenter:
     def _fragment(self) -> None:
         self._last_fragment = time.time()
         src, dst = _clean(self._src), _clean(self._dst)
+        combined = len(src) + (1 if src and dst else 0) + len(dst)
+        if self._max_combined and combined >= self._max_combined:
+            self.flush()
+            return
         if len(dst) > HARD_FINALIZE_CHARS or \
                 (len(dst) > FORCE_FINALIZE_CHARS and dst.endswith(SENTENCE_END_CHARS)):
+            self.flush()
+            return
+        if self._sentence_min and len(dst) >= self._sentence_min \
+                and dst.endswith(SENTENCE_END_CHARS):
             self.flush()
             return
         if self._on_partial and (src or dst) and \
@@ -129,13 +150,17 @@ class _TranslationPipeline:
                  get_source_language=lambda: "",
                  partial_interval_sec: float = 0.3,
                  audio_sinks: tuple = (),
-                 glossary: str = ""):
+                 glossary: str = "",
+                 sentence_min_chars: int = 0,
+                 max_combined_chars: int = 0):
         au = cfg["audio"]
         self.state = state
         self._audio_sinks = tuple(audio_sinks)
         self.segmenter = Segmenter(finalize_silence_sec, self._on_final,
                                    self._on_partial,
-                                   partial_interval_sec=partial_interval_sec)
+                                   partial_interval_sec=partial_interval_sec,
+                                   sentence_min_chars=sentence_min_chars,
+                                   max_combined_chars=max_combined_chars)
         common = dict(
             api_key=api_key,
             source=source,
@@ -236,6 +261,11 @@ class OutboundPipeline(_TranslationPipeline):
         self.chatbox = None
         self._feedback_chatbox = cfg.get("control", {}).get("feedback_chatbox", True)
         self._chat_show_source = cfg["osc"].get("show_source", True)
+        # sentence streaming: finalize every completed sentence and roll the
+        # recent ones through ONE chatbox bubble, instead of accumulating a
+        # long segment that then replays in chunk_display_sec-paced parts
+        self._stream_sentences = bool(cfg["osc"].get("stream_sentences", True))
+        self._chat_tail: list[tuple[float, str, str]] = []  # (time, src, dst)
         self._last_chatbox_payload = ""
         if ob["chatbox"]:
             osc = cfg["osc"]
@@ -256,6 +286,10 @@ class OutboundPipeline(_TranslationPipeline):
             finalize_silence_sec=au["finalize_silence_sec"],
             audio_sinks=tuple(p for p in (self.tts_player, self.monitor) if p),
             glossary=_normalize_glossary(ob.get("glossary", "")),
+            sentence_min_chars=SENTENCE_STREAM_MIN_CHARS
+            if self._stream_sentences else 0,
+            max_combined_chars=(CHATBOX_MAX_CHARS - 6)
+            if self._stream_sentences else 0,
         )
 
     # -- state changes (called from OSC control / UI threads) --
@@ -281,6 +315,7 @@ class OutboundPipeline(_TranslationPipeline):
                     "osc_feedback_language", language=language_label(str(value))))
 
     def _apply_translation_transition(self, active: bool) -> None:
+        self._chat_tail.clear()  # don't resurrect pre-toggle sentences
         if active:
             # Leaving passthrough: keep only a small speech onset cushion for
             # Gemini and drop raw audio that may still be queued for VB-Cable.
@@ -323,9 +358,47 @@ class OutboundPipeline(_TranslationPipeline):
             return f"{src}\n{dst}"
         return dst or src
 
+    def _tail_render(self, cur_src: str, cur_dst: str) -> str:
+        """Rolling bubble: recent finalized sentences + the live partial in
+        one snapshot, oldest trimmed until it fits a single chatbox message
+        (so nothing ever replays in delayed chunk parts)."""
+        now = time.time()
+        self._chat_tail = [e for e in self._chat_tail
+                           if (now - e[0]) <= CHAT_TAIL_MAX_AGE_SEC
+                           ][-CHAT_TAIL_MAX_SEGMENTS:]
+        entries = list(self._chat_tail)
+        if cur_src or cur_dst:
+            entries.append((now, cur_src, cur_dst))
+        while entries:
+            srcs = " ".join(s for _, s, _ in entries if s).strip()
+            dsts = " ".join(d for _, _, d in entries if d).strip()
+            if self._chat_show_source and srcs and dsts:
+                payload = f"{srcs}\n{dsts}"
+            else:
+                payload = dsts or srcs
+            if len(payload) <= CHATBOX_MAX_CHARS or len(entries) == 1:
+                return payload
+            entries.pop(0)  # drop the oldest sentence until it fits
+        return ""
+
     def _send_chatbox_text(self, src: str, dst: str, *, partial: bool = False) -> bool:
         if not self.chatbox:
             return False
+        if self._stream_sentences:
+            src, dst = _clean(src), _clean(dst)
+            if partial and not dst:
+                return False
+            if not partial:
+                if not (src or dst):
+                    return False
+                self._chat_tail.append((time.time(), src, dst))
+                src = dst = ""
+            payload = self._tail_render(src, dst)
+            if not payload or payload == self._last_chatbox_payload:
+                return False
+            self._last_chatbox_payload = payload
+            self.chatbox.send(payload)  # pre-fitted: always a single part
+            return True
         payload = self._chatbox_payload(src, dst, partial=partial)
         if not payload or payload == self._last_chatbox_payload:
             return False

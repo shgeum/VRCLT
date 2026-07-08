@@ -137,6 +137,7 @@ class SettingsForm:
             ("osc.throttle_sec", "f.osc.throttle_sec", "float"),
             ("osc.notification_sfx", "f.osc.notification_sfx", "bool"),
             ("osc.show_source", "f.osc.show_source", "bool"),
+            ("osc.stream_sentences", "f.osc.stream_sentences", "bool"),
             ("osc.chunk_display_sec", "f.osc.chunk_display_sec", "float"),
             ("control.enabled", "f.control.enabled", "bool"),
             ("control.osc_listen_port", "f.control.osc_listen_port", "int"),
