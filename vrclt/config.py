@@ -17,6 +17,7 @@ APP_MODES = ("vrchat", "discord")
 CLOSE_ACTIONS = ("tray", "exit")
 PROVIDERS = ("gemini", "qwen")
 QWEN_ENDPOINTS = ("intl", "beijing")
+QWEN_VOICE_CLONE_MODES = ("always", "once", "off")
 APPDATA_DIR = Path(os.environ.get("LOCALAPPDATA", ".")) / "vrclt"
 # clamps for overlay.* config values, shared by the VR subtitle panel,
 # the controller, and both UIs (keep the panel and its callers in sync)
@@ -73,11 +74,18 @@ DEFAULTS = {
         "api_key": "",                  # empty -> use DASHSCOPE_API_KEY env var
         "model": "qwen3.5-livetranslate-flash-realtime",
         "endpoint": "intl",             # intl (Singapore) | beijing; keys are region-bound
-        "workspace_id": "",             # Model Studio workspace ID -> uses the newer
-                                        # {id}.<region>.maas.aliyuncs.com domain;
-                                        # "" = legacy shared dashscope domain
+        "workspace_id": "",             # Model Studio workspace ID -> uses the
+                                        # {id}.<region>.maas.aliyuncs.com domain.
+                                        # REQUIRED on intl; beijing may leave it
+                                        # empty (legacy shared dashscope domain)
         "base_url": "",                 # advanced: full wss:// URL override
-        "voice": "default",             # translated-voice preset
+        "voice_clone": "always",        # server-side speaker-voice cloning (the Qwen
+                                        # counterpart of Gemini's voice replication):
+                                        # always (per response; best for multi-speaker)
+                                        # | once (at session start) | off
+        "voice": "",                    # used when voice_clone is off: "" = model
+                                        # default voice, or a pre-cloned voice ID
+                                        # (qwen-translate-vc-...)
     },
     "app": {
         "mode": "vrchat",              # vrchat | discord

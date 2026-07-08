@@ -817,6 +817,18 @@ class AppController:
             if key_error:
                 self._set_status("API key invalid", key_error)
                 return False
+            if prov == "qwen":
+                qw = self.cfg.get("qwen", {})
+                # the intl (Singapore) endpoint is only served through the
+                # workspace-scoped domain; fail fast with a clear message
+                # instead of an opaque connect error
+                if str(qw.get("endpoint", "intl") or "intl").strip() != "beijing" \
+                        and not str(qw.get("workspace_id", "") or "").strip() \
+                        and not str(qw.get("base_url", "") or "").strip():
+                    self._set_status(
+                        "API key invalid",
+                        "Qwen intl endpoint requires a Model Studio workspace ID.")
+                    return False
 
             return self._start_runtime(key)
         except Exception as e:

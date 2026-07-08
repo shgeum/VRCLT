@@ -77,6 +77,7 @@ class SettingsForm:
             ("qwen.model", "f.qwen.model", "text"),
             ("qwen.endpoint", "f.qwen.endpoint", "qwen_endpoint"),
             ("qwen.workspace_id", "f.qwen.workspace_id", "text"),
+            ("qwen.voice_clone", "f.qwen.voice_clone", "qwen_voice_clone"),
             ("qwen.voice", "f.qwen.voice", "text"),
             ("app.mode", "f.app.mode", "appmode"),
             ("app.profiles.discord.process", "f.app.profiles.discord.process", "text"),
@@ -251,6 +252,11 @@ class SettingsForm:
             w = NoWheelComboBox()
             w.addItems(list(config_mod.QWEN_ENDPOINTS))
             w.setCurrentText(str(value or "intl"))
+            return w
+        if kind == "qwen_voice_clone":
+            w = NoWheelComboBox()
+            w.addItems(list(config_mod.QWEN_VOICE_CLONE_MODES))
+            w.setCurrentText(str(value or "always"))
             return w
         if kind in ("input_device", "output_device"):
             w = NoWheelComboBox()

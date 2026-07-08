@@ -103,11 +103,12 @@ China), vrclt can use **Alibaba Qwen3.5 LiveTranslate** instead of Gemini:
    **Qwen API key (DashScope)**, and pick the matching **Qwen endpoint**
    (`beijing` for mainland China, `intl` otherwise). The key can also come
    from the `DASHSCOPE_API_KEY` environment variable.
-4. (Optional) **Qwen workspace ID**: newer Model Studio accounts route through
-   a workspace-scoped domain. On the Model Studio console homepage click the
-   icon in the lower-left corner, then **Workspace Details**, and copy the ID
-   (looks like `llm-7c72iiw36kd8****`) into the **Qwen workspace ID** field.
-   Leave it empty to use the classic shared `dashscope` domain — both work.
+4. **Qwen workspace ID — required for `intl`**: the international (Singapore)
+   endpoint is only served through a workspace-scoped domain. On the Model
+   Studio console homepage click the icon in the lower-left corner, then
+   **Workspace Details**, and copy the ID (looks like `llm-7c72iiw36kd8****`)
+   into the **Qwen workspace ID** field. The `beijing` endpoint can leave it
+   empty (classic shared `dashscope` domain).
    See [Obtain the workspace ID](https://www.alibabacloud.com/help/en/model-studio/obtain-api-key-app-id-and-workspace-id).
 5. Set **My spoken language** and **Others' spoken language** — Qwen cannot
    auto-detect the spoken language (see [Translation Engines](#translation-engines)).
@@ -129,7 +130,8 @@ China), vrclt can use **Alibaba Qwen3.5 LiveTranslate** instead of Gemini:
 - No translated voice in the target app: confirm `outbound.tts_device` is `CABLE Input` and the target app microphone is `CABLE Output`.
 - No inbound subtitles: confirm the target process name matches the running app, for example `VRChat.exe` or `Discord.exe`.
 - Runtime says API key is required: enter the key in Settings or set `GEMINI_API_KEY` (Qwen engine: `DASHSCOPE_API_KEY`).
-- Qwen key rejected or connection fails immediately: check that `qwen.endpoint` matches the key's region — `beijing` keys and `intl` keys are not interchangeable.
+- Qwen key rejected or connection fails immediately: check that `qwen.endpoint` matches the key's region — `beijing` keys and `intl` keys are not interchangeable — and that the workspace ID is set when using `intl`.
+- Qwen error `Voice '...' is not supported`: the literal voice `default` only works while voice cloning is enabled. Keep `qwen.voice_clone` on, or leave **Qwen voice ID** empty for the model's default voice.
 - Qwen translates from the wrong language: set **My spoken language** / **Others' spoken language** (Settings, Dashboard, or the SteamVR panel). Qwen cannot auto-detect; empty is treated as English.
 - VR overlays do not appear: confirm SteamVR is running and `overlay.enabled` / `wrist_ui.enabled` are enabled.
 - Passthrough or subtitles feel late: start from the defaults in this README, then lower `audio.turn_end_silence_sec`, `audio.inbound_turn_end_silence_sec`, or `audio.subtitle_finalize_silence_sec` carefully if your connection is stable.
@@ -147,7 +149,7 @@ directions: your voice and the inbound subtitles.
 | Works in mainland China | No | Yes (`beijing` endpoint) |
 | Spoken-language detection | Automatic | **Manual** — set "My/Others' spoken language" |
 | Languages | 70+ BCP-47 targets, incl. `zh-Hans`/`zh-Hant` | 29 with voice + 31 more text-only; plain `zh` only (no Simplified/Traditional split); Cantonese (`yue`) is text-only |
-| Translated voice | Replicates the speaker's voice | Stock voice presets (`qwen.voice`) |
+| Translated voice | Replicates the speaker's voice | Replicates the speaker via server-side voice cloning (`qwen.voice_clone`, default `always`); or a fixed voice with cloning off |
 | Barge-in (voice interrupts) | Yes | No — overlapping speech can queue audio |
 
 Qwen notes:
@@ -157,8 +159,12 @@ Qwen notes:
 - `zh-Hans`/`zh-Hant` targets are both sent to Qwen as `zh`.
 - If the chosen target has no Qwen voice support, vrclt automatically runs the
   session text-only (chatbox/subtitles keep working).
-- Endpoints: `intl` (Singapore) or `beijing`; an optional workspace ID switches
-  to the newer workspace-scoped domain (see step 3b above).
+- Endpoints: `intl` (Singapore) or `beijing`. `intl` **requires** the Model
+  Studio workspace ID; `beijing` works without one (see step 3b above).
+- Voice cloning: `qwen.voice_clone: always` (default) clones each speaker's
+  voice per response — best for multi-speaker rooms; `once` clones at session
+  start; `off` uses the model's default voice or a pre-cloned voice ID set in
+  `qwen.voice` (`qwen-translate-vc-...`).
 
 ## App Modes
 
@@ -292,9 +298,10 @@ Top-level and app profile settings:
 | `qwen.api_key` | `""` | DashScope API key. Empty means `DASHSCOPE_API_KEY` can be used. |
 | `qwen.model` | `qwen3.5-livetranslate-flash-realtime` | Qwen realtime translation model name. |
 | `qwen.endpoint` | `intl` | `intl` (Singapore) or `beijing` (mainland China). Keys are region-bound. |
-| `qwen.workspace_id` | `""` | Optional Model Studio workspace ID; switches to the workspace-scoped `maas.aliyuncs.com` domain. |
+| `qwen.workspace_id` | `""` | Model Studio workspace ID (`maas.aliyuncs.com` domain). Required for `intl`; `beijing` may leave it empty. |
 | `qwen.base_url` | `""` | Advanced: full `wss://` URL override. |
-| `qwen.voice` | `default` | Qwen translated-voice preset. |
+| `qwen.voice_clone` | `always` | Server-side speaker-voice cloning: `always` (per response), `once` (session start), or `off`. |
+| `qwen.voice` | `""` | With cloning `off`: empty = model default voice, or a pre-cloned voice ID (`qwen-translate-vc-...`). |
 | `log_level` | `INFO` | Python logging level. |
 | `meta.last_version` | `""` | Last app version that acknowledged the current config. Used for one-time update reset prompts. |
 | `app.mode` | `vrchat` | Active profile: `vrchat` or `discord`. |

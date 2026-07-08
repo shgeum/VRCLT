@@ -10,10 +10,13 @@ qwen:                        # Alibaba Cloud Model Studio (DashScope) realtime
   api_key: ""                # empty -> DASHSCOPE_API_KEY env var; keys are region-bound!
   model: qwen3.5-livetranslate-flash-realtime
   endpoint: intl             # intl (Singapore) | beijing (mainland China)
-  workspace_id: ""           # optional Model Studio workspace ID -> uses the newer
-                             # {id}.<region>.maas.aliyuncs.com domain
+  workspace_id: ""           # Model Studio workspace ID ({id}.<region>.maas domain).
+                             # REQUIRED for intl; beijing may leave it empty
   base_url: ""               # advanced: full wss:// URL override
-  voice: default             # translated-voice preset ("default" or a cloned voice id)
+  voice_clone: always        # server-side speaker-voice cloning (Gemini-style voice
+                             # replication): always (per response) | once | off
+  voice: ""                  # when voice_clone is off: "" = model default voice,
+                             # or a pre-cloned voice ID (qwen-translate-vc-...)
 
 app:
   mode: vrchat                 # vrchat | discord; override with: python -m vrclt run --app vrchat

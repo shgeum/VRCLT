@@ -144,7 +144,8 @@ class QwenLiveTranslateSession:
     def __init__(self, *, api_key: str, model: str, source: AudioSource, name: str,
                  get_target_language, get_source_language=lambda: "",
                  endpoint: str = "intl", workspace_id: str = "",
-                 base_url: str = "", voice: str = "default",
+                 base_url: str = "", voice: str = "",
+                 voice_clone: str = "always",
                  enabled=lambda: True,
                  send_interval_ms: int = 100, idle_disconnect_sec: float = 15.0,
                  turn_end_silence_sec: float = 0.55,
@@ -158,7 +159,19 @@ class QwenLiveTranslateSession:
         self._endpoint = endpoint if endpoint in ENDPOINTS else "intl"
         self._workspace_id = workspace_id
         self._base_url = base_url
-        self._voice = str(voice or "default")
+        # server-side speaker-voice cloning (the Qwen counterpart of Gemini's
+        # voice replication): "always" | "once" | "off"
+        voice_clone = str(voice_clone or "").strip().lower()
+        if voice_clone not in ("always", "once", "off"):
+            if voice_clone:
+                log.warning("[%s] unknown voice_clone %r - cloning disabled",
+                            name, voice_clone)
+            voice_clone = "off"
+        self._voice_clone = voice_clone
+        # only used with cloning off: "" = model default voice. The literal
+        # "default" is ONLY valid together with cloning and errors otherwise.
+        voice = str(voice or "").strip()
+        self._voice = "" if voice.lower() == "default" else voice
         self._enabled = enabled
         self._source = source
         self.name = name
@@ -206,7 +219,19 @@ class QwenLiveTranslateSession:
         }
         if audio_out:
             session["output_audio_format"] = "pcm"  # 24 kHz mono int16
-            session["voice"] = self._voice
+            if self._voice_clone in ("always", "once"):
+                # server clones the speaker's voice; "voice" MUST be the
+                # literal "default" in this mode
+                session["voice"] = "default"
+                session["enable_voice_clone"] = True
+                session["voice_clone_options"] = {"frequency": self._voice_clone}
+            elif self._voice:
+                # pre-cloned voice ID (qwen-translate-vc-...); frequency
+                # "never" selects the stored profile
+                session["voice"] = self._voice
+                session["enable_voice_clone"] = True
+                session["voice_clone_options"] = {"frequency": "never"}
+            # else: omit "voice" entirely -> the model's stock default voice
         if self._phrases:
             session["translation"]["corpus"] = {"phrases": dict(self._phrases)}
         if src_lang:

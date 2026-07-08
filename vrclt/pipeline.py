@@ -159,7 +159,8 @@ class _TranslationPipeline:
                 endpoint=qw.get("endpoint", "intl"),
                 workspace_id=qw.get("workspace_id", ""),
                 base_url=qw.get("base_url", ""),
-                voice=qw.get("voice", "default"),
+                voice=qw.get("voice", ""),
+                voice_clone=qw.get("voice_clone", "always"),
                 get_source_language=get_source_language,
                 **common,
             )

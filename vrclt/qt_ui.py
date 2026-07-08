@@ -233,6 +233,8 @@ class MainWindow(QtWidgets.QMainWindow):
             return self._tr("err_qwen_api_key_empty")
         if error == "API key must be a DashScope API key, not a URL.":
             return self._tr("err_qwen_api_key_url")
+        if error == "Qwen intl endpoint requires a Model Studio workspace ID.":
+            return self._tr("err_qwen_workspace_required")
         return error
 
     def _apply_i18n(self) -> None:
@@ -742,6 +744,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 cfg.get("qwen", {}).get("api_key", ""), provider_label="DashScope")
             if qwen_key_error:
                 raise ValueError(self._tr("err_qwen_api_key_url"))
+            qw = cfg.get("qwen", {})
+            if config_mod.provider(cfg) == "qwen" \
+                    and str(qw.get("endpoint", "intl") or "intl").strip() != "beijing" \
+                    and not str(qw.get("workspace_id", "") or "").strip() \
+                    and not str(qw.get("base_url", "") or "").strip():
+                raise ValueError(self._tr("err_qwen_workspace_required"))
             force_profile = (
                 cfg.get("app", {}).get("mode")
                 != self._controller.raw_cfg.get("app", {}).get("mode")
