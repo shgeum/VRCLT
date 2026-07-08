@@ -15,6 +15,8 @@ log = logging.getLogger(__name__)
 
 APP_MODES = ("vrchat", "discord")
 CLOSE_ACTIONS = ("tray", "exit")
+PROVIDERS = ("gemini", "qwen")
+QWEN_ENDPOINTS = ("intl", "beijing")
 APPDATA_DIR = Path(os.environ.get("LOCALAPPDATA", ".")) / "vrclt"
 # clamps for overlay.* config values, shared by the VR subtitle panel,
 # the controller, and both UIs (keep the panel and its callers in sync)
@@ -26,6 +28,11 @@ OVERLAY_FONT_MIN = 18
 OVERLAY_FONT_MAX = 72
 RESET_PRESERVE_PATHS = (
     ("api_key",),
+    ("provider",),
+    ("qwen", "api_key"),
+    ("qwen", "endpoint"),
+    ("outbound", "source_language"),
+    ("inbound", "source_language"),
     ("control", "languages"),
     ("inbound", "languages"),
     ("ui", "lang"),
@@ -57,8 +64,15 @@ else:
     CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
 
 DEFAULTS = {
+    "provider": "gemini",               # gemini | qwen (applies to both pipelines)
     "api_key": "",                      # empty -> use GEMINI_API_KEY env var
     "model": "gemini-3.5-live-translate-preview",
+    "qwen": {                           # Alibaba DashScope realtime translation
+        "api_key": "",                  # empty -> use DASHSCOPE_API_KEY env var
+        "model": "qwen3.5-livetranslate-flash-realtime",
+        "endpoint": "intl",             # intl (Singapore) | beijing; keys are region-bound
+        "voice": "default",             # translated-voice preset
+    },
     "app": {
         "mode": "vrchat",              # vrchat | discord
         "profiles": {
@@ -101,6 +115,8 @@ DEFAULTS = {
     "outbound": {                       # pipeline A: my voice -> others
         "enabled": True,
         "target_language": "ja",        # BCP-47
+        "source_language": "",          # my spoken language; Qwen cannot auto-detect
+                                        # ("" -> server default en); Gemini ignores this
         "echo_target_language": False,
         "mic_device": "",               # substring; empty = default input device
         "tts_device": "CABLE Input",    # translated voice -> VB-Cable -> VRChat mic
@@ -115,6 +131,7 @@ DEFAULTS = {
     "inbound": {                        # pipeline B: others' voices -> me (subtitles)
         "enabled": True,
         "target_language": "ko",
+        "source_language": "",          # others' spoken language (Qwen only, see outbound)
         "languages": ["ko", "en", "ja", "zh-Hans", "zh-Hant"],  # wrist menu cycles subtitles through these
         "process": "VRChat.exe",
         "play_audio": False,            # translated speech to my headphones
@@ -428,11 +445,26 @@ def api_key(cfg: dict) -> str:
     return (cfg.get("api_key") or os.environ.get("GEMINI_API_KEY", "")).strip()
 
 
-def api_key_validation_error(key: str) -> str | None:
+def provider(cfg: dict) -> str:
+    """Active translation provider; anything unrecognized falls back to gemini."""
+    value = str(cfg.get("provider") or "").strip().lower()
+    return value if value in PROVIDERS else "gemini"
+
+
+def qwen_api_key(cfg: dict) -> str:
+    qw = cfg.get("qwen") or {}
+    return (qw.get("api_key") or os.environ.get("DASHSCOPE_API_KEY", "")).strip()
+
+
+def api_key_for(cfg: dict, prov: str) -> str:
+    return qwen_api_key(cfg) if prov == "qwen" else api_key(cfg)
+
+
+def api_key_validation_error(key: str, provider_label: str = "Gemini") -> str | None:
     key = (key or "").strip()
     if not key:
         return None
     lowered = key.lower()
     if "://" in lowered or "github.com" in lowered:
-        return "API key must be a Gemini API key, not a URL."
+        return f"API key must be a {provider_label} API key, not a URL."
     return None

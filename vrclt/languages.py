@@ -144,6 +144,43 @@ def supported_language_options() -> list[tuple[str, str]]:
     return [(code, language_label(code)) for code in SUPPORTED_LANGUAGE_CODES]
 
 
+# --- Qwen (DashScope realtime translation) -------------------------------
+# Qwen uses bare ISO-639-1 codes plus "yue"; it has no script/region variants,
+# so the shared BCP-47 catalog is mapped down before hitting the API.
+_QWEN_CODE_OVERRIDES = {
+    "zh-Hans": "zh",
+    "zh-Hant": "zh",   # no Traditional variant on Qwen; documented in READMEs
+    "pt-BR": "pt",
+    "pt-PT": "pt",
+    "fil": "tl",       # Filipino has no ISO-639-1 code; DashScope uses Tagalog
+    "no": "nb",        # DashScope lists Norwegian Bokmål
+}
+
+# Languages Qwen can speak (audio output); everything else degrades to text.
+QWEN_AUDIO_LANGUAGES = frozenset({
+    "zh", "en", "ar", "de", "fr", "es", "pt", "id", "it", "ko", "ru", "th",
+    "vi", "ja", "tr", "hi", "ms", "nl", "ur", "nb", "sv", "da", "he", "fi",
+    "pl", "is", "cs", "tl", "fa",
+})
+
+# Text-only additions on top of the audio set (translation without TTS).
+QWEN_TEXT_LANGUAGES = QWEN_AUDIO_LANGUAGES | frozenset({
+    "yue", "el", "af", "ast", "be", "bg", "bn", "bs", "ca", "ceb", "et",
+    "gl", "gu", "hr", "hu", "jv", "kk", "kn", "ky", "lv", "mk", "ml", "mr",
+    "pa", "ro", "sk", "sl", "sw", "tg", "az", "uk",
+})
+
+
+def qwen_language_code(code: str) -> str:
+    """Map a catalog BCP-47 code to the code Qwen expects."""
+    code = canonical_language_code(code)
+    if not code:
+        return ""
+    if code in _QWEN_CODE_OVERRIDES:
+        return _QWEN_CODE_OVERRIDES[code]
+    return code if len(code) <= 3 else code.split("-", 1)[0]
+
+
 def language_code_from_text(text: str, fallback_codes=()) -> str:
     raw = str(text or "").strip()
     if not raw:
