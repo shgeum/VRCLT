@@ -148,7 +148,7 @@ vrclt는 두 가지 실시간 번역 엔진을 지원하며, **번역 엔진** �
 | 중국 본토에서 사용 | 불가 | 가능 (`beijing` 엔드포인트) |
 | 발화 언어 감지 | 자동 감지 | **수동** — "내/상대 발화 언어"를 설정해야 함 |
 | 지원 언어 | `zh-Hans`/`zh-Hant`를 포함한 70개 이상 BCP-47 도착어 | 음성 지원 29개 + 텍스트 전용 31개; 중국어는 `zh` 하나뿐(간체/번체 구분 없음); 광둥어(`yue`)는 텍스트 전용 |
-| 번역 음성 | 화자 목소리 재현 | 서버 측 음성 복제로 화자 목소리 재현 (`qwen.voice_clone`, 기본 `always`); 복제를 끄면 고정 음성 |
+| 번역 음성 | 화자 목소리 재현 | 서버 측 음성 복제로 화자 목소리 재현 (`qwen.voice_clone`, 기본 `once`); 복제를 끄면 고정 음성 |
 | 끼어들기(barge-in) | 지원 | 미지원 — 발화가 겹치면 오디오가 줄지어 재생될 수 있음 |
 
 Qwen 참고 사항:
@@ -160,10 +160,11 @@ Qwen 참고 사항:
   실행합니다(챗박스/자막은 계속 동작합니다).
 - 엔드포인트: `intl`(싱가포르) 또는 `beijing`. `intl`은 Model Studio
   워크스페이스 ID가 **필수**이며, `beijing`은 없어도 동작합니다(위 3b 단계 참고).
-- 음성 복제: `qwen.voice_clone: always`(기본)는 응답마다 화자 목소리를
-  복제합니다 — 여러 명이 말하는 방에 가장 적합합니다. `once`는 세션 시작 시
-  한 번 복제하고, `off`는 모델 기본 음성 또는 `qwen.voice`에 설정한 미리
-  복제된 음성 ID(`qwen-translate-vc-...`)를 사용합니다.
+- 음성 복제: `qwen.voice_clone: once`(기본)는 세션 시작 시 화자 목소리를
+  복제합니다 — 내 마이크에 알맞고 오디오 지연도 낮게 유지됩니다. `always`는
+  응답마다 다시 복제하고(여러 명이 말하는 오디오용이지만 합성 시작이 눈에 띄게
+  늦어짐), `off`는 모델 기본 음성 또는 `qwen.voice`에 설정한 미리 복제된
+  음성 ID(`qwen-translate-vc-...`)를 사용합니다.
 
 ## 앱 모드
 
@@ -290,7 +291,7 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 | `qwen.endpoint` | `intl` | `intl`(싱가포르) 또는 `beijing`(중국 본토). 키는 리전에 묶여 있습니다. |
 | `qwen.workspace_id` | `""` | Model Studio 워크스페이스 ID(`maas.aliyuncs.com` 도메인). `intl`에서는 필수이며 `beijing`은 비워 둘 수 있습니다. |
 | `qwen.base_url` | `""` | 고급: 전체 `wss://` URL 재정의. |
-| `qwen.voice_clone` | `always` | 서버 측 화자 음성 복제: `always`(응답마다), `once`(세션 시작 시), `off`. |
+| `qwen.voice_clone` | `once` | 서버 측 화자 음성 복제: `once`(세션 시작 시, 낮은 지연), `always`(응답마다, 느림), `off`. |
 | `qwen.voice` | `""` | 복제가 `off`일 때: 비우면 모델 기본 음성, 또는 미리 복제된 음성 ID(`qwen-translate-vc-...`). |
 | `log_level` | `INFO` | Python 로그 레벨. |
 | `meta.last_version` | `""` | 현재 설정에서 확인한 마지막 앱 버전. 업데이트 후 1회 리셋 확인에 사용합니다. |

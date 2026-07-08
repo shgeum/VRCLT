@@ -148,7 +148,7 @@ vrclt 支持两种实时翻译引擎，通过 **翻译引擎** 设置（`config.
 | 中国大陆可用性 | 需要能访问 Google 服务 | 可直连 `beijing` 端点 |
 | 语音语言检测 | 自动检测 | **手动** — 需设置"我的/对方语音语言" |
 | 支持语言 | 70+ 种 BCP-47 目标语言，含 `zh-Hans`/`zh-Hant` | 29 种带语音 + 另外 31 种仅文本；中文只有 `zh`（不区分简体/繁体）；粤语（`yue`）仅文本 |
-| 翻译语音 | 复刻说话者音色 | 通过服务端声音复刻还原说话者音色（`qwen.voice_clone`，默认 `always`）；关闭复刻时使用固定音色 |
+| 翻译语音 | 复刻说话者音色 | 通过服务端声音复刻还原说话者音色（`qwen.voice_clone`，默认 `once`）；关闭复刻时使用固定音色 |
 | 抢话打断（barge-in） | 支持 | 不支持 — 同时说话时音频可能排队播放 |
 
 Qwen 注意事项:
@@ -160,9 +160,10 @@ Qwen 注意事项:
   （聊天框/字幕仍正常工作）。
 - 端点: `intl`（新加坡）或 `beijing`。`intl` **必须**设置百炼工作空间 ID；
   `beijing` 无需设置（见上文 3b 节）。
-- 声音复刻: `qwen.voice_clone: always`（默认）对每次回复复刻说话者音色 —
-  最适合多人说话的房间；`once` 在会话开始时复刻一次；`off` 使用模型默认音色，
-  或使用 `qwen.voice` 中预先复刻的语音 ID（`qwen-translate-vc-...`）。
+- 声音复刻: `qwen.voice_clone: once`（默认）在会话开始时复刻说话者音色 —
+  适合你自己的麦克风，且音频延迟低。`always` 对每次回复重新复刻（适合多人
+  说话的音频，但合成开始会明显变慢）；`off` 使用模型默认音色，或使用
+  `qwen.voice` 中预先复刻的语音 ID（`qwen-translate-vc-...`）。
 
 ## 应用模式
 
@@ -288,7 +289,7 @@ VRChat 模式可使用:
 | `qwen.endpoint` | `intl` | `intl`（新加坡）或 `beijing`（中国大陆）。密钥与地域绑定。 |
 | `qwen.workspace_id` | `""` | 百炼工作空间 ID（`maas.aliyuncs.com` 域名）。`intl` 必填；`beijing` 可留空。 |
 | `qwen.base_url` | `""` | 高级: 覆盖完整 `wss://` URL。 |
-| `qwen.voice_clone` | `always` | 服务端说话者声音复刻: `always`（每次回复）、`once`（会话开始时）或 `off`。 |
+| `qwen.voice_clone` | `once` | 服务端说话者声音复刻: `once`（会话开始时，低延迟）、`always`（每次回复，较慢）或 `off`。 |
 | `qwen.voice` | `""` | 复刻为 `off` 时: 留空 = 模型默认音色，或预先复刻的语音 ID（`qwen-translate-vc-...`）。 |
 | `log_level` | `INFO` | Python 日志级别。 |
 | `meta.last_version` | `""` | 当前配置已确认的最后应用版本。用于更新后的一次性重置确认。 |
