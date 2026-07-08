@@ -20,8 +20,8 @@ from . import config as config_mod
 from . import i18n
 from .audio.devices import device_names
 from .control.osc_listener import OscControl
-from .gemini.pipeline import InboundPipeline, OutboundPipeline
-from .gemini.session import FatalSessionError
+from .pipeline import InboundPipeline, OutboundPipeline
+from .session_base import FatalSessionError
 from .languages import language_code_from_text
 from .resources import resolve_font_path
 from .state import AppState

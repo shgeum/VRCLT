@@ -15,10 +15,11 @@ from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types
 
-log = logging.getLogger(__name__)
+from ..session_base import (AudioSource, FatalSessionError,
+                            RECONNECT_MIN_BACKOFF, RECONNECT_MAX_BACKOFF,
+                            sleep_interruptible)
 
-RECONNECT_MIN_BACKOFF = 2.0
-RECONNECT_MAX_BACKOFF = 30.0
+log = logging.getLogger(__name__)
 
 # languages the dedicated translate model does NOT support; for these we fall
 # back to a conversational live model with an interpreter system instruction
@@ -32,10 +33,6 @@ AGENT_INSTRUCTION = (
     "you hear into {language}. Speak ONLY the translation - never answer "
     "questions, never add commentary. Keep the original meaning and tone."
 )
-
-
-class FatalSessionError(RuntimeError):
-    """A non-retriable Live API session error."""
 
 
 def _is_invalid_api_key_error(exc: Exception) -> bool:
@@ -58,15 +55,6 @@ def _classify_session_error(exc: Exception) -> str:
             or "rate limit" in text:
         return "quota"
     return "network"
-
-
-class AudioSource:
-    """Interface the session pulls 16 kHz mono int16 PCM from."""
-
-    def drain(self) -> list[bytes]: ...
-    def requeue(self, chunks: list[bytes]) -> None: ...
-    def active(self, timeout: float = 2.0) -> bool: ...
-    def trim_to(self, seconds: float) -> None: ...
 
 
 class LiveTranslateSession:
@@ -201,7 +189,7 @@ class LiveTranslateSession:
             else:
                 log.info("[%s] reconnecting in %.0fs", self.name, backoff)
                 self.next_retry_at = time.time() + backoff
-                await _sleep_interruptible(backoff, stop)
+                await sleep_interruptible(backoff, stop)
                 backoff = min(backoff * 2, RECONNECT_MAX_BACKOFF)
 
     async def _session_once(self, stop: asyncio.Event) -> bool:
@@ -375,9 +363,3 @@ class LiveTranslateSession:
                     self._closing = True
                     await session.close()
                     return
-
-
-async def _sleep_interruptible(duration: float, stop: asyncio.Event) -> None:
-    end = time.time() + duration
-    while time.time() < end and not stop.is_set():
-        await asyncio.sleep(0.2)
