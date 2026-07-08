@@ -377,6 +377,7 @@ PC ホットキー:
 | `osc.throttle_sec` | `1.5` | ライブ partial 更新を含むチャットボックスの最小送信間隔。 |
 | `osc.notification_sfx` | `false` | VRChat チャットボックス通知音を要求します。 |
 | `osc.show_source` | `true` | チャットボックスで翻訳の上に原文を表示します。 |
+| `osc.stream_sentences` | `true` | 完成した文をすぐにチャットボックスへ送信し、直近の文を 1 つの吹き出しの中で順次入れ替えます。`false` にすると以前の動作に戻ります（長いセグメントを `chunk_display_sec` 間隔のチャンクで再生）。 |
 | `osc.chunk_display_sec` | `4.0` | 長いチャットボックスメッセージを分割表示する時の各チャンク表示時間。 |
 
 オーディオ、制御、UI、手首メニュー:

@@ -375,6 +375,7 @@ PC 핫키:
 | `osc.throttle_sec` | `1.5` | 실시간 partial 갱신을 포함한 챗박스 최소 전송 간격. |
 | `osc.notification_sfx` | `false` | VRChat 챗박스 알림음을 요청합니다. |
 | `osc.show_source` | `true` | 챗박스에서 번역 위에 원문을 표시합니다. |
+| `osc.stream_sentences` | `true` | 완성된 문장을 챗박스로 즉시 전송하고, 최근 문장들을 말풍선 하나에서 순차 갱신합니다. `false`면 이전 동작으로 돌아갑니다(긴 세그먼트를 `chunk_display_sec` 간격의 조각으로 재생). |
 | `osc.chunk_display_sec` | `4.0` | 긴 챗박스 메시지를 나눠 보여줄 때 조각별 표시 시간. |
 
 오디오, 제어, UI, 손목 메뉴:

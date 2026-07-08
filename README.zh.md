@@ -373,6 +373,7 @@ PC 热键:
 | `osc.throttle_sec` | `1.5` | 聊天框最小发送间隔，包括实时 partial 更新。 |
 | `osc.notification_sfx` | `false` | 请求 VRChat 聊天框提示音。 |
 | `osc.show_source` | `true` | 在聊天框中将原文显示在翻译上方。 |
+| `osc.stream_sentences` | `true` | 每说完一句立即发送到聊天框，并在同一个气泡内滚动显示最近的句子。`false` 恢复旧行为（长片段按 `chunk_display_sec` 间隔分段重放）。 |
 | `osc.chunk_display_sec` | `4.0` | 长聊天框消息分段显示时每段的显示时间。 |
 
 音频、控制、UI、手腕菜单:
