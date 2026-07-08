@@ -13,6 +13,7 @@ people's speech.
 - Tray menu for opening the app, opening settings, toggling translation/subtitles, and quitting
 - Outbound translation: your microphone -> Gemini Live -> translated voice -> target app mic
 - Inbound subtitles: target app audio -> Gemini Live -> translated subtitles
+- Two translation engines: Google Gemini Live (default) and Alibaba Qwen3.5 LiveTranslate for regions where Google is unavailable (e.g. mainland China)
 - VRChat support for OSC chatbox output, avatar OSC controls, SteamVR subtitles, and the wrist menu
 - SteamVR dashboard settings panel and auto-start with SteamVR (Startup/Overlay Apps registration)
 - VRC Text Only mode for sending translated chatbox text while passing your original voice through
@@ -27,7 +28,7 @@ people's speech.
 ### Requirements
 
 - Windows 11 recommended
-- Google Gemini API key (see instructions below)
+- Google Gemini API key — or an Alibaba Cloud Model Studio (DashScope) API key for the Qwen engine (see instructions below)
 - [VB-Audio Virtual Cable](https://vb-audio.com/Cable/)
 - SteamVR for VR overlays and wrist UI
 - VRChat OSC enabled for chatbox/avatar-control features
@@ -81,17 +82,42 @@ Keep your real microphone selected in vrclt. Do not set VRChat or Discord to you
    - If you have no existing projects, choose **Create API key in new project** and one will be created automatically.
 5. Copy the generated key (it starts with `AIza...`).
    - Store it somewhere safe — it is only shown in full once.
-6. Paste the key into the **API Key** field in the vrclt Settings tab,
-   or set it as `gemini.api_key` in `config.yaml`.
+6. Paste the key into the **Gemini API key** field in the vrclt Settings tab,
+   or set it as `api_key` in `config.yaml`.
 
 > **Note**: The Gemini API has a free tier with per-minute request limits that is sufficient for personal use.
 > Do not share your API key. It is stored as plain text in `config.yaml`, so do not commit that file to a public repository.
+
+### 3b. Alternative: Qwen API Key (for regions without Gemini access)
+
+If Google services are not available in your region (for example mainland
+China), vrclt can use **Alibaba Qwen3.5 LiveTranslate** instead of Gemini:
+
+1. Create an Alibaba Cloud account and enable **Model Studio**:
+   - Mainland China: [bailian.console.aliyun.com](https://bailian.console.aliyun.com/)
+   - International (Singapore): [Alibaba Cloud Model Studio](https://www.alibabacloud.com/en/product/modelstudio)
+2. Create an API key (DashScope key, starts with `sk-...`).
+   **Keys are region-bound**: a mainland (Beijing) key only works with the
+   `beijing` endpoint and an international key only with `intl`.
+3. In vrclt Settings set **Translation engine** to `qwen`, paste the key into
+   **Qwen API key (DashScope)**, and pick the matching **Qwen endpoint**
+   (`beijing` for mainland China, `intl` otherwise). The key can also come
+   from the `DASHSCOPE_API_KEY` environment variable.
+4. (Optional) **Qwen workspace ID**: newer Model Studio accounts route through
+   a workspace-scoped domain. On the Model Studio console homepage click the
+   icon in the lower-left corner, then **Workspace Details**, and copy the ID
+   (looks like `llm-7c72iiw36kd8****`) into the **Qwen workspace ID** field.
+   Leave it empty to use the classic shared `dashscope` domain — both work.
+   See [Obtain the workspace ID](https://www.alibabacloud.com/help/en/model-studio/obtain-api-key-app-id-and-workspace-id).
+5. Set **My spoken language** and **Others' spoken language** — Qwen cannot
+   auto-detect the spoken language (see [Translation Engines](#translation-engines)).
 
 ### 4. First Launch Setup
 
 1. Run `vrclt-v<version>-windows-x64.exe`.
 2. Open the Settings tab.
-3. Paste your Gemini API key.
+3. Paste your Gemini API key (or switch **Translation engine** to `qwen` and
+   paste a DashScope key — see step 3b).
 4. Choose the app mode: `vrchat` or `discord`.
 5. Select your physical microphone as **Mic input**.
 6. Select `CABLE Input` as **Voice output** / translated voice output.
@@ -102,10 +128,37 @@ Keep your real microphone selected in vrclt. Do not set VRChat or Discord to you
 
 - No translated voice in the target app: confirm `outbound.tts_device` is `CABLE Input` and the target app microphone is `CABLE Output`.
 - No inbound subtitles: confirm the target process name matches the running app, for example `VRChat.exe` or `Discord.exe`.
-- Runtime says API key is required: enter the key in Settings or set `GEMINI_API_KEY`.
+- Runtime says API key is required: enter the key in Settings or set `GEMINI_API_KEY` (Qwen engine: `DASHSCOPE_API_KEY`).
+- Qwen key rejected or connection fails immediately: check that `qwen.endpoint` matches the key's region — `beijing` keys and `intl` keys are not interchangeable.
+- Qwen translates from the wrong language: set **My spoken language** / **Others' spoken language** (Settings, Dashboard, or the SteamVR panel). Qwen cannot auto-detect; empty is treated as English.
 - VR overlays do not appear: confirm SteamVR is running and `overlay.enabled` / `wrist_ui.enabled` are enabled.
 - Passthrough or subtitles feel late: start from the defaults in this README, then lower `audio.turn_end_silence_sec`, `audio.inbound_turn_end_silence_sec`, or `audio.subtitle_finalize_silence_sec` carefully if your connection is stable.
 - Need a clean config: use **Reset defaults** in Settings. It resets current settings while preserving the API key, output language list, subtitle language list, UI language, window close action, and selected audio devices. After an app update, vrclt also asks once whether to do this reset.
+
+## Translation Engines
+
+vrclt supports two realtime translation engines, selected by the **Translation
+engine** setting (`provider` in `config.yaml`). The choice applies to both
+directions: your voice and the inbound subtitles.
+
+| | Gemini Live (default) | Qwen3.5 LiveTranslate |
+| --- | --- | --- |
+| Provider / key | Google AI Studio (`GEMINI_API_KEY`) | Alibaba Cloud Model Studio / DashScope (`DASHSCOPE_API_KEY`) |
+| Works in mainland China | No | Yes (`beijing` endpoint) |
+| Spoken-language detection | Automatic | **Manual** — set "My/Others' spoken language" |
+| Languages | 70+ BCP-47 targets, incl. `zh-Hans`/`zh-Hant` | 29 with voice + 31 more text-only; plain `zh` only (no Simplified/Traditional split); Cantonese (`yue`) is text-only |
+| Translated voice | Replicates the speaker's voice | Stock voice presets (`qwen.voice`) |
+| Barge-in (voice interrupts) | Yes | No — overlapping speech can queue audio |
+
+Qwen notes:
+
+- **Spoken language is required.** Set it in Settings, on the Dashboard tab,
+  or on the SteamVR dashboard panel's bottom row. Empty is treated as English.
+- `zh-Hans`/`zh-Hant` targets are both sent to Qwen as `zh`.
+- If the chosen target has no Qwen voice support, vrclt automatically runs the
+  session text-only (chatbox/subtitles keep working).
+- Endpoints: `intl` (Singapore) or `beijing`; an optional workspace ID switches
+  to the newer workspace-scoped domain (see step 3b above).
 
 ## App Modes
 
@@ -144,12 +197,15 @@ Dashboard:
   hot-plugged devices
 - Translated-voice volume slider and a live mic level meter with the
   detection-threshold marker
+- My/Others' spoken language pickers for the Qwen engine (disabled with
+  Gemini, which auto-detects)
 - PC subtitle position, box size, and font size controls
 - Live subtitle preview
 
 Settings:
 
-- API key and model
+- Translation engine (Gemini / Qwen), API keys, models, and the Qwen
+  endpoint/workspace
 - App mode and target processes
 - Microphone, translated voice output, monitor output, and inbound audio device
 - Default target languages and saved language lists
@@ -200,7 +256,7 @@ VRChat mode can use:
 - Avatar OSC parameters such as `VRCLT_Enabled` and `VRCLT_Lang`
 - SteamVR subtitle overlay for inbound subtitles
 - SteamVR wrist menu for in-VR controls, including runtime restart, subtitle font size, and a connection/error status readout
-- SteamVR dashboard settings panel (open the SteamVR menu and pick the vrclt icon); includes mic and voice-output device pickers — changes apply shortly after the last click with a runtime restart — plus translated-voice volume and an error status line (reconnecting, quota exceeded, invalid API key)
+- SteamVR dashboard settings panel (open the SteamVR menu and pick the vrclt icon); includes mic and voice-output device pickers — changes apply shortly after the last click with a runtime restart — plus translated-voice volume, an error status line (reconnecting, quota exceeded, invalid API key), and a spoken-language row for the Qwen engine
 - Auto-start with SteamVR: the release exe registers itself in SteamVR Settings > Startup/Overlay Apps; toggle auto-launch there or in vrclt Settings
 - After updating to a new release, run the new exe once so auto-start points at the new file (the registration itself survives updates; only the recorded exe path needs that first run to refresh)
 - Visible VR subtitle edit laser/cursor with corner resize handles
@@ -230,8 +286,15 @@ Top-level and app profile settings:
 
 | Key | Default | Description |
 | --- | --- | --- |
+| `provider` | `gemini` | Translation engine for both pipelines: `gemini` or `qwen`. |
 | `api_key` | `""` | Gemini API key. Empty means `GEMINI_API_KEY` can be used. |
 | `model` | `gemini-3.5-live-translate-preview` | Gemini Live model name. |
+| `qwen.api_key` | `""` | DashScope API key. Empty means `DASHSCOPE_API_KEY` can be used. |
+| `qwen.model` | `qwen3.5-livetranslate-flash-realtime` | Qwen realtime translation model name. |
+| `qwen.endpoint` | `intl` | `intl` (Singapore) or `beijing` (mainland China). Keys are region-bound. |
+| `qwen.workspace_id` | `""` | Optional Model Studio workspace ID; switches to the workspace-scoped `maas.aliyuncs.com` domain. |
+| `qwen.base_url` | `""` | Advanced: full `wss://` URL override. |
+| `qwen.voice` | `default` | Qwen translated-voice preset. |
 | `log_level` | `INFO` | Python logging level. |
 | `meta.last_version` | `""` | Last app version that acknowledged the current config. Used for one-time update reset prompts. |
 | `app.mode` | `vrchat` | Active profile: `vrchat` or `discord`. |
@@ -267,6 +330,7 @@ Outbound translation:
 | --- | --- | --- |
 | `outbound.enabled` | `true` | Enables the outbound pipeline. |
 | `outbound.target_language` | `ja` | Default BCP-47 language code for translating your speech. The UI can search the 70+ Gemini Live Translation languages. |
+| `outbound.source_language` | `""` | My spoken language. Required for Qwen (no auto-detect; empty = English). Ignored by Gemini. |
 | `outbound.echo_target_language` | `false` | Also repeats source audio that is already in the target language. |
 | `outbound.mic_device` | `""` | Microphone device name substring. Empty uses the default input. |
 | `outbound.tts_device` | `CABLE Input` | Output device for translated voice and passthrough audio. |
@@ -284,6 +348,7 @@ Inbound subtitles:
 | --- | --- | --- |
 | `inbound.enabled` | `true` | Enables process-audio capture for subtitles. |
 | `inbound.target_language` | `ko` | Default BCP-47 subtitle target language. The UI can search the 70+ Gemini Live Translation languages. |
+| `inbound.source_language` | `""` | Others' spoken language (Qwen only, same rules as `outbound.source_language`). |
 | `inbound.languages` | `[ko, en, ja]` | Saved subtitle language list used by the Dashboard and wrist menu. Add only the languages you need from the UI picker. |
 | `inbound.process` | `VRChat.exe` | Process name captured for inbound subtitles. |
 | `inbound.play_audio` | `false` | Plays translated inbound speech to your headphones. |

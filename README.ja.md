@@ -12,6 +12,7 @@ Cable 経由で対象アプリのマイク入力へ送り、相手の発話は�
 - アプリを開く、設定を開く、翻訳/字幕の切り替え、終了ができるトレイメニュー
 - 送信側翻訳: 自分のマイク -> Gemini Live -> 翻訳音声 -> 対象アプリのマイク
 - 受信側字幕: 対象アプリの音声 -> Gemini Live -> 翻訳字幕
+- 2 つの翻訳エンジン: Google Gemini Live（既定）と、Google を利用できない地域（例: 中国本土）向けの Alibaba Qwen3.5 LiveTranslate
 - VRChat OSC チャットボックス、アバター OSC 制御、SteamVR 字幕、手首メニュー対応
 - SteamVR ダッシュボード設定パネルと SteamVR 自動起動（スタートアップ/オーバーレイアプリ登録）対応
 - 元の声をそのまま通し、OSC チャットボックスに翻訳テキストだけを追加する VRChat テキストのみモード
@@ -26,7 +27,7 @@ Cable 経由で対象アプリのマイク入力へ送り、相手の発話は�
 ### 要件
 
 - Windows 11 推奨
-- Google Gemini API キー (取得方法は下記)
+- Google Gemini API キー — または Qwen エンジン用の Alibaba Cloud Model Studio (DashScope) API キー (取得方法は下記)
 - [VB-Audio Virtual Cable](https://vb-audio.com/Cable/)
 - VR オーバーレイと手首 UI を使う場合は SteamVR
 - VRChat チャットボックス/アバター制御を使う場合は VRChat OSC を有効化
@@ -86,11 +87,37 @@ VRChat または Discord に翻訳音声をマイクとして受け取らせる�
 > **注意**: Gemini API には、個人利用には十分な分単位リクエスト制限付き無料枠があります。
 > API キーは他人と共有しないでください。`config.yaml` に平文で保存されるため、このファイルを公開リポジトリにコミットしないでください。
 
+### 3b. 代替: Qwen API キー（Gemini を利用できない地域向け）
+
+お住まいの地域で Google サービスを利用できない場合（例: 中国本土）、vrclt は
+Gemini の代わりに **Alibaba Qwen3.5 LiveTranslate** を使えます。
+
+1. Alibaba Cloud アカウントを作成し、**Model Studio** を有効化します。
+   - 中国本土: [bailian.console.aliyun.com](https://bailian.console.aliyun.com/)
+   - 国際（シンガポール）: [Alibaba Cloud Model Studio](https://www.alibabacloud.com/en/product/modelstudio)
+2. API キー（DashScope キー、`sk-...` で始まる）を作成します。
+   **キーはリージョンに紐づきます**: 本土（北京）のキーは `beijing`
+   エンドポイントでのみ、国際キーは `intl` でのみ動作します。
+3. vrclt の設定で **翻訳エンジン** を `qwen` にし、キーを
+   **Qwen APIキー (DashScope)** に貼り付け、キーに合った **Qwenサーバー**
+   （中国本土は `beijing`、それ以外は `intl`）を選択します。キーは
+   `DASHSCOPE_API_KEY` 環境変数でも指定できます。
+4. （任意）**QwenワークスペースID**: 新しめの Model Studio アカウントは
+   ワークスペース専用ドメインを経由します。Model Studio コンソールのホームで
+   左下のアイコンをクリックし、**Workspace Details** を開いて ID
+   （`llm-7c72iiw36kd8****` のような形式）をコピーし、**QwenワークスペースID**
+   欄に貼り付けます。空のままなら従来の共有 `dashscope` ドメインを使います。
+   どちらでも動作します。
+   参考: [Obtain the workspace ID](https://www.alibabacloud.com/help/en/model-studio/obtain-api-key-app-id-and-workspace-id)
+5. **自分の発話言語** と **相手の発話言語** を設定します — Qwen は発話言語を
+   自動検出できません（下の「翻訳エンジン」セクションを参照）。
+
 ### 4. 初回起動設定
 
 1. `vrclt-v<version>-windows-x64.exe` を実行します。
 2. 設定タブを開きます。
-3. Gemini API キーを貼り付けます。
+3. Gemini API キーを貼り付けます（または **翻訳エンジン** を `qwen` にして
+   DashScope キーを貼り付けます — 手順 3b を参照）。
 4. アプリモードを `vrchat` または `discord` にします。
 5. **マイク入力**には実際のマイクを選択します。
 6. **音声出力**または翻訳音声出力デバイスには `CABLE Input` を選択します。
@@ -101,10 +128,37 @@ VRChat または Discord に翻訳音声をマイクとして受け取らせる�
 
 - 対象アプリに翻訳音声が入らない: `outbound.tts_device` が `CABLE Input` で、対象アプリのマイクが `CABLE Output` になっているか確認します。
 - 受信側字幕が出ない: 対象プロセス名が実行中アプリと一致しているか確認します。例: `VRChat.exe`、`Discord.exe`。
-- API キーが必要と表示される: 設定にキーを入力するか、`GEMINI_API_KEY` を設定します。
+- API キーが必要と表示される: 設定にキーを入力するか、`GEMINI_API_KEY` を設定します（Qwen エンジンの場合: `DASHSCOPE_API_KEY`）。
+- Qwen キーが拒否される、または接続が即座に失敗する: `qwen.endpoint` がキーのリージョンと一致しているか確認します — `beijing` のキーと `intl` のキーは互換性がありません。
+- Qwen が違う言語から翻訳する: **自分の発話言語** / **相手の発話言語** を設定します（設定、ダッシュボード、または SteamVR パネル）。Qwen は自動検出できず、空の場合は英語として扱われます。
 - VR オーバーレイが出ない: SteamVR が実行中で、`overlay.enabled` / `wrist_ui.enabled` が有効か確認します。
 - passthrough や字幕の遅延が大きい: まずこの README の既定値を使い、接続が安定している場合だけ `audio.turn_end_silence_sec`、`audio.inbound_turn_end_silence_sec`、`audio.subtitle_finalize_silence_sec` を慎重に下げます。
 - 設定を初期化したい: 設定タブの **既定値リセット** を使います。API キー、出力言語リスト、字幕言語リスト、UI 言語、ウィンドウを閉じる動作、選択したオーディオデバイスは保持し、それ以外を既定値に戻します。アプリ更新後にも vrclt がこのリセットを 1 回確認します。
+
+## 翻訳エンジン
+
+vrclt は 2 つのリアルタイム翻訳エンジンに対応し、**翻訳エンジン** 設定
+（`config.yaml` の `provider`）で選択します。選択したエンジンは、自分の音声と
+受信側字幕の両方向に適用されます。
+
+| | Gemini Live（既定） | Qwen3.5 LiveTranslate |
+| --- | --- | --- |
+| プロバイダー / キー | Google AI Studio (`GEMINI_API_KEY`) | Alibaba Cloud Model Studio / DashScope (`DASHSCOPE_API_KEY`) |
+| 中国本土での利用 | 不可 | 可（`beijing` エンドポイント） |
+| 発話言語の検出 | 自動検出 | **手動** — 「自分/相手の発話言語」を設定 |
+| 対応言語 | `zh-Hans`/`zh-Hant` を含む 70 以上の BCP-47 対象言語 | 音声付き 29 + テキストのみ 31; 中国語は `zh` のみ（簡体字/繁体字の区別なし）; 広東語（`yue`）はテキストのみ |
+| 翻訳音声 | 話者の声を再現 | 既成の音声プリセット（`qwen.voice`） |
+| 割り込み（barge-in） | 対応 | 非対応 — 発話が重なると音声がキューに溜まることがあります |
+
+Qwen の注意点:
+
+- **発話言語の設定が必須です。** 設定タブ、ダッシュボードタブ、または SteamVR
+  ダッシュボードパネルの最下段で設定します。空の場合は英語として扱われます。
+- `zh-Hans`/`zh-Hant` の対象言語は、どちらも `zh` として Qwen に送られます。
+- 選んだ対象言語に Qwen の音声対応がない場合、vrclt は自動でセッションを
+  テキストのみで実行します（チャットボックス/字幕は動作し続けます）。
+- エンドポイント: `intl`（シンガポール）または `beijing`。任意のワークスペースID
+  を入れると、新しいワークスペース専用ドメインに切り替わります（上の手順 3b を参照）。
 
 ## アプリモード
 
@@ -139,12 +193,13 @@ Discord Canary または PTB を使う場合は、設定または `app.profiles.
 - 出力言語と字幕言語、Gemini Live Translation の 70 以上の対応言語を検索して追加
 - マイク入力と翻訳音声出力デバイスの選択、出力テストトーンボタン付き。デバイス更新はランタイムを再起動し、後から挿したデバイスも認識します
 - 翻訳音声の音量スライダーと、検出しきい値マーカー付きリアルタイムマイクレベルメーター
+- Qwen エンジン用の自分/相手の発話言語ピッカー（自動検出する Gemini では無効）
 - PC 字幕の位置移動/リセット、ボックスサイズ、文字サイズ
 - リアルタイム字幕プレビュー
 
 設定:
 
-- API キーとモデル
+- 翻訳エンジン（Gemini / Qwen）、API キー、モデル、Qwen のエンドポイント/ワークスペース
 - アプリモードと対象プロセス
 - マイク、翻訳音声出力、モニター出力、受信側音声デバイス
 - 既定の対象言語と保存済み言語リスト
@@ -194,7 +249,7 @@ VRChat モードでは次の機能を使えます。
 - `VRCLT_Enabled`、`VRCLT_Lang` などのアバター OSC パラメーター
 - 受信側字幕用の SteamVR 字幕オーバーレイ
 - VR 内で操作できる SteamVR 手首メニュー — ランタイム再起動、字幕文字サイズ、接続/エラー状態表示付き
-- SteamVR ダッシュボード設定パネル（SteamVR メニューを開いて vrclt アイコンを選択）。マイク・音声出力デバイスの選択も可能 — 最後のクリックから少し後にランタイム再起動とともに適用されます — さらに翻訳音声の音量と、エラー状態表示（再接続中、クォータ超過、API キー無効）
+- SteamVR ダッシュボード設定パネル（SteamVR メニューを開いて vrclt アイコンを選択）。マイク・音声出力デバイスの選択も可能 — 最後のクリックから少し後にランタイム再起動とともに適用されます — さらに翻訳音声の音量と、エラー状態表示（再接続中、クォータ超過、API キー無効）、Qwen エンジン用の発話言語の行
 - SteamVR 自動起動: リリース版 exe は SteamVR 設定 > スタートアップ/オーバーレイアプリに自動登録され、自動起動は SteamVR 設定または vrclt 設定で切り替えます
 - 新しいバージョンに更新した後は、新しい exe を一度起動してください。登録自体は維持されますが、自動起動が参照する exe パスは初回起動時に新しいファイルへ更新されます
 - VR 字幕編集 laser/cursor 表示と角ハンドルでのサイズ調整
@@ -224,8 +279,15 @@ VR オーバーレイを強制的に有効にするには `ui.mode: vr`、無効
 
 | キー | 既定値 | 説明 |
 | --- | --- | --- |
+| `provider` | `gemini` | 両方向のパイプラインに適用される翻訳エンジン: `gemini` または `qwen`。 |
 | `api_key` | `""` | Gemini API キー。空の場合は `GEMINI_API_KEY` 環境変数を使えます。 |
 | `model` | `gemini-3.5-live-translate-preview` | Gemini Live モデル名。 |
+| `qwen.api_key` | `""` | DashScope API キー。空の場合は `DASHSCOPE_API_KEY` 環境変数を使えます。 |
+| `qwen.model` | `qwen3.5-livetranslate-flash-realtime` | Qwen リアルタイム翻訳モデル名。 |
+| `qwen.endpoint` | `intl` | `intl`（シンガポール）または `beijing`（中国本土）。キーはリージョンに紐づきます。 |
+| `qwen.workspace_id` | `""` | 任意の Model Studio ワークスペースID。ワークスペース専用の `maas.aliyuncs.com` ドメインに切り替えます。 |
+| `qwen.base_url` | `""` | 上級者向け: `wss://` URL 全体の上書き。 |
+| `qwen.voice` | `default` | Qwen 翻訳音声のプリセット。 |
 | `log_level` | `INFO` | Python ログレベル。 |
 | `meta.last_version` | `""` | 現在の設定で確認済みの最後のアプリバージョン。更新後の 1 回限りのリセット確認に使います。 |
 | `app.mode` | `vrchat` | 有効なプロファイル: `vrchat` または `discord`。 |
@@ -261,6 +323,7 @@ PC ホットキー:
 | --- | --- | --- |
 | `outbound.enabled` | `true` | 送信側パイプラインを有効にします。 |
 | `outbound.target_language` | `ja` | 自分の発話を翻訳する既定の BCP-47 言語コード。UI で Gemini Live Translation の 70 以上の対応言語を検索して選択できます。 |
+| `outbound.source_language` | `""` | 自分の発話言語。Qwen では必須（自動検出なし。空なら英語）。Gemini では無視されます。 |
 | `outbound.echo_target_language` | `false` | すでに対象言語の入力も復唱します。 |
 | `outbound.mic_device` | `""` | マイクデバイス名の一部。空なら既定入力を使います。 |
 | `outbound.tts_device` | `CABLE Input` | 翻訳音声と原音送出の出力デバイス。 |
@@ -278,6 +341,7 @@ PC ホットキー:
 | --- | --- | --- |
 | `inbound.enabled` | `true` | 字幕用のプロセス音声キャプチャを有効にします。 |
 | `inbound.target_language` | `ko` | 既定の字幕 BCP-47 言語コード。UI で Gemini Live Translation の 70 以上の対応言語を検索して選択できます。 |
+| `inbound.source_language` | `""` | 相手の発話言語（Qwen のみ。`outbound.source_language` と同じルール）。 |
 | `inbound.languages` | `[ko, en, ja]` | ダッシュボードと手首メニューで使う保存済み字幕言語リスト。UI の選択リストから必要な言語だけ追加します。 |
 | `inbound.process` | `VRChat.exe` | 受信側字幕用にキャプチャするプロセス名。 |
 | `inbound.play_audio` | `false` | 受信側の翻訳音声を自分のヘッドホンで再生します。 |

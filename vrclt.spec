@@ -22,7 +22,7 @@ if font_dir.exists():
 for pkg in [
     "onnxruntime", "soxr", "proctap", "openvr", "sounddevice",
     "glfw", "OpenGL", "PIL", "google.genai", "pythonosc", "yaml",
-    "psutil",
+    "psutil", "websockets",
 ]:
     try:
         d, b, h = collect_all(pkg)

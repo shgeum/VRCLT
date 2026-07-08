@@ -2,8 +2,18 @@
 # Developer reference config. The standalone exe stores user settings in AppData.
 # In a source checkout, copy this file to config.yaml if you want local overrides.
 # Leave api_key empty to use the GEMINI_API_KEY environment variable instead.
-api_key: ""
+provider: gemini             # gemini | qwen (translation engine for BOTH pipelines)
+api_key: ""                  # Gemini API key (Google AI Studio)
 model: gemini-3.5-live-translate-preview
+
+qwen:                        # Alibaba Cloud Model Studio (DashScope) realtime
+  api_key: ""                # empty -> DASHSCOPE_API_KEY env var; keys are region-bound!
+  model: qwen3.5-livetranslate-flash-realtime
+  endpoint: intl             # intl (Singapore) | beijing (mainland China)
+  workspace_id: ""           # optional Model Studio workspace ID -> uses the newer
+                             # {id}.<region>.maas.aliyuncs.com domain
+  base_url: ""               # advanced: full wss:// URL override
+  voice: default             # translated-voice preset ("default" or a cloned voice id)
 
 app:
   mode: vrchat                 # vrchat | discord; override with: python -m vrclt run --app vrchat
@@ -44,6 +54,8 @@ hotkeys:                       # Windows global hotkeys for PC/desktop controls
 outbound:                 # my voice -> others (VRChat hears the translation)
   enabled: true
   target_language: ja     # BCP-47: ja, en, ko, zh-Hans, ...
+  source_language: ""     # my spoken language; REQUIRED for Qwen (no auto-detect,
+                          # "" is treated as English). Gemini ignores this.
   echo_target_language: false
   mic_device: ""          # substring of device name; "" = default input
   tts_device: CABLE Input # VB-Cable playback side (VRChat mic = CABLE Output)
@@ -58,6 +70,7 @@ outbound:                 # my voice -> others (VRChat hears the translation)
 inbound:                  # others' voices -> me (subtitles)
   enabled: true
   target_language: ko
+  source_language: ""     # others' spoken language (Qwen only, same rules as outbound)
   languages: [ko, en, ja] # wrist menu cycles subtitle language through these
   process: VRChat.exe
   play_audio: false       # also speak the translation into my headphones

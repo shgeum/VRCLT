@@ -1,5 +1,7 @@
 # vrclt - VRChat Live Translator (Python 3.12; proc-tap wheels are cp310-cp313)
 google-genai>=1.0
+websockets>=14      # Qwen DashScope realtime (also a google-genai dependency;
+                    # >=14 for connect(additional_headers=))
 sounddevice>=0.4.6
 numpy>=1.26
 soxr>=0.5
