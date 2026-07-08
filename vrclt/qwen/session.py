@@ -4,15 +4,19 @@ Protocol facts this code is built around (DashScope realtime WebSocket API,
 qwen3.5-livetranslate-flash-realtime):
 - No official Python SDK: raw WebSocket, Bearer DASHSCOPE_API_KEY header,
   model selected via the ?model= query parameter.
-- Turn boundaries: the client-side gates (mic RMS gate, Silero VAD) strip all
-  silence from the stream, so the server's own VAD can never find an utterance
-  boundary and would hold a long translation until one giant response. The
-  session therefore requests manual mode (turn_detection: null) and commits
-  utterances itself: at every locally detected turn end, and mid-speech every
-  FORCE_RESPONSE_SEC during long monologues so translations stream in chunks.
-  If the server rejects manual mode it self-heals back to server VAD, where
-  TURN_END_SILENCE_PAD_SEC appends zeroed PCM per local turn end so the
-  server VAD sees the trailing silence the gates swallowed.
+- Turn boundaries: the model interprets simultaneously while audio streams in,
+  segmenting on its server-side VAD. The client-side gates (mic RMS gate,
+  Silero VAD) strip nearly all silence from the stream, so unaided the server
+  VAD never finds an utterance boundary and holds one giant translation.
+  Manual mode (turn_detection: null + input_audio_buffer.commit) is NOT
+  workable: the server rejects audio appended while a committed turn is still
+  generating ("Previous turn is still processing"), which is fatal for
+  continuous capture. So the sender keeps server VAD and rebuilds the pauses
+  the gates swallowed instead: whenever the source goes quiet mid-turn it
+  appends zeroed PCM in real time (after GAP_FILL_GRACE_SEC of quiet, capped
+  at GAP_FILL_MAX_SEC per pause) so the server VAD hears natural silence and
+  the model keeps translating phrase by phrase - the same cadence the raw
+  outbound mic stream gets for free.
 - Closing without a session.finish -> session.finished handshake can lose the
   final segment and leave the connection hanging, so the watchdog always
   finishes (with a timeout in case the server never answers).
@@ -61,15 +65,12 @@ def endpoint_url(endpoint: str, workspace_id: str = "", base_url: str = "") -> s
     return ENDPOINTS[endpoint]
 ASR_MODEL = "qwen3-asr-flash-realtime"   # enables source transcripts
 MAX_GLOSSARY_PHRASES = 128
-# manual turn mode: cap how long a continuous utterance may run before a
-# mid-speech commit forces the server to translate what it has so far
-FORCE_RESPONSE_SEC = 8.0
-# never commit a (near-)empty input buffer; 3200 bytes = 100 ms of 16 kHz PCM
-MANUAL_COMMIT_MIN_BYTES = 3200
-# server-VAD fallback only: zeroed PCM appended once per local turn end
-# (seconds); 0 disables. Without it the server VAD may hold the tail of a
-# translation until more audio comes.
-TURN_END_SILENCE_PAD_SEC = 1.2
+# pause reconstruction for the server VAD: once the source has yielded nothing
+# for GRACE seconds (a real pause, not drain jitter), stream zeroed PCM at the
+# send cadence until the pause ends or MAX seconds are filled - enough for the
+# server VAD to fire well past its threshold, then go quiet.
+GAP_FILL_GRACE_SEC = 0.25
+GAP_FILL_MAX_SEC = 2.5
 _INPUT_RATE = 16000  # 16 kHz mono int16, same as the AudioSource contract
 # raw server events logged at DEBUG on each connect, to verify event shapes
 _RAW_EVENT_LOG_COUNT = 30
@@ -98,11 +99,6 @@ def _is_auth_error(exc: Exception) -> bool:
     return "invalidapikey" in text or "invalid api key" in text \
         or "unauthorized" in text or "access denied" in text \
         or "authentication" in text
-
-
-def _looks_like_manual_mode_rejection(text: str) -> bool:
-    text = text.lower()
-    return "turn_detection" in text or "input_audio_buffer.commit" in text
 
 
 def _parse_glossary(glossary: str) -> dict[str, str]:
@@ -201,9 +197,6 @@ class QwenLiveTranslateSession:
         self._on_interrupted = on_interrupted  # never fired: no barge-in event
         self._on_session_state = on_session_state
         self._phrases = _parse_glossary(glossary)
-        # manual utterance boundaries (client commits); self-heals to server
-        # VAD if the server rejects turn_detection/commit
-        self._manual_turns = True
         self.connected = False
         # last-failure diagnostics for the status UIs (written on the session
         # asyncio thread; read lock-free from the Qt/VR threads)
@@ -259,8 +252,6 @@ class QwenLiveTranslateSession:
             session["translation"]["corpus"] = {"phrases": dict(self._phrases)}
         if src_lang:
             session["input_audio_transcription"]["language"] = src_lang
-        if self._manual_turns:
-            session["turn_detection"] = None  # we commit utterances ourselves
         return session
 
     async def run(self, stop: asyncio.Event) -> None:
@@ -290,11 +281,6 @@ class QwenLiveTranslateSession:
                         "DashScope API key is invalid. Update the Qwen API key in Settings."
                     ) from e
                 clean = False
-                if self._manual_turns and _looks_like_manual_mode_rejection(str(e)):
-                    # self-heal: reconnect with server VAD + silence padding
-                    self._manual_turns = False
-                    log.warning("[%s] server rejected manual turn mode - "
-                                "falling back to server VAD", self.name)
                 self.error_class = _classify_qwen_error(str(e))
                 self.last_error = str(e)[:200]
                 log.exception("[%s] session error", self.name)
@@ -442,7 +428,15 @@ class QwenLiveTranslateSession:
                 return
             elif etype == "error":
                 # schema is undocumented; keep the whole payload for the UI
-                raise _ServerErrorEvent(json.dumps(event, ensure_ascii=False)[:400])
+                payload = json.dumps(event, ensure_ascii=False)[:400]
+                if "still processing" in payload.lower():
+                    # per-append rejection while a turn is generating; the
+                    # session itself is fine - dropping it would lose far
+                    # more audio than the one refused append
+                    log.warning("[%s] server busy - append rejected: %.200s",
+                                self.name, payload)
+                    continue
+                raise _ServerErrorEvent(payload)
             else:
                 log.debug("[%s] unhandled event type %s", self.name, etype)
 
@@ -464,11 +458,6 @@ class QwenLiveTranslateSession:
             "audio": base64.b64encode(pcm).decode("ascii"),
         }))
 
-    async def _commit(self, ws) -> None:
-        """Manual mode: tell the server the utterance is over - translate NOW."""
-        await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
-        log.debug("[%s] utterance committed", self.name)
-
     async def _sender(self, ws) -> None:
         # don't race audio ahead of the session.update acknowledgment
         try:
@@ -477,8 +466,9 @@ class QwenLiveTranslateSession:
             log.warning("[%s] no session.created/updated within 5s - "
                         "sending audio anyway", self.name)
         speaking = False
-        speaking_since = 0.0
-        uncommitted = 0
+        last_audio = 0.0   # when real audio last went out
+        gap_filled = 0.0   # zeroed seconds streamed into the current pause
+        fill_chunk = b"\x00" * (int(_INPUT_RATE * self._interval) * 2)
         # the connect pre-roll must be flushed even when the handshake took
         # longer than turn_end_silence (active() already false) - otherwise a
         # short utterance that triggered this very connection is dropped
@@ -505,39 +495,24 @@ class QwenLiveTranslateSession:
                         # connection died or task cancelled mid-send:
                         # requeue so the next session resends
                         self._source.requeue(chunks)
-                if not speaking:
-                    speaking_since = time.time()
                 speaking = True
-                uncommitted += len(pcm)
-                if self._manual_turns and uncommitted >= MANUAL_COMMIT_MIN_BYTES \
-                        and (time.time() - speaking_since) >= FORCE_RESPONSE_SEC:
-                    # long monologue: force an incremental translation chunk
-                    # instead of holding everything for one giant response
-                    try:
-                        await self._commit(ws)
-                    except Exception:
-                        return
-                    uncommitted = 0
-                    speaking_since = time.time()
-            elif speaking and not self._source.active(self._turn_end_silence):
-                # turn over after real silence. Chunks drained this tick are
-                # sub-gate hangover bridge audio - drop them.
-                speaking = False
-                if self._manual_turns:
-                    if uncommitted >= MANUAL_COMMIT_MIN_BYTES:
-                        try:
-                            await self._commit(ws)
-                        except Exception:
-                            return
-                        uncommitted = 0
-                elif TURN_END_SILENCE_PAD_SEC > 0:
-                    # server-VAD fallback: the gates stripped the silence, so
-                    # push the server VAD over its threshold with zeroed PCM
-                    pad = b"\x00" * int(_INPUT_RATE * 2 * TURN_END_SILENCE_PAD_SEC)
-                    try:
-                        await self._append_audio(ws, pad)
-                    except Exception:
-                        return
+                last_audio = time.time()
+                gap_filled = 0.0
+            elif speaking:
+                # The source went quiet mid-turn (chunks drained on these
+                # ticks are sub-gate hangover bridge audio - dropped). The
+                # gates stripped the pause the server VAD needs, so rebuild
+                # it with zeroed PCM at the send cadence.
+                if (time.time() - last_audio) < GAP_FILL_GRACE_SEC:
+                    continue  # drain jitter, not a real pause yet
+                if gap_filled >= GAP_FILL_MAX_SEC:
+                    speaking = False  # pause fully padded; go quiet until voice
+                    continue
+                try:
+                    await self._append_audio(ws, fill_chunk)
+                except Exception:
+                    return
+                gap_filled += self._interval
 
     async def _finish_and_close(self, ws) -> None:
         """session.finish handshake; force-close if the server never answers."""
