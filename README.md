@@ -116,14 +116,28 @@ China), vrclt can use **Alibaba Qwen3.5 LiveTranslate** instead of Gemini:
 ### 4. First Launch Setup
 
 1. Run `vrclt-v<version>-windows-x64.exe`.
-2. Open the Settings tab.
-3. Paste your Gemini API key (or switch **Translation engine** to `qwen` and
-   paste a DashScope key — see step 3b).
-4. Choose the app mode: `vrchat` or `discord`.
-5. Select your physical microphone as **Mic input**.
-6. Select `CABLE Input` as **Voice output** / translated voice output.
-7. In VRChat or Discord, set the microphone input to **CABLE Output (VB-Audio Virtual Cable)**.
-8. Save settings. The runtime restarts automatically.
+2. Open the Settings tab and set up the translation engine you use:
+
+   **Using Gemini (default)**
+   1. Paste your Gemini API key (step 3) into **Gemini API key**.
+      That is all engine setup — Gemini detects spoken languages automatically.
+
+   **Using Qwen**
+   1. Set **Translation engine** to `qwen`.
+   2. Paste your DashScope key (step 3b) into **Qwen API key (DashScope)** and
+      pick the **Qwen endpoint** matching the key's region (`beijing` for
+      mainland China, `intl` otherwise).
+   3. `intl` only: fill in the **Qwen workspace ID** (step 3b).
+   4. Set **My spoken language** (the language you speak) and **Others'
+      spoken language** (the language you expect to hear in-game). Qwen
+      cannot auto-detect them — empty is treated as English. Both can be
+      changed later on the Dashboard tab or the SteamVR dashboard panel.
+
+3. Choose the app mode: `vrchat` or `discord`.
+4. Select your physical microphone as **Mic input**.
+5. Select `CABLE Input` as **Voice output** / translated voice output.
+6. In VRChat or Discord, set the microphone input to **CABLE Output (VB-Audio Virtual Cable)**.
+7. Save settings. The runtime restarts automatically.
 
 ## Troubleshooting
 
@@ -146,6 +160,7 @@ directions: your voice and the inbound subtitles.
 | | Gemini Live (default) | Qwen3.5 LiveTranslate |
 | --- | --- | --- |
 | Provider / key | Google AI Studio (`GEMINI_API_KEY`) | Alibaba Cloud Model Studio / DashScope (`DASHSCOPE_API_KEY`) |
+| Required setup | API key only | Engine to `qwen`, API key + endpoint (workspace ID on `intl`), **My/Others' spoken language** |
 | Works in mainland China | No | Yes (`beijing` endpoint) |
 | Spoken-language detection | Automatic | **Manual** — set "My/Others' spoken language" |
 | Languages | 70+ BCP-47 targets, incl. `zh-Hans`/`zh-Hant` | 29 with voice + 31 more text-only; plain `zh` only (no Simplified/Traditional split); Cantonese (`yue`) is text-only |

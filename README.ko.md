@@ -115,14 +115,28 @@ VRChat 또는 Discord가 번역 음성을 마이크처럼 받게 하려면 VB-Au
 ### 4. 첫 실행 설정
 
 1. `vrclt-v<version>-windows-x64.exe`를 실행합니다.
-2. 설정 탭을 엽니다.
-3. Gemini API 키를 붙여넣습니다(또는 **번역 엔진**을 `qwen`으로 바꾸고
-   DashScope 키를 붙여넣습니다 — 3b 단계 참고).
-4. 앱 모드를 `vrchat` 또는 `discord`로 선택합니다.
-5. **마이크 입력**에는 실제 마이크를 선택합니다.
-6. **음성 출력** 또는 번역 음성 출력 장치에는 `CABLE Input`을 선택합니다.
-7. VRChat 또는 Discord의 마이크 입력을 **CABLE Output (VB-Audio Virtual Cable)**으로 설정합니다.
-8. 설정을 저장합니다. 런타임은 자동으로 재시작됩니다.
+2. 설정 탭을 열고 사용할 번역 엔진을 설정합니다.
+
+   **Gemini 사용 시 (기본)**
+   1. **Gemini API 키**에 키를 붙여넣습니다(3 단계). 엔진 설정은 이것으로
+      끝입니다 — Gemini는 발화 언어를 자동으로 감지합니다.
+
+   **Qwen 사용 시**
+   1. **번역 엔진**을 `qwen`으로 바꿉니다.
+   2. **Qwen API 키 (DashScope)**에 DashScope 키를 붙여넣고(3b 단계), 키의
+      리전에 맞는 **Qwen 서버**(중국 본토는 `beijing`, 그 외에는 `intl`)를
+      선택합니다.
+   3. `intl`인 경우: **Qwen 워크스페이스 ID**를 입력합니다(3b 단계).
+   4. **내 발화 언어**(내가 말하는 언어)와 **상대 발화 언어**(게임에서
+      들려올 언어)를 설정합니다. Qwen은 자동 감지가 없어 비워 두면 영어로
+      간주합니다. 두 값은 나중에 대시보드 탭이나 SteamVR 대시보드 패널에서도
+      바꿀 수 있습니다.
+
+3. 앱 모드를 `vrchat` 또는 `discord`로 선택합니다.
+4. **마이크 입력**에는 실제 마이크를 선택합니다.
+5. **음성 출력** 또는 번역 음성 출력 장치에는 `CABLE Input`을 선택합니다.
+6. VRChat 또는 Discord의 마이크 입력을 **CABLE Output (VB-Audio Virtual Cable)**으로 설정합니다.
+7. 설정을 저장합니다. 런타임은 자동으로 재시작됩니다.
 
 ## 문제 해결
 
@@ -145,6 +159,7 @@ vrclt는 두 가지 실시간 번역 엔진을 지원하며, **번역 엔진** �
 | | Gemini Live (기본) | Qwen3.5 LiveTranslate |
 | --- | --- | --- |
 | 제공자 / 키 | Google AI Studio (`GEMINI_API_KEY`) | Alibaba Cloud Model Studio / DashScope (`DASHSCOPE_API_KEY`) |
+| 필요한 설정 | API 키만 입력 | 엔진을 `qwen`으로, API 키 + 서버(`intl`은 워크스페이스 ID까지), **내/상대 발화 언어** |
 | 중국 본토에서 사용 | 불가 | 가능 (`beijing` 엔드포인트) |
 | 발화 언어 감지 | 자동 감지 | **수동** — "내/상대 발화 언어"를 설정해야 함 |
 | 지원 언어 | `zh-Hans`/`zh-Hant`를 포함한 70개 이상 BCP-47 도착어 | 음성 지원 29개 + 텍스트 전용 31개; 중국어는 `zh` 하나뿐(간체/번체 구분 없음); 광둥어(`yue`)는 텍스트 전용 |

@@ -116,14 +116,27 @@ API 密钥会以明文保存在该文件中。
 ### 4. 首次启动设置
 
 1. 运行 `vrclt-v<version>-windows-x64.exe`。
-2. 打开设置标签页。
-3. 粘贴 Gemini API 密钥（或将 **翻译引擎** 切换为 `qwen` 并粘贴 DashScope
-   密钥 — 见 3b 节）。
-4. 选择应用模式: `vrchat` 或 `discord`。
-5. **麦克风输入**选择你的真实麦克风。
-6. **语音输出**或翻译语音输出设备选择 `CABLE Input`。
-7. 在 VRChat 或 Discord 中，将麦克风输入设置为 **CABLE Output (VB-Audio Virtual Cable)**。
-8. 保存设置。运行时会自动重启。
+2. 打开设置标签页，配置要使用的翻译引擎:
+
+   **使用 Qwen（中国大陆推荐）**
+   1. 将 **翻译引擎** 设为 `qwen`。
+   2. 把 DashScope 密钥粘贴到 **Qwen API 密钥 (DashScope)**（见 3b 节），
+      并选择与密钥地域匹配的 **Qwen 服务器**（中国大陆选 `beijing`，
+      其他地区选 `intl`）。
+   3. 使用 `intl` 时: 填写 **Qwen 工作空间 ID**（见 3b 节）。
+   4. 设置 **我的语音语言**（你说的语言）和 **对方语音语言**（游戏里
+      对方说的语言）。Qwen 无法自动检测，留空会按英语处理。这两项之后
+      也可以在仪表盘标签页或 SteamVR 仪表盘面板上修改。
+
+   **使用 Gemini（默认，需要能访问 Google 服务）**
+   1. 把 Gemini API 密钥粘贴到 **Gemini API 密钥**（见第 3 节）。引擎设置
+      到此为止 — Gemini 会自动检测语音语言。
+
+3. 选择应用模式: `vrchat` 或 `discord`。
+4. **麦克风输入**选择你的真实麦克风。
+5. **语音输出**或翻译语音输出设备选择 `CABLE Input`。
+6. 在 VRChat 或 Discord 中，将麦克风输入设置为 **CABLE Output (VB-Audio Virtual Cable)**。
+7. 保存设置。运行时会自动重启。
 
 ## 故障排查
 
@@ -145,6 +158,7 @@ vrclt 支持两种实时翻译引擎，通过 **翻译引擎** 设置（`config.
 | | Gemini Live（默认） | Qwen3.5 LiveTranslate |
 | --- | --- | --- |
 | 提供方 / 密钥 | Google AI Studio (`GEMINI_API_KEY`) | 阿里云百炼 / DashScope (`DASHSCOPE_API_KEY`) |
+| 必要设置 | 仅需 API 密钥 | 引擎设为 `qwen`、API 密钥 + 服务器（`intl` 还需工作空间 ID）、**我的/对方语音语言** |
 | 中国大陆可用性 | 需要能访问 Google 服务 | 可直连 `beijing` 端点 |
 | 语音语言检测 | 自动检测 | **手动** — 需设置"我的/对方语音语言" |
 | 支持语言 | 70+ 种 BCP-47 目标语言，含 `zh-Hans`/`zh-Hant` | 29 种带语音 + 另外 31 种仅文本；中文只有 `zh`（不区分简体/繁体）；粤语（`yue`）仅文本 |
