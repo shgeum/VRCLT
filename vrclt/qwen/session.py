@@ -205,6 +205,10 @@ class QwenLiveTranslateSession:
         self._st_recv = 0
         self._st_src = 0
         self._st_dst = 0
+        # per-turn text-vs-audio arrival gap (voice cloning happens between
+        # the two; logged to judge voice_clone always/once/off latency cost)
+        self._turn_text_at = 0.0
+        self._turn_audio_logged = False
 
     def request_restart(self) -> None:
         """Apply changed settings (e.g. languages) by reconnecting."""
@@ -386,10 +390,19 @@ class QwenLiveTranslateSession:
                                 self._on_audio(base64.b64decode(value))
                             except (ValueError, TypeError):
                                 log.debug("[%s] undecodable audio delta", self.name)
+                                break
+                            if not self._turn_audio_logged:
+                                self._turn_audio_logged = True
+                                if self._turn_text_at:
+                                    log.info("[%s] first audio %.2fs after first "
+                                             "text this turn", self.name,
+                                             time.time() - self._turn_text_at)
                             break
             elif etype == "response.done":
                 self._src_adapter.reset()
                 self._dst_adapter.reset()
+                self._turn_text_at = 0.0
+                self._turn_audio_logged = False
                 if self._on_turn_complete:
                     self._on_turn_complete()
             elif etype == "session.finished":
@@ -410,6 +423,8 @@ class QwenLiveTranslateSession:
     def _emit_dst(self, fragment: str) -> None:
         if fragment and self._on_dst:
             self._st_dst += 1
+            if not self._turn_text_at:
+                self._turn_text_at = time.time()
             self._on_dst(fragment)
 
     async def _append_audio(self, ws, pcm: bytes) -> None:
