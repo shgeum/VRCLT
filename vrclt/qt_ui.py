@@ -25,6 +25,7 @@ from .ui.widgets import (
     NoWheelComboBox,
     build_language_picker,
     code_from_language_combo,
+    set_language_combo_value,
     set_language_picker_placeholder,
 )
 
@@ -228,6 +229,10 @@ class MainWindow(QtWidgets.QMainWindow):
             return self._tr("err_api_key_empty")
         if error == "API key must be a Gemini API key, not a URL.":
             return self._tr("err_api_key_url")
+        if error == "Qwen (DashScope) API key is empty.":
+            return self._tr("err_qwen_api_key_empty")
+        if error == "API key must be a DashScope API key, not a URL.":
+            return self._tr("err_qwen_api_key_url")
         return error
 
     def _apply_i18n(self) -> None:
@@ -251,6 +256,12 @@ class MainWindow(QtWidgets.QMainWindow):
             set_language_picker_placeholder(self._sub_lang_add, self._tr("ph_sub_add"))
         if hasattr(self, "_sub_lang_add_btn"):
             self._sub_lang_add_btn.setText(self._tr("btn_add"))
+        if hasattr(self, "_src_lang"):
+            set_language_picker_placeholder(self._src_lang, self._tr("ph_src_auto"))
+            self._src_lang.setToolTip(self._tr("tip_src_lang"))
+        if hasattr(self, "_in_src_lang"):
+            set_language_picker_placeholder(self._in_src_lang, self._tr("ph_src_auto"))
+            self._in_src_lang.setToolTip(self._tr("tip_src_lang"))
         if hasattr(self, "_btn_overlay_reset"):
             self._btn_overlay_reset.setText(self._tr("btn_overlay_reset"))
         if hasattr(self, "_subtitle_view"):
@@ -395,6 +406,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self._mic_meter = _MicLevelMeter()
         self._mic_meter.setToolTip(self._tr("tip_mic_level"))
         controls.addWidget(self._mic_meter, 7, 3)
+        # source languages (Qwen only - Gemini auto-detects, combos disabled)
+        self._src_lang = build_language_picker(self._tr("ph_src_auto"))
+        self._src_lang.activated.connect(lambda _i: self._pick_src_lang())
+        self._src_lang.lineEdit().returnPressed.connect(self._pick_src_lang)
+        self._in_src_lang = build_language_picker(self._tr("ph_src_auto"))
+        self._in_src_lang.activated.connect(lambda _i: self._pick_in_src_lang())
+        self._in_src_lang.lineEdit().returnPressed.connect(self._pick_in_src_lang)
+        src_label = self._label("label_src_lang")
+        src_label.setToolTip(self._tr("tip_src_lang"))
+        in_src_label = self._label("label_in_src_lang")
+        in_src_label.setToolTip(self._tr("tip_src_lang"))
+        controls.addWidget(src_label, 8, 0)
+        controls.addWidget(self._src_lang, 8, 1)
+        controls.addWidget(in_src_label, 8, 2)
+        controls.addWidget(self._in_src_lang, 8, 3)
         root.addLayout(controls)
         root.addWidget(self._dashboard_note)
 
@@ -712,6 +738,10 @@ class MainWindow(QtWidgets.QMainWindow):
             key_error = config_mod.api_key_validation_error(cfg.get("api_key", ""))
             if key_error:
                 raise ValueError(self._tr("err_api_key_url"))
+            qwen_key_error = config_mod.api_key_validation_error(
+                cfg.get("qwen", {}).get("api_key", ""), provider_label="DashScope")
+            if qwen_key_error:
+                raise ValueError(self._tr("err_qwen_api_key_url"))
             force_profile = (
                 cfg.get("app", {}).get("mode")
                 != self._controller.raw_cfg.get("app", {}).get("mode")
@@ -1016,6 +1046,14 @@ class MainWindow(QtWidgets.QMainWindow):
         if code:
             self._controller.set_inbound_language(code)
 
+    def _pick_src_lang(self) -> None:
+        self._controller.set_source_language(
+            code_from_language_combo(self._src_lang, []))
+
+    def _pick_in_src_lang(self) -> None:
+        self._controller.set_inbound_source_language(
+            code_from_language_combo(self._in_src_lang, []))
+
     def _pick_ui_lang(self, label: str) -> None:
         for code, text in i18n.UI_LANG_LABELS.items():
             if text == label:
@@ -1118,6 +1156,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sync_combo(self._sub_lang, [
             language_label(c) for c in self._controller.cfg.get("inbound", {}).get("languages", ["ko"])
         ], language_label(st.inbound_language))
+        is_qwen = self._controller.get_provider() == "qwen"
+        for combo, code in ((self._src_lang, st.source_language),
+                            (self._in_src_lang, st.inbound_source_language)):
+            if combo.isEnabled() != is_qwen:
+                combo.setEnabled(is_qwen)
+            if not combo.hasFocus() and \
+                    code_from_language_combo(combo, []) != code:
+                blocked = combo.blockSignals(True)
+                try:
+                    set_language_combo_value(combo, code)
+                finally:
+                    combo.blockSignals(blocked)
         self._sync_combo(self._ui_lang, [i18n.UI_LANG_LABELS[c] for c in i18n.LANGS],
                          i18n.UI_LANG_LABELS.get(st.ui_lang, st.ui_lang))
         self._sync_dashboard_devices()

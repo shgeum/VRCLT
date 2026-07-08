@@ -70,15 +70,23 @@ class SettingsForm:
         self._inputs, self._outputs = self._get_devices()
         cfg = self._controller.raw_cfg
         self._add_group("grp_api", [
+            ("provider", "f.provider", "provider"),
             ("api_key", "f.api_key", "password"),
             ("model", "f.model", "text"),
+            ("qwen.api_key", "f.qwen.api_key", "password"),
+            ("qwen.model", "f.qwen.model", "text"),
+            ("qwen.endpoint", "f.qwen.endpoint", "qwen_endpoint"),
+            ("qwen.workspace_id", "f.qwen.workspace_id", "text"),
+            ("qwen.voice", "f.qwen.voice", "text"),
             ("app.mode", "f.app.mode", "appmode"),
             ("app.profiles.discord.process", "f.app.profiles.discord.process", "text"),
         ], cfg)
         self._add_group("grp_lang", [
             ("outbound.target_language", "f.outbound.target_language", "language"),
+            ("outbound.source_language", "f.outbound.source_language", "language"),
             ("control.languages", "f.control.languages", "csv"),
             ("inbound.target_language", "f.inbound.target_language", "language"),
+            ("inbound.source_language", "f.inbound.source_language", "language"),
             ("inbound.languages", "f.inbound.languages", "csv"),
             ("outbound.glossary", "f.outbound.glossary", "multiline"),
         ], cfg)
@@ -233,6 +241,16 @@ class SettingsForm:
             w = NoWheelComboBox()
             w.addItems(["left", "right"])
             w.setCurrentText(str(value or "left"))
+            return w
+        if kind == "provider":
+            w = NoWheelComboBox()
+            w.addItems(list(config_mod.PROVIDERS))
+            w.setCurrentText(str(value or "gemini"))
+            return w
+        if kind == "qwen_endpoint":
+            w = NoWheelComboBox()
+            w.addItems(list(config_mod.QWEN_ENDPOINTS))
+            w.setCurrentText(str(value or "intl"))
             return w
         if kind in ("input_device", "output_device"):
             w = NoWheelComboBox()
