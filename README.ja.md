@@ -102,12 +102,12 @@ Gemini の代わりに **Alibaba Qwen3.5 LiveTranslate** を使えます。
    **Qwen APIキー (DashScope)** に貼り付け、キーに合った **Qwenサーバー**
    （中国本土は `beijing`、それ以外は `intl`）を選択します。キーは
    `DASHSCOPE_API_KEY` 環境変数でも指定できます。
-4. （任意）**QwenワークスペースID**: 新しめの Model Studio アカウントは
-   ワークスペース専用ドメインを経由します。Model Studio コンソールのホームで
-   左下のアイコンをクリックし、**Workspace Details** を開いて ID
-   （`llm-7c72iiw36kd8****` のような形式）をコピーし、**QwenワークスペースID**
-   欄に貼り付けます。空のままなら従来の共有 `dashscope` ドメインを使います。
-   どちらでも動作します。
+4. **QwenワークスペースID — `intl` では必須**: 国際（シンガポール）
+   エンドポイントはワークスペース専用ドメイン経由でのみ提供されます。
+   Model Studio コンソールのホームで左下のアイコンをクリックし、
+   **Workspace Details** を開いて ID（`llm-7c72iiw36kd8****` のような形式）を
+   コピーし、**QwenワークスペースID** 欄に貼り付けます。`beijing`
+   エンドポイントは空のままで構いません（従来の共有 `dashscope` ドメイン）。
    参考: [Obtain the workspace ID](https://www.alibabacloud.com/help/en/model-studio/obtain-api-key-app-id-and-workspace-id)
 5. **自分の発話言語** と **相手の発話言語** を設定します — Qwen は発話言語を
    自動検出できません（下の「翻訳エンジン」セクションを参照）。
@@ -129,7 +129,8 @@ Gemini の代わりに **Alibaba Qwen3.5 LiveTranslate** を使えます。
 - 対象アプリに翻訳音声が入らない: `outbound.tts_device` が `CABLE Input` で、対象アプリのマイクが `CABLE Output` になっているか確認します。
 - 受信側字幕が出ない: 対象プロセス名が実行中アプリと一致しているか確認します。例: `VRChat.exe`、`Discord.exe`。
 - API キーが必要と表示される: 設定にキーを入力するか、`GEMINI_API_KEY` を設定します（Qwen エンジンの場合: `DASHSCOPE_API_KEY`）。
-- Qwen キーが拒否される、または接続が即座に失敗する: `qwen.endpoint` がキーのリージョンと一致しているか確認します — `beijing` のキーと `intl` のキーは互換性がありません。
+- Qwen キーが拒否される、または接続が即座に失敗する: `qwen.endpoint` がキーのリージョンと一致しているか確認します — `beijing` のキーと `intl` のキーは互換性がありません — さらに `intl` を使う場合はワークスペースID が設定されているか確認します。
+- Qwen エラー `Voice '...' is not supported`: リテラルの音声 `default` は音声クローンが有効な間だけ使えます。`qwen.voice_clone` を有効のままにするか、モデル既定の声を使うなら **QwenボイスID** を空にします。
 - Qwen が違う言語から翻訳する: **自分の発話言語** / **相手の発話言語** を設定します（設定、ダッシュボード、または SteamVR パネル）。Qwen は自動検出できず、空の場合は英語として扱われます。
 - VR オーバーレイが出ない: SteamVR が実行中で、`overlay.enabled` / `wrist_ui.enabled` が有効か確認します。
 - passthrough や字幕の遅延が大きい: まずこの README の既定値を使い、接続が安定している場合だけ `audio.turn_end_silence_sec`、`audio.inbound_turn_end_silence_sec`、`audio.subtitle_finalize_silence_sec` を慎重に下げます。
@@ -147,7 +148,7 @@ vrclt は 2 つのリアルタイム翻訳エンジンに対応し、**翻訳エ
 | 中国本土での利用 | 不可 | 可（`beijing` エンドポイント） |
 | 発話言語の検出 | 自動検出 | **手動** — 「自分/相手の発話言語」を設定 |
 | 対応言語 | `zh-Hans`/`zh-Hant` を含む 70 以上の BCP-47 対象言語 | 音声付き 29 + テキストのみ 31; 中国語は `zh` のみ（簡体字/繁体字の区別なし）; 広東語（`yue`）はテキストのみ |
-| 翻訳音声 | 話者の声を再現 | 既成の音声プリセット（`qwen.voice`） |
+| 翻訳音声 | 話者の声を再現 | サーバー側の音声クローンで話者の声を再現（`qwen.voice_clone`、既定 `always`）。クローンをオフにすると固定の声 |
 | 割り込み（barge-in） | 対応 | 非対応 — 発話が重なると音声がキューに溜まることがあります |
 
 Qwen の注意点:
@@ -157,8 +158,12 @@ Qwen の注意点:
 - `zh-Hans`/`zh-Hant` の対象言語は、どちらも `zh` として Qwen に送られます。
 - 選んだ対象言語に Qwen の音声対応がない場合、vrclt は自動でセッションを
   テキストのみで実行します（チャットボックス/字幕は動作し続けます）。
-- エンドポイント: `intl`（シンガポール）または `beijing`。任意のワークスペースID
-  を入れると、新しいワークスペース専用ドメインに切り替わります（上の手順 3b を参照）。
+- エンドポイント: `intl`（シンガポール）または `beijing`。`intl` は Model Studio
+  ワークスペースID が**必須**で、`beijing` はなくても動作します（上の手順 3b を参照）。
+- 音声クローン: `qwen.voice_clone: always`（既定）は応答ごとに話者の声を
+  クローンします — 複数人が話す部屋に最適です。`once` はセッション開始時に
+  1 回クローンし、`off` はモデル既定の声、または `qwen.voice` に設定した
+  クローン済みボイスID（`qwen-translate-vc-...`）を使います。
 
 ## アプリモード
 
@@ -285,9 +290,10 @@ VR オーバーレイを強制的に有効にするには `ui.mode: vr`、無効
 | `qwen.api_key` | `""` | DashScope API キー。空の場合は `DASHSCOPE_API_KEY` 環境変数を使えます。 |
 | `qwen.model` | `qwen3.5-livetranslate-flash-realtime` | Qwen リアルタイム翻訳モデル名。 |
 | `qwen.endpoint` | `intl` | `intl`（シンガポール）または `beijing`（中国本土）。キーはリージョンに紐づきます。 |
-| `qwen.workspace_id` | `""` | 任意の Model Studio ワークスペースID。ワークスペース専用の `maas.aliyuncs.com` ドメインに切り替えます。 |
+| `qwen.workspace_id` | `""` | Model Studio ワークスペースID（`maas.aliyuncs.com` ドメイン）。`intl` では必須。`beijing` は空でも構いません。 |
 | `qwen.base_url` | `""` | 上級者向け: `wss://` URL 全体の上書き。 |
-| `qwen.voice` | `default` | Qwen 翻訳音声のプリセット。 |
+| `qwen.voice_clone` | `always` | サーバー側の話者音声クローン: `always`（応答ごと）、`once`（セッション開始時）、`off`。 |
+| `qwen.voice` | `""` | クローンが `off` のとき: 空ならモデル既定の声、またはクローン済みボイスID（`qwen-translate-vc-...`）。 |
 | `log_level` | `INFO` | Python ログレベル。 |
 | `meta.last_version` | `""` | 現在の設定で確認済みの最後のアプリバージョン。更新後の 1 回限りのリセット確認に使います。 |
 | `app.mode` | `vrchat` | 有効なプロファイル: `vrchat` または `discord`。 |

@@ -104,10 +104,11 @@ API 密钥会以明文保存在该文件中。
    **Qwen API 密钥 (DashScope)**，并选择与密钥匹配的 **Qwen 服务器**
    （中国大陆选 `beijing`，其他地区选 `intl`）。密钥也可以通过
    `DASHSCOPE_API_KEY` 环境变量提供。
-4. （可选）**Qwen 工作空间 ID**: 较新的百炼账号会经由工作空间专属域名。
-   在百炼控制台首页点击左下角图标，打开 **业务空间详情 (Workspace Details)**，
-   复制 ID（形如 `llm-7c72iiw36kd8****`）填入 **Qwen 工作空间 ID** 字段。
-   留空则使用经典共享 `dashscope` 域名 — 两者都可用。
+4. **Qwen 工作空间 ID — `intl` 必填**: 国际版（新加坡）端点只通过工作空间
+   专属域名提供服务。在百炼控制台首页点击左下角图标，打开
+   **业务空间详情 (Workspace Details)**，复制 ID（形如 `llm-7c72iiw36kd8****`）
+   填入 **Qwen 工作空间 ID** 字段。`beijing` 端点可以留空（经典共享
+   `dashscope` 域名）。
    参见 [Obtain the workspace ID](https://www.alibabacloud.com/help/en/model-studio/obtain-api-key-app-id-and-workspace-id)。
 5. 设置 **我的语音语言** 和 **对方语音语言** — Qwen 无法自动检测语音语言
    （见下文"翻译引擎"一节）。
@@ -129,7 +130,8 @@ API 密钥会以明文保存在该文件中。
 - 目标应用没有收到翻译语音: 确认 `outbound.tts_device` 是 `CABLE Input`，且目标应用麦克风是 `CABLE Output`。
 - 入站字幕不显示: 确认目标进程名与正在运行的应用一致，例如 `VRChat.exe` 或 `Discord.exe`。
 - 运行时提示需要 API 密钥: 在设置中输入密钥，或设置 `GEMINI_API_KEY`（Qwen 引擎为 `DASHSCOPE_API_KEY`）。
-- Qwen 密钥被拒绝或连接立即失败: 检查 `qwen.endpoint` 是否与密钥的地域匹配 — `beijing` 密钥和 `intl` 密钥不能混用。
+- Qwen 密钥被拒绝或连接立即失败: 检查 `qwen.endpoint` 是否与密钥的地域匹配 — `beijing` 密钥和 `intl` 密钥不能混用 — 并确认使用 `intl` 时已设置工作空间 ID。
+- Qwen 报错 `Voice '...' is not supported`: 字面值音色 `default` 只在声音复刻启用时可用。请保持 `qwen.voice_clone` 开启，或将 **Qwen 语音 ID** 留空以使用模型默认音色。
 - Qwen 从错误的语言进行翻译: 设置 **我的语音语言** / **对方语音语言**（在设置、仪表板或 SteamVR 面板中均可）。Qwen 无法自动检测；留空按英语处理。
 - VR 叠加层不显示: 确认 SteamVR 正在运行，且 `overlay.enabled` / `wrist_ui.enabled` 已启用。
 - passthrough 或字幕延迟较大: 先使用本 README 中的默认值；如果连接稳定，再谨慎降低 `audio.turn_end_silence_sec`、`audio.inbound_turn_end_silence_sec` 或 `audio.subtitle_finalize_silence_sec`。
@@ -146,7 +148,7 @@ vrclt 支持两种实时翻译引擎，通过 **翻译引擎** 设置（`config.
 | 中国大陆可用性 | 需要能访问 Google 服务 | 可直连 `beijing` 端点 |
 | 语音语言检测 | 自动检测 | **手动** — 需设置"我的/对方语音语言" |
 | 支持语言 | 70+ 种 BCP-47 目标语言，含 `zh-Hans`/`zh-Hant` | 29 种带语音 + 另外 31 种仅文本；中文只有 `zh`（不区分简体/繁体）；粤语（`yue`）仅文本 |
-| 翻译语音 | 复刻说话者音色 | 内置音色预设（`qwen.voice`） |
+| 翻译语音 | 复刻说话者音色 | 通过服务端声音复刻还原说话者音色（`qwen.voice_clone`，默认 `always`）；关闭复刻时使用固定音色 |
 | 抢话打断（barge-in） | 支持 | 不支持 — 同时说话时音频可能排队播放 |
 
 Qwen 注意事项:
@@ -156,8 +158,11 @@ Qwen 注意事项:
 - `zh-Hans`/`zh-Hant` 目标语言发送给 Qwen 时都会作为 `zh`。
 - 如果所选目标语言没有 Qwen 语音支持，vrclt 会自动以仅文本方式运行会话
   （聊天框/字幕仍正常工作）。
-- 端点: `intl`（新加坡）或 `beijing`；可选的工作空间 ID 会切换到较新的
-  工作空间专属域名（见上文 3b 节）。
+- 端点: `intl`（新加坡）或 `beijing`。`intl` **必须**设置百炼工作空间 ID；
+  `beijing` 无需设置（见上文 3b 节）。
+- 声音复刻: `qwen.voice_clone: always`（默认）对每次回复复刻说话者音色 —
+  最适合多人说话的房间；`once` 在会话开始时复刻一次；`off` 使用模型默认音色，
+  或使用 `qwen.voice` 中预先复刻的语音 ID（`qwen-translate-vc-...`）。
 
 ## 应用模式
 
@@ -281,9 +286,10 @@ VRChat 模式可使用:
 | `qwen.api_key` | `""` | DashScope API 密钥。留空时可使用 `DASHSCOPE_API_KEY` 环境变量。 |
 | `qwen.model` | `qwen3.5-livetranslate-flash-realtime` | Qwen 实时翻译模型名。 |
 | `qwen.endpoint` | `intl` | `intl`（新加坡）或 `beijing`（中国大陆）。密钥与地域绑定。 |
-| `qwen.workspace_id` | `""` | 可选的百炼工作空间 ID；会切换到工作空间专属 `maas.aliyuncs.com` 域名。 |
+| `qwen.workspace_id` | `""` | 百炼工作空间 ID（`maas.aliyuncs.com` 域名）。`intl` 必填；`beijing` 可留空。 |
 | `qwen.base_url` | `""` | 高级: 覆盖完整 `wss://` URL。 |
-| `qwen.voice` | `default` | Qwen 翻译语音音色预设。 |
+| `qwen.voice_clone` | `always` | 服务端说话者声音复刻: `always`（每次回复）、`once`（会话开始时）或 `off`。 |
+| `qwen.voice` | `""` | 复刻为 `off` 时: 留空 = 模型默认音色，或预先复刻的语音 ID（`qwen-translate-vc-...`）。 |
 | `log_level` | `INFO` | Python 日志级别。 |
 | `meta.last_version` | `""` | 当前配置已确认的最后应用版本。用于更新后的一次性重置确认。 |
 | `app.mode` | `vrchat` | 当前配置: `vrchat` 或 `discord`。 |

@@ -102,11 +102,12 @@ VRChat 또는 Discord가 번역 음성을 마이크처럼 받게 하려면 VB-Au
    **Qwen API 키 (DashScope)**에 붙여넣은 뒤, 키에 맞는 **Qwen 서버**
    (중국 본토는 `beijing`, 그 외에는 `intl`)를 선택합니다. 키는
    `DASHSCOPE_API_KEY` 환경 변수로도 지정할 수 있습니다.
-4. (선택) **Qwen 워크스페이스 ID**: 최신 Model Studio 계정은 워크스페이스 전용
-   도메인을 거칩니다. Model Studio 콘솔 홈에서 왼쪽 아래 아이콘을 클릭하고
-   **Workspace Details**를 열어 ID(`llm-7c72iiw36kd8****` 형태)를 복사한 뒤
-   **Qwen 워크스페이스 ID** 항목에 붙여넣습니다. 비워 두면 기존 공용
-   `dashscope` 도메인을 사용하며, 둘 다 동작합니다.
+4. **Qwen 워크스페이스 ID — `intl`에서는 필수**: 국제(싱가포르) 엔드포인트는
+   워크스페이스 전용 도메인을 통해서만 제공됩니다. Model Studio 콘솔 홈에서
+   왼쪽 아래 아이콘을 클릭하고 **Workspace Details**를 열어
+   ID(`llm-7c72iiw36kd8****` 형태)를 복사한 뒤 **Qwen 워크스페이스 ID** 항목에
+   붙여넣습니다. `beijing` 엔드포인트는 비워 둘 수 있습니다(기존 공용
+   `dashscope` 도메인 사용).
    참고: [Obtain the workspace ID](https://www.alibabacloud.com/help/en/model-studio/obtain-api-key-app-id-and-workspace-id)
 5. **내 발화 언어**와 **상대 발화 언어**를 설정합니다 — Qwen은 발화 언어를
    자동 감지하지 못합니다(아래 "번역 엔진" 섹션 참고).
@@ -128,7 +129,8 @@ VRChat 또는 Discord가 번역 음성을 마이크처럼 받게 하려면 VB-Au
 - 대상 앱에 번역 음성이 안 들어감: `outbound.tts_device`가 `CABLE Input`인지, 대상 앱 마이크가 `CABLE Output`인지 확인합니다.
 - 인바운드 자막이 안 뜸: 대상 프로세스 이름이 실제 실행 중인 앱과 맞는지 확인합니다. 예: `VRChat.exe`, `Discord.exe`.
 - API 키 필요 상태: 설정에 키를 입력하거나 `GEMINI_API_KEY`를 설정합니다(Qwen 엔진: `DASHSCOPE_API_KEY`).
-- Qwen 키가 거부되거나 연결이 바로 실패함: `qwen.endpoint`가 키의 리전과 맞는지 확인합니다 — `beijing` 키와 `intl` 키는 서로 호환되지 않습니다.
+- Qwen 키가 거부되거나 연결이 바로 실패함: `qwen.endpoint`가 키의 리전과 맞는지 확인합니다 — `beijing` 키와 `intl` 키는 서로 호환되지 않습니다 — 그리고 `intl` 사용 시 워크스페이스 ID가 설정되어 있는지 확인합니다.
+- Qwen 오류 `Voice '...' is not supported`: 리터럴 음성 `default`는 음성 복제가 켜져 있을 때만 동작합니다. `qwen.voice_clone`을 켜 두거나, 모델 기본 음성을 쓰려면 **Qwen 음성 ID**를 비워 둡니다.
 - Qwen이 엉뚱한 언어에서 번역함: **내 발화 언어** / **상대 발화 언어**를 설정합니다(설정, 대시보드, 또는 SteamVR 패널). Qwen은 자동 감지가 없으며, 비어 있으면 영어로 간주합니다.
 - VR 오버레이가 안 뜸: SteamVR이 실행 중이고 `overlay.enabled` / `wrist_ui.enabled`가 켜져 있는지 확인합니다.
 - passthrough나 자막 지연이 큼: 먼저 이 README의 기본값을 사용하고, 연결이 안정적이면 `audio.turn_end_silence_sec`, `audio.inbound_turn_end_silence_sec`, `audio.subtitle_finalize_silence_sec`를 조심해서 낮춥니다.
@@ -146,7 +148,7 @@ vrclt는 두 가지 실시간 번역 엔진을 지원하며, **번역 엔진** �
 | 중국 본토에서 사용 | 불가 | 가능 (`beijing` 엔드포인트) |
 | 발화 언어 감지 | 자동 감지 | **수동** — "내/상대 발화 언어"를 설정해야 함 |
 | 지원 언어 | `zh-Hans`/`zh-Hant`를 포함한 70개 이상 BCP-47 도착어 | 음성 지원 29개 + 텍스트 전용 31개; 중국어는 `zh` 하나뿐(간체/번체 구분 없음); 광둥어(`yue`)는 텍스트 전용 |
-| 번역 음성 | 화자 목소리 재현 | 기본 제공 음성 프리셋 (`qwen.voice`) |
+| 번역 음성 | 화자 목소리 재현 | 서버 측 음성 복제로 화자 목소리 재현 (`qwen.voice_clone`, 기본 `always`); 복제를 끄면 고정 음성 |
 | 끼어들기(barge-in) | 지원 | 미지원 — 발화가 겹치면 오디오가 줄지어 재생될 수 있음 |
 
 Qwen 참고 사항:
@@ -156,8 +158,12 @@ Qwen 참고 사항:
 - `zh-Hans`/`zh-Hant` 도착어는 둘 다 `zh`로 Qwen에 전달됩니다.
 - 선택한 도착어에 Qwen 음성 지원이 없으면 vrclt가 자동으로 세션을 텍스트 전용으로
   실행합니다(챗박스/자막은 계속 동작합니다).
-- 엔드포인트: `intl`(싱가포르) 또는 `beijing`; 워크스페이스 ID(선택)를 넣으면
-  최신 워크스페이스 전용 도메인으로 전환됩니다(위 3b 단계 참고).
+- 엔드포인트: `intl`(싱가포르) 또는 `beijing`. `intl`은 Model Studio
+  워크스페이스 ID가 **필수**이며, `beijing`은 없어도 동작합니다(위 3b 단계 참고).
+- 음성 복제: `qwen.voice_clone: always`(기본)는 응답마다 화자 목소리를
+  복제합니다 — 여러 명이 말하는 방에 가장 적합합니다. `once`는 세션 시작 시
+  한 번 복제하고, `off`는 모델 기본 음성 또는 `qwen.voice`에 설정한 미리
+  복제된 음성 ID(`qwen-translate-vc-...`)를 사용합니다.
 
 ## 앱 모드
 
@@ -282,9 +288,10 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 | `qwen.api_key` | `""` | DashScope API 키. 비어 있으면 `DASHSCOPE_API_KEY` 환경 변수를 사용할 수 있습니다. |
 | `qwen.model` | `qwen3.5-livetranslate-flash-realtime` | Qwen 실시간 번역 모델 이름. |
 | `qwen.endpoint` | `intl` | `intl`(싱가포르) 또는 `beijing`(중국 본토). 키는 리전에 묶여 있습니다. |
-| `qwen.workspace_id` | `""` | 선택 사항인 Model Studio 워크스페이스 ID. 워크스페이스 전용 `maas.aliyuncs.com` 도메인으로 전환합니다. |
+| `qwen.workspace_id` | `""` | Model Studio 워크스페이스 ID(`maas.aliyuncs.com` 도메인). `intl`에서는 필수이며 `beijing`은 비워 둘 수 있습니다. |
 | `qwen.base_url` | `""` | 고급: 전체 `wss://` URL 재정의. |
-| `qwen.voice` | `default` | Qwen 번역 음성 프리셋. |
+| `qwen.voice_clone` | `always` | 서버 측 화자 음성 복제: `always`(응답마다), `once`(세션 시작 시), `off`. |
+| `qwen.voice` | `""` | 복제가 `off`일 때: 비우면 모델 기본 음성, 또는 미리 복제된 음성 ID(`qwen-translate-vc-...`). |
 | `log_level` | `INFO` | Python 로그 레벨. |
 | `meta.last_version` | `""` | 현재 설정에서 확인한 마지막 앱 버전. 업데이트 후 1회 리셋 확인에 사용합니다. |
 | `app.mode` | `vrchat` | 활성 프로필: `vrchat` 또는 `discord`. |
