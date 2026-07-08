@@ -8,7 +8,8 @@ log = logging.getLogger(__name__)
 class AppState:
     def __init__(self, translation_on: bool = True, target_language: str = "en",
                  subtitles_on: bool = True, inbound_language: str = "ko",
-                 ui_lang: str = "en", text_only: bool = False):
+                 ui_lang: str = "en", text_only: bool = False,
+                 source_language: str = "", inbound_source_language: str = ""):
         self._lock = threading.Lock()
         self._translation_on = translation_on
         self._target_language = target_language
@@ -16,6 +17,8 @@ class AppState:
         self._inbound_language = inbound_language
         self._ui_lang = ui_lang
         self._text_only = text_only
+        self._source_language = source_language
+        self._inbound_source_language = inbound_source_language
         self._edit_mode = False
         self._wrist_edit_mode = False
         self._hold_mute = False
@@ -72,6 +75,37 @@ class AppState:
         if changed:
             log.info("state: target language -> %s", value)
             self._notify("target_language", value)
+
+    @property
+    def source_language(self) -> str:
+        """My spoken language (outbound). Only Qwen consumes it - the session
+        cannot auto-detect; Gemini ignores the value entirely."""
+        with self._lock:
+            return self._source_language
+
+    @source_language.setter
+    def source_language(self, value: str) -> None:
+        with self._lock:
+            changed = value != self._source_language
+            self._source_language = value
+        if changed:
+            log.info("state: source language -> %s", value or "(auto)")
+            self._notify("source_language", value)
+
+    @property
+    def inbound_source_language(self) -> str:
+        """Others' spoken language (inbound); Qwen-only like source_language."""
+        with self._lock:
+            return self._inbound_source_language
+
+    @inbound_source_language.setter
+    def inbound_source_language(self, value: str) -> None:
+        with self._lock:
+            changed = value != self._inbound_source_language
+            self._inbound_source_language = value
+        if changed:
+            log.info("state: inbound source language -> %s", value or "(auto)")
+            self._notify("inbound_source_language", value)
 
     @property
     def hold_mute(self) -> bool:

@@ -14,15 +14,17 @@ import logging
 import re
 import time
 
-from ..audio.game_tap import GameAudioTap, find_pid
-from ..audio.mic_in import MicCapture, CAPTURE_RATE
-from ..audio.player import PcmPlayer
-from .. import i18n
-from ..gemini.session import LiveTranslateSession
-from ..languages import language_label
-from ..out.osc_chatbox import Chatbox
-from ..state import AppState
-from ..subtitles import SubtitleStore
+from .audio.game_tap import GameAudioTap, find_pid
+from .audio.mic_in import MicCapture, CAPTURE_RATE
+from .audio.player import PcmPlayer
+from . import config as config_mod
+from . import i18n
+from .gemini.session import LiveTranslateSession
+from .qwen.session import QwenLiveTranslateSession
+from .languages import language_label
+from .out.osc_chatbox import Chatbox
+from .state import AppState
+from .subtitles import SubtitleStore
 
 log = logging.getLogger(__name__)
 
@@ -111,17 +113,20 @@ class Segmenter:
 
 
 class _TranslationPipeline:
-    """Shared pipeline skeleton: Segmenter + LiveTranslateSession wiring,
-    state subscription, audio-sink fan-out, and the segment flush timer.
+    """Shared pipeline skeleton: Segmenter + Live session wiring, state
+    subscription, audio-sink fan-out, and the segment flush timer.
     Subclasses provide the audio source, gating lambdas, and text sinks."""
 
-    LANGUAGE_FIELD = ""  # AppState field whose change reconnects the session
+    # AppState fields whose change reconnects the session (languages are read
+    # through the get_* callables again on every connect)
+    LANGUAGE_FIELDS: tuple = ()
 
     def __init__(self, cfg: dict, api_key: str, state: AppState, *,
                  source, name: str, get_target_language, enabled,
                  echo_target_language: bool,
                  turn_end_silence_sec: float,
                  finalize_silence_sec: float,
+                 get_source_language=lambda: "",
                  partial_interval_sec: float = 0.3,
                  audio_sinks: tuple = (),
                  glossary: str = ""):
@@ -131,13 +136,11 @@ class _TranslationPipeline:
         self.segmenter = Segmenter(finalize_silence_sec, self._on_final,
                                    self._on_partial,
                                    partial_interval_sec=partial_interval_sec)
-        self.session = LiveTranslateSession(
+        common = dict(
             api_key=api_key,
-            model=cfg["model"],
             source=source,
             name=name,
             get_target_language=get_target_language,
-            echo_target_language=echo_target_language,
             enabled=enabled,
             send_interval_ms=au["send_interval_ms"],
             idle_disconnect_sec=au["mic_idle_disconnect_sec"],
@@ -149,6 +152,21 @@ class _TranslationPipeline:
             on_turn_complete=self.segmenter.turn_complete,
             on_interrupted=self._on_interrupted,
         )
+        if config_mod.provider(cfg) == "qwen":
+            qw = cfg.get("qwen", {})
+            self.session = QwenLiveTranslateSession(
+                model=qw.get("model", "qwen3.5-livetranslate-flash-realtime"),
+                endpoint=qw.get("endpoint", "intl"),
+                voice=qw.get("voice", "default"),
+                get_source_language=get_source_language,
+                **common,
+            )
+        else:
+            self.session = LiveTranslateSession(
+                model=cfg["model"],
+                echo_target_language=echo_target_language,
+                **common,
+            )
         state.subscribe(self._on_state_change)
 
     def detach(self) -> None:
@@ -157,7 +175,7 @@ class _TranslationPipeline:
         self.state.unsubscribe(self._on_state_change)
 
     def _on_state_change(self, field: str, value) -> None:
-        if field == self.LANGUAGE_FIELD:
+        if field in self.LANGUAGE_FIELDS:
             self.session.request_restart()
 
     def _on_audio(self, pcm: bytes) -> None:
@@ -183,7 +201,7 @@ class _TranslationPipeline:
 class OutboundPipeline(_TranslationPipeline):
     """My voice -> translated voice into VB-Cable + translated text into chatbox."""
 
-    LANGUAGE_FIELD = "target_language"
+    LANGUAGE_FIELDS = ("target_language", "source_language")
 
     def __init__(self, cfg: dict, api_key: str, state: AppState):
         ob = cfg["outbound"]
@@ -228,6 +246,7 @@ class OutboundPipeline(_TranslationPipeline):
             source=self.mic,
             name="outbound",
             get_target_language=lambda: self.state.target_language,
+            get_source_language=lambda: self.state.source_language,
             enabled=lambda: self.state.translation_active,
             echo_target_language=ob["echo_target_language"],
             turn_end_silence_sec=au.get("turn_end_silence_sec", 0.55),
@@ -373,7 +392,7 @@ class OutboundPipeline(_TranslationPipeline):
 class InboundPipeline(_TranslationPipeline):
     """Others' voices (VRChat process audio) -> my-language subtitles."""
 
-    LANGUAGE_FIELD = "inbound_language"
+    LANGUAGE_FIELDS = ("inbound_language", "inbound_source_language")
 
     def __init__(self, cfg: dict, api_key: str, store: SubtitleStore, state: AppState):
         ib = cfg["inbound"]
@@ -394,6 +413,7 @@ class InboundPipeline(_TranslationPipeline):
             source=self.tap,
             name="inbound",
             get_target_language=lambda: self.state.inbound_language,
+            get_source_language=lambda: self.state.inbound_source_language,
             enabled=lambda: self._tap_running and self.state.subtitles_on,
             echo_target_language=False,
             turn_end_silence_sec=au.get(

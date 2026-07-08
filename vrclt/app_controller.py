@@ -271,6 +271,10 @@ class AppController:
                 cfg.get("inbound", {}).get("target_language", "ko")),
             ui_lang=i18n.detect(cfg.get("ui", {}).get("lang", "")),
             text_only=config_mod.is_text_only(cfg),
+            source_language=language_code_from_text(
+                cfg.get("outbound", {}).get("source_language", "")),
+            inbound_source_language=language_code_from_text(
+                cfg.get("inbound", {}).get("source_language", "")),
         )
         st.subscribe(self._persist_runtime_state)
         st.subscribe(lambda *_: self._notify())
@@ -292,6 +296,10 @@ class AppController:
             cfg.get("inbound", {}).get("target_language", "ko"))
         st.ui_lang = i18n.detect(cfg.get("ui", {}).get("lang", ""))
         st.text_only = config_mod.is_text_only(cfg)
+        st.source_language = language_code_from_text(
+            cfg.get("outbound", {}).get("source_language", ""))
+        st.inbound_source_language = language_code_from_text(
+            cfg.get("inbound", {}).get("source_language", ""))
 
     @staticmethod
     def _vr_config_signature(cfg: dict):
@@ -352,6 +360,10 @@ class AppController:
                 self.raw_cfg.setdefault("outbound", {})["target_language"] = value
             elif field == "inbound_language":
                 self.raw_cfg.setdefault("inbound", {})["target_language"] = value
+            elif field == "source_language":
+                self.raw_cfg.setdefault("outbound", {})["source_language"] = value
+            elif field == "inbound_source_language":
+                self.raw_cfg.setdefault("inbound", {})["source_language"] = value
             elif field == "translation_on":
                 self.raw_cfg.setdefault("dashboard", {})["translation_on"] = bool(value)
             elif field == "subtitles_on":
@@ -413,6 +425,17 @@ class AppController:
 
     def set_inbound_language(self, value: str) -> None:
         self.state.inbound_language = language_code_from_text(value)
+
+    def set_source_language(self, value: str) -> None:
+        """My spoken language ("" = auto). Consumed by Qwen sessions only;
+        applies live via a session reconnect, no full restart."""
+        self.state.source_language = language_code_from_text(value)
+
+    def set_inbound_source_language(self, value: str) -> None:
+        self.state.inbound_source_language = language_code_from_text(value)
+
+    def get_provider(self) -> str:
+        return config_mod.provider(self.cfg)
 
     def add_output_language(self, value: str) -> None:
         code = language_code_from_text(str(value or "").strip())
@@ -779,11 +802,16 @@ class AppController:
             self._app_registrar.reapply(
                 bool(self.cfg.get("steamvr", {}).get("register", True)))
 
-            key = config_mod.api_key(self.cfg)
+            prov = config_mod.provider(self.cfg)
+            key = config_mod.api_key_for(self.cfg, prov)
             if not key:
-                self._set_status("API key required", "API key is empty.")
+                self._set_status(
+                    "API key required",
+                    "Qwen (DashScope) API key is empty." if prov == "qwen"
+                    else "API key is empty.")
                 return False
-            key_error = config_mod.api_key_validation_error(key)
+            key_error = config_mod.api_key_validation_error(
+                key, provider_label="DashScope" if prov == "qwen" else "Gemini")
             if key_error:
                 self._set_status("API key invalid", key_error)
                 return False
