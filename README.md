@@ -149,7 +149,7 @@ directions: your voice and the inbound subtitles.
 | Works in mainland China | No | Yes (`beijing` endpoint) |
 | Spoken-language detection | Automatic | **Manual** — set "My/Others' spoken language" |
 | Languages | 70+ BCP-47 targets, incl. `zh-Hans`/`zh-Hant` | 29 with voice + 31 more text-only; plain `zh` only (no Simplified/Traditional split); Cantonese (`yue`) is text-only |
-| Translated voice | Replicates the speaker's voice | Replicates the speaker via server-side voice cloning (`qwen.voice_clone`, default `always`); or a fixed voice with cloning off |
+| Translated voice | Replicates the speaker's voice | Replicates the speaker via server-side voice cloning (`qwen.voice_clone`, default `once`); or a fixed voice with cloning off |
 | Barge-in (voice interrupts) | Yes | No — overlapping speech can queue audio |
 
 Qwen notes:
@@ -161,10 +161,11 @@ Qwen notes:
   session text-only (chatbox/subtitles keep working).
 - Endpoints: `intl` (Singapore) or `beijing`. `intl` **requires** the Model
   Studio workspace ID; `beijing` works without one (see step 3b above).
-- Voice cloning: `qwen.voice_clone: always` (default) clones each speaker's
-  voice per response — best for multi-speaker rooms; `once` clones at session
-  start; `off` uses the model's default voice or a pre-cloned voice ID set in
-  `qwen.voice` (`qwen-translate-vc-...`).
+- Voice cloning: `qwen.voice_clone: once` (default) clones the speaker's voice
+  at session start — right for your own microphone and keeps audio latency
+  low. `always` re-clones per response (multi-speaker audio, but synthesis
+  starts noticeably later); `off` uses the model's default voice or a
+  pre-cloned voice ID set in `qwen.voice` (`qwen-translate-vc-...`).
 
 ## App Modes
 
@@ -300,7 +301,7 @@ Top-level and app profile settings:
 | `qwen.endpoint` | `intl` | `intl` (Singapore) or `beijing` (mainland China). Keys are region-bound. |
 | `qwen.workspace_id` | `""` | Model Studio workspace ID (`maas.aliyuncs.com` domain). Required for `intl`; `beijing` may leave it empty. |
 | `qwen.base_url` | `""` | Advanced: full `wss://` URL override. |
-| `qwen.voice_clone` | `always` | Server-side speaker-voice cloning: `always` (per response), `once` (session start), or `off`. |
+| `qwen.voice_clone` | `once` | Server-side speaker-voice cloning: `once` (session start, low latency), `always` (per response, slower), or `off`. |
 | `qwen.voice` | `""` | With cloning `off`: empty = model default voice, or a pre-cloned voice ID (`qwen-translate-vc-...`). |
 | `log_level` | `INFO` | Python logging level. |
 | `meta.last_version` | `""` | Last app version that acknowledged the current config. Used for one-time update reset prompts. |

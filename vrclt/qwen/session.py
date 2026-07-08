@@ -145,7 +145,7 @@ class QwenLiveTranslateSession:
                  get_target_language, get_source_language=lambda: "",
                  endpoint: str = "intl", workspace_id: str = "",
                  base_url: str = "", voice: str = "",
-                 voice_clone: str = "always",
+                 voice_clone: str = "once",
                  enabled=lambda: True,
                  send_interval_ms: int = 100, idle_disconnect_sec: float = 15.0,
                  turn_end_silence_sec: float = 0.55,

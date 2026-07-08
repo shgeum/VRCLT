@@ -257,7 +257,7 @@ class SettingsForm:
         if kind == "qwen_voice_clone":
             w = NoWheelComboBox()
             w.addItems(list(config_mod.QWEN_VOICE_CLONE_MODES))
-            w.setCurrentText(str(value or "always"))
+            w.setCurrentText(str(value or "once"))
             return w
         if kind in ("input_device", "output_device"):
             w = NoWheelComboBox()

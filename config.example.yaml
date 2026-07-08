@@ -13,8 +13,9 @@ qwen:                        # Alibaba Cloud Model Studio (DashScope) realtime
   workspace_id: ""           # Model Studio workspace ID ({id}.<region>.maas domain).
                              # REQUIRED for intl; beijing may leave it empty
   base_url: ""               # advanced: full wss:// URL override
-  voice_clone: always        # server-side speaker-voice cloning (Gemini-style voice
-                             # replication): always (per response) | once | off
+  voice_clone: once          # server-side speaker-voice cloning (Gemini-style voice
+                             # replication): once (session start; low latency) |
+                             # always (per response; multi-speaker, slower) | off
   voice: ""                  # when voice_clone is off: "" = model default voice,
                              # or a pre-cloned voice ID (qwen-translate-vc-...)
 
