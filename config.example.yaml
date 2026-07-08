@@ -36,8 +36,10 @@ meta:
 
 hotkeys:                       # Windows global hotkeys for PC/desktop controls
   enabled: true
+  enabled_in_vr: true          # keep hotkeys active while SteamVR runs
   translation_toggle: Ctrl+Alt+T
   subtitles_toggle: Ctrl+Alt+S
+  translation_hold: ""         # hold to pause translation (passthrough); e.g. Ctrl+Alt+H
 
 outbound:                 # my voice -> others (VRChat hears the translation)
   enabled: true
@@ -45,11 +47,13 @@ outbound:                 # my voice -> others (VRChat hears the translation)
   echo_target_language: false
   mic_device: ""          # substring of device name; "" = default input
   tts_device: CABLE Input # VB-Cable playback side (VRChat mic = CABLE Output)
+  tts_gain: 1.0           # translated-voice volume 0.0-2.0 (also the monitor)
   monitor_device: ""      # also hear the translation myself ("" = off)
   text_only: false        # true = original mic passthrough + translated OSC text only
   voice_output: true      # false = no translated TTS output
   passthrough_while_translating: false  # true = raw mic always -> tts_device
   chatbox: true
+  glossary: ""            # pin translations, one "source=target" per line
 
 inbound:                  # others' voices -> me (subtitles)
   enabled: true

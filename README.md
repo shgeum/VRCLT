@@ -139,7 +139,11 @@ Dashboard:
 - Global PC hotkeys for translation/subtitle toggles
 - Output language and subtitle language, with searchable add controls for 70+
   Gemini Live Translation languages
-- Microphone input and translated voice output device selectors
+- Microphone input and translated voice output device selectors, with an
+  output test-tone button; Refresh devices restarts the runtime and picks up
+  hot-plugged devices
+- Translated-voice volume slider and a live mic level meter with the
+  detection-threshold marker
 - PC subtitle position, box size, and font size controls
 - Live subtitle preview
 
@@ -195,8 +199,8 @@ VRChat mode can use:
 - OSC chatbox output for translated text
 - Avatar OSC parameters such as `VRCLT_Enabled` and `VRCLT_Lang`
 - SteamVR subtitle overlay for inbound subtitles
-- SteamVR wrist menu for in-VR controls
-- SteamVR dashboard settings panel (open the SteamVR menu and pick the vrclt icon); includes mic and voice-output device pickers — changes apply shortly after the last click with a runtime restart
+- SteamVR wrist menu for in-VR controls, including runtime restart, subtitle font size, and a connection/error status readout
+- SteamVR dashboard settings panel (open the SteamVR menu and pick the vrclt icon); includes mic and voice-output device pickers — changes apply shortly after the last click with a runtime restart — plus translated-voice volume and an error status line (reconnecting, quota exceeded, invalid API key)
 - Auto-start with SteamVR: the release exe registers itself in SteamVR Settings > Startup/Overlay Apps; toggle auto-launch there or in vrclt Settings
 - After updating to a new release, run the new exe once so auto-start points at the new file (the registration itself survives updates; only the recorded exe path needs that first run to refresh)
 - Visible VR subtitle edit laser/cursor with corner resize handles
@@ -252,8 +256,10 @@ PC hotkeys:
 | Key | Default | Description |
 | --- | --- | --- |
 | `hotkeys.enabled` | `true` | Enables Windows global hotkeys. |
+| `hotkeys.enabled_in_vr` | `true` | Keeps global hotkeys active while SteamVR is running. |
 | `hotkeys.translation_toggle` | `Ctrl+Alt+T` | Toggles translation ON/OFF. Empty disables this hotkey. |
 | `hotkeys.subtitles_toggle` | `Ctrl+Alt+S` | Toggles subtitles ON/OFF. Empty disables this hotkey. |
+| `hotkeys.translation_hold` | `""` | Hold-to-pause translation: your raw voice passes through while held. Empty disables it. |
 
 Outbound translation:
 
@@ -264,11 +270,13 @@ Outbound translation:
 | `outbound.echo_target_language` | `false` | Also repeats source audio that is already in the target language. |
 | `outbound.mic_device` | `""` | Microphone device name substring. Empty uses the default input. |
 | `outbound.tts_device` | `CABLE Input` | Output device for translated voice and passthrough audio. |
+| `outbound.tts_gain` | `1.0` | Translated-voice volume from `0.0` to `2.0` (also applies to the monitor output; raw passthrough stays at unity). |
 | `outbound.monitor_device` | `""` | Optional local monitor output for translated voice. |
 | `outbound.text_only` | `false` | VRChat text-only mode: raw mic passthrough plus translated chatbox text. |
 | `outbound.voice_output` | `true` | Enables translated TTS audio output. |
 | `outbound.passthrough_while_translating` | `false` | Sends raw mic audio even while translation is active. |
 | `outbound.chatbox` | `true` | Sends translated text to the VRChat OSC chatbox. |
+| `outbound.glossary` | `""` | Translation glossary: one `source=target` per line to pin names/terms. |
 
 Inbound subtitles:
 

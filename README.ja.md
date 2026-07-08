@@ -137,7 +137,8 @@ Discord Canary または PTB を使う場合は、設定または `app.profiles.
 - 字幕 ON/OFF
 - PC グローバルホットキーで翻訳/字幕を切り替え
 - 出力言語と字幕言語、Gemini Live Translation の 70 以上の対応言語を検索して追加
-- マイク入力と翻訳音声出力デバイスの選択
+- マイク入力と翻訳音声出力デバイスの選択、出力テストトーンボタン付き。デバイス更新はランタイムを再起動し、後から挿したデバイスも認識します
+- 翻訳音声の音量スライダーと、検出しきい値マーカー付きリアルタイムマイクレベルメーター
 - PC 字幕の位置移動/リセット、ボックスサイズ、文字サイズ
 - リアルタイム字幕プレビュー
 
@@ -192,8 +193,8 @@ VRChat モードでは次の機能を使えます。
 - 翻訳テキストの OSC チャットボックス出力
 - `VRCLT_Enabled`、`VRCLT_Lang` などのアバター OSC パラメーター
 - 受信側字幕用の SteamVR 字幕オーバーレイ
-- VR 内で操作できる SteamVR 手首メニュー
-- SteamVR ダッシュボード設定パネル（SteamVR メニューを開いて vrclt アイコンを選択）。マイク・音声出力デバイスの選択も可能 — 最後のクリックから少し後にランタイム再起動とともに適用されます
+- VR 内で操作できる SteamVR 手首メニュー — ランタイム再起動、字幕文字サイズ、接続/エラー状態表示付き
+- SteamVR ダッシュボード設定パネル（SteamVR メニューを開いて vrclt アイコンを選択）。マイク・音声出力デバイスの選択も可能 — 最後のクリックから少し後にランタイム再起動とともに適用されます — さらに翻訳音声の音量と、エラー状態表示（再接続中、クォータ超過、API キー無効）
 - SteamVR 自動起動: リリース版 exe は SteamVR 設定 > スタートアップ/オーバーレイアプリに自動登録され、自動起動は SteamVR 設定または vrclt 設定で切り替えます
 - 新しいバージョンに更新した後は、新しい exe を一度起動してください。登録自体は維持されますが、自動起動が参照する exe パスは初回起動時に新しいファイルへ更新されます
 - VR 字幕編集 laser/cursor 表示と角ハンドルでのサイズ調整
@@ -251,6 +252,8 @@ PC ホットキー:
 | `hotkeys.enabled` | `true` | Windows グローバルホットキーを有効にします。 |
 | `hotkeys.translation_toggle` | `Ctrl+Alt+T` | 翻訳 ON/OFF の切り替えホットキー。空にすると無効になります。 |
 | `hotkeys.subtitles_toggle` | `Ctrl+Alt+S` | 字幕 ON/OFF の切り替えホットキー。空にすると無効になります。 |
+| `hotkeys.enabled_in_vr` | `true` | SteamVR 実行中もグローバルホットキーを有効のままにします。 |
+| `hotkeys.translation_hold` | `""` | 押している間だけ翻訳を一時停止（原音送出）するホットキー。空にすると無効になります。 |
 
 送信側翻訳:
 
@@ -261,11 +264,13 @@ PC ホットキー:
 | `outbound.echo_target_language` | `false` | すでに対象言語の入力も復唱します。 |
 | `outbound.mic_device` | `""` | マイクデバイス名の一部。空なら既定入力を使います。 |
 | `outbound.tts_device` | `CABLE Input` | 翻訳音声と原音送出の出力デバイス。 |
+| `outbound.tts_gain` | `1.0` | 翻訳音声の音量 `0.0`–`2.0`（モニター出力にも適用。原音送出はそのまま）。 |
 | `outbound.monitor_device` | `""` | 翻訳音声を自分で聞くためのモニター出力。 |
 | `outbound.text_only` | `false` | VRChat テキストのみモード。原音送出と翻訳チャットボックステキストだけを使います。 |
 | `outbound.voice_output` | `true` | 翻訳 TTS 音声出力を有効にします。 |
 | `outbound.passthrough_while_translating` | `false` | 翻訳が有効でも元のマイク音声を送ります。 |
 | `outbound.chatbox` | `true` | 翻訳テキストを VRChat OSC チャットボックスへ送ります。 |
+| `outbound.glossary` | `""` | 翻訳用語集。1 行に `原文=訳語` の形式で名前や用語の訳を固定します。 |
 
 受信側字幕:
 

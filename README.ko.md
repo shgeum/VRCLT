@@ -137,7 +137,8 @@ Discord Canary 또는 PTB를 사용한다면 설정 또는 `app.profiles.discord
 - 자막 ON/OFF
 - PC 전역 핫키로 번역/자막 토글
 - 출력 언어와 자막 언어, Gemini Live Translation 70개 이상 지원 언어 검색/추가
-- 마이크 입력과 번역 음성 출력 장치 선택
+- 마이크 입력과 번역 음성 출력 장치 선택, 출력 테스트 사운드 버튼 포함; 장치 새로고침은 런타임을 재시작하며 나중에 꽂은 장치도 인식합니다
+- 번역 음성 볼륨 슬라이더와 감지 임계값 표시가 있는 실시간 마이크 레벨 미터
 - PC 자막 위치 이동/리셋, 상자 크기, 글자 크기 조절
 - 실시간 자막 미리보기
 
@@ -192,8 +193,8 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 - 번역 텍스트 OSC 챗박스 출력
 - `VRCLT_Enabled`, `VRCLT_Lang` 같은 아바타 OSC 파라미터
 - 인바운드 자막용 SteamVR 자막 오버레이
-- VR 안에서 제어할 수 있는 SteamVR 손목 메뉴
-- SteamVR 대시보드 설정 패널 (SteamVR 메뉴를 열고 vrclt 아이콘 선택); 마이크·음성 출력 디바이스 선택 포함 — 마지막 클릭 후 잠시 뒤 런타임 재시작과 함께 적용됩니다
+- VR 안에서 제어할 수 있는 SteamVR 손목 메뉴 — 런타임 재시작, 자막 글자 크기, 연결/오류 상태 표시 포함
+- SteamVR 대시보드 설정 패널 (SteamVR 메뉴를 열고 vrclt 아이콘 선택); 마이크·음성 출력 디바이스 선택 포함 — 마지막 클릭 후 잠시 뒤 런타임 재시작과 함께 적용됩니다 — 그리고 번역 음성 볼륨과 오류 상태 표시(재연결 중, API 사용량 초과, API 키 오류)
 - SteamVR 자동 시작: 릴리스 exe가 SteamVR 설정 > 시작/오버레이 앱에 자동 등록되며, 자동 시작은 SteamVR 설정 또는 vrclt 설정에서 켜고 끕니다
 - 새 버전으로 업데이트한 뒤에는 새 exe를 한 번 실행해 주세요. 등록 자체는 유지되지만, 자동 시작이 가리키는 exe 경로는 첫 실행 때 새 파일로 갱신됩니다
 - VR 자막 편집 laser/cursor 표시와 모서리 크기 조절 핸들
@@ -247,8 +248,10 @@ PC 핫키:
 | 키 | 기본값 | 설명 |
 | --- | --- | --- |
 | `hotkeys.enabled` | `true` | Windows 전역 핫키를 켭니다. |
+| `hotkeys.enabled_in_vr` | `true` | SteamVR 실행 중에도 전역 핫키를 유지합니다. |
 | `hotkeys.translation_toggle` | `Ctrl+Alt+T` | 번역 ON/OFF 토글 핫키. 빈 값이면 비활성화됩니다. |
 | `hotkeys.subtitles_toggle` | `Ctrl+Alt+S` | 자막 ON/OFF 토글 핫키. 빈 값이면 비활성화됩니다. |
+| `hotkeys.translation_hold` | `""` | 누르는 동안 번역 일시중지(원음 전달) 핫키. 빈 값이면 비활성화됩니다. |
 
 아웃바운드 번역:
 
@@ -259,11 +262,13 @@ PC 핫키:
 | `outbound.echo_target_language` | `false` | 이미 대상 언어인 입력도 따라 말합니다. |
 | `outbound.mic_device` | `""` | 마이크 장치 이름 일부. 비어 있으면 기본 입력을 사용합니다. |
 | `outbound.tts_device` | `CABLE Input` | 번역 음성과 원음 전달을 내보낼 출력 장치. |
+| `outbound.tts_gain` | `1.0` | 번역 음성 볼륨 `0.0`–`2.0` (모니터 출력에도 적용; 원음 전달은 그대로 유지). |
 | `outbound.monitor_device` | `""` | 번역 음성을 내가 들을 모니터 출력 장치. |
 | `outbound.text_only` | `false` | VRChat 텍스트 전용 모드. 원음 전달과 번역 챗박스 텍스트만 사용합니다. |
 | `outbound.voice_output` | `true` | 번역 TTS 음성 출력을 켭니다. |
 | `outbound.passthrough_while_translating` | `false` | 번역 활성 상태에서도 원본 마이크 음성을 보냅니다. |
 | `outbound.chatbox` | `true` | 번역 텍스트를 VRChat OSC 챗박스로 보냅니다. |
+| `outbound.glossary` | `""` | 번역 용어집. 한 줄에 `원문=번역` 형식으로 이름/용어 번역을 고정합니다. |
 
 인바운드 자막:
 

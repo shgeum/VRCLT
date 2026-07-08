@@ -21,13 +21,14 @@ from ..state import AppState
 from .font_fallback import load_fallback_font
 from .panel_common import (
     COL_BG, COL_BTN, COL_DIM, COL_DRAG, COL_ON, COL_OFF, COL_SUB_ON, COL_TEXT,
-    cycle, draw_fit_text, language_label,
+    COL_ERR_RED as COL_ERR, COL_WARN_AMBER as COL_WARN,
+    cycle, draw_fit_text, lang_block, status_dot_color,
 )
 from .render import GlTexture, flip_bounds
 
 log = logging.getLogger(__name__)
 
-TEX_W, TEX_H = 1024, 756
+TEX_W, TEX_H = 1024, 854
 OVERLAY_KEY = "shgeum.vrclt.dashboard"
 OVERLAY_NAME = "vrclt"
 WIDTH_M = 2.4  # advisory; the dashboard scales overlays itself
@@ -37,8 +38,7 @@ ICON_PATH = APPDATA_DIR / "dashboard_icon.png"
 DEVICE_APPLY_DELAY_SEC = 1.8
 
 COL_PENDING = (130, 175, 255, 255)  # selected but not applied yet
-COL_WARN = (230, 168, 70, 255)      # configured device not present
-COL_ERR = (224, 100, 80, 255)
+STATUS_TEXT_BOX = (280, 18, 548, 70)  # header band between version and buttons
 
 # OpenVR overlay mouse coords use a bottom-left origin; our button rects are
 # top-left. Flip determined empirically - if rows ever hit mirrored, flip this.
@@ -74,6 +74,10 @@ BTN_FONT_PLUS = (460, 662, 540, 740)
 BTN_SUB_EDIT = (564, 662, 724, 740)
 BTN_WRIST_EDIT = (748, 662, 908, 740)
 BTN_RESET = (924, 662, 1008, 740)
+# volume row (translated-voice gain)
+BTN_VOL_MINUS = (16, 760, 96, 838)
+LBL_VOL_GAIN = (104, 760, 244, 838)   # label only
+BTN_VOL_PLUS = (252, 760, 332, 838)
 
 BUTTONS = (("toggle", BTN_TOGGLE), ("prev", BTN_PREV), ("next", BTN_NEXT),
            ("sub_toggle", BTN_SUB_TOGGLE), ("sub_prev", BTN_SUB_PREV),
@@ -83,7 +87,8 @@ BUTTONS = (("toggle", BTN_TOGGLE), ("prev", BTN_PREV), ("next", BTN_NEXT),
            ("reset", BTN_RESET), ("uilang", BTN_UILANG),
            ("autostart", BTN_AUTOSTART), ("restart", BTN_RESTART),
            ("mic_prev", BTN_MIC_PREV), ("mic_next", BTN_MIC_NEXT),
-           ("out_prev", BTN_OUT_PREV), ("out_next", BTN_OUT_NEXT))
+           ("out_prev", BTN_OUT_PREV), ("out_next", BTN_OUT_NEXT),
+           ("vol_minus", BTN_VOL_MINUS), ("vol_plus", BTN_VOL_PLUS))
 
 
 def _ensure_icon() -> bool:
@@ -109,7 +114,7 @@ class DashboardPanel:
     def __init__(self, state: AppState, languages: list[str], *,
                  inbound_languages: list[str] | None = None,
                  font_path: str = bundled_font("NotoSansCJKkr-Bold.otf"),
-                 get_status=lambda: False,
+                 get_status_info=lambda: (False, "status_stopped", ""),
                  on_text_only_toggle=lambda enabled: None,
                  on_font_size=lambda size: None,
                  get_font_size=lambda: 27,
@@ -119,11 +124,13 @@ class DashboardPanel:
                  get_devices=lambda: ([""], [""]),
                  get_mic_device=lambda: "",
                  get_tts_device=lambda: "",
-                 set_audio_devices=lambda mic, tts, on_done: on_done(False)):
+                 set_audio_devices=lambda mic, tts, on_done: on_done(False),
+                 on_tts_gain=lambda value: None,
+                 get_tts_gain=lambda: 1.0):
         self._state = state
         self._languages = languages or ["en"]
         self._inbound_languages = inbound_languages or ["ko", "en"]
-        self._get_status = get_status
+        self._get_status_info = get_status_info
         self._on_text_only_toggle = on_text_only_toggle
         self._on_font_size = on_font_size
         self._get_font_size = get_font_size
@@ -134,6 +141,8 @@ class DashboardPanel:
         self._get_mic_device = get_mic_device
         self._get_tts_device = get_tts_device
         self._set_audio_devices = set_audio_devices
+        self._on_tts_gain = on_tts_gain
+        self._get_tts_gain = get_tts_gain
         # device pickers: pending selections apply (save + runtime restart)
         # once, DEVICE_APPLY_DELAY_SEC after the last click
         self._dev_inputs, self._dev_outputs = get_devices()
@@ -226,7 +235,7 @@ class DashboardPanel:
 
         if (now - self._last_shown_check) > 1.0:
             self._last_shown_check = now
-            status = bool(self._get_status())
+            status = self._get_status_info()
             if status != self._last_status:
                 self._last_status = status
                 self._dirty.set()
@@ -247,7 +256,8 @@ class DashboardPanel:
 
         if self._visible and self._dirty.is_set():
             self._dirty.clear()
-            self._tex.update(self._render(bool(self._last_status)))
+            self._tex.update(self._render(
+                self._last_status or (False, "status_stopped", "")))
             ovl.setOverlayTexture(self._h, self._tex.vr_texture(openvr))
 
     def _handle_event(self, openvr, ev) -> None:
@@ -266,6 +276,11 @@ class DashboardPanel:
                 self._pressed = None
         elif et == openvr.VREvent_OverlayShown:
             self._visible = True
+            # pick up device-list changes (PortAudio reinit via Qt Refresh)
+            try:
+                self._dev_inputs, self._dev_outputs = self._get_devices()
+            except Exception:
+                pass
             self._dirty.set()
         elif et == openvr.VREvent_OverlayHidden:
             self._visible = False
@@ -324,6 +339,9 @@ class DashboardPanel:
             self._cycle_device("mic", 1 if button == "mic_next" else -1)
         elif button in ("out_prev", "out_next"):
             self._cycle_device("out", 1 if button == "out_next" else -1)
+        elif button in ("vol_minus", "vol_plus"):
+            step = 0.1 if button == "vol_plus" else -0.1
+            self._on_tts_gain(float(self._get_tts_gain()) + step)
 
     # ---------------- audio device pickers ----------------
     @staticmethod
@@ -394,6 +412,10 @@ class DashboardPanel:
         # runs on the controller worker thread: plain attribute writes only.
         # Pendings are cleared BEFORE the applying flag so an interleaved
         # tick cannot re-apply stale values.
+        try:
+            self._dev_inputs, self._dev_outputs = self._get_devices()
+        except Exception:
+            pass
         self._pending_mic = self._pending_out = None
         if not ok:
             self._devices_error_until = time.time() + 4.0
@@ -408,22 +430,15 @@ class DashboardPanel:
                       fonts=fonts or (self._font_small, self._font_tiny),
                       fill=text_fill, max_lines=1, pad_x=8, pad_y=4)
 
-    def _lang_block(self, d, lang, prev_box, lang_box, next_box, code: str,
+    def _lang_block(self, d, prev_box, lang_box, next_box, code: str,
                     caption: str) -> None:
-        for box, label in ((prev_box, "◀"), (next_box, "▶")):
-            d.rounded_rectangle(box, 16, fill=COL_BTN)
-            self._font_mid.draw(d, ((box[0] + box[2]) // 2, (box[1] + box[3]) // 2),
-                                label, fill=COL_TEXT, anchor="mm")
-        d.rounded_rectangle(lang_box, 16, fill=(28, 30, 38, 255))
-        draw_fit_text(
-            d, (lang_box[0] + 6, lang_box[1] + 26, lang_box[2] - 6, lang_box[3] - 66),
-            language_label(code),
-            fonts=(self._font_big, self._font_mid, self._font_small, self._font_tiny),
-            max_lines=1, pad_x=4, pad_y=2)
-        draw_fit_text(
-            d, (lang_box[0] + 6, lang_box[3] - 62, lang_box[2] - 6, lang_box[3] - 12),
-            caption, fonts=(self._font_tiny,), fill=COL_DIM, max_lines=1,
-            pad_x=4, pad_y=2, line_spacing=0)
+        lang_block(d, prev_box, lang_box, next_box, code, caption,
+                   fonts=(self._font_big, self._font_mid, self._font_small,
+                          self._font_tiny),
+                   arrow_font=self._font_mid, x_inset=6,
+                   label_top=26, label_bottom=66,
+                   caption_top=62, caption_bottom=12,
+                   label_pad=(4, 2), caption_pad=(4, 2))
 
     def _device_block(self, d, lang, prev_box, label_box, next_box,
                       names, cfg_value, pending, caption: str) -> None:
@@ -458,18 +473,23 @@ class DashboardPanel:
                       cap, fonts=(self._font_tiny,), fill=cap_fill, max_lines=1,
                       pad_x=4, pad_y=1, line_spacing=0)
 
-    def _render(self, connected: bool) -> Image.Image:
+    def _render(self, info: tuple) -> Image.Image:
+        connected, status_key, _detail = info
         st = self._state
         lang = st.ui_lang
         img = Image.new("RGBA", (TEX_W, TEX_H), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
         d.rounded_rectangle((0, 0, TEX_W - 1, TEX_H - 1), 28, fill=COL_BG)
 
-        # header: status + version
-        dot = COL_ON if connected else (110, 110, 110, 255)
+        # header: status dot + version + (only when non-nominal) status text
+        dot = status_dot_color(connected, status_key)
         d.ellipse(STATUS_DOT, fill=dot)
         self._font_small.draw(d, (72, (STATUS_DOT[1] + STATUS_DOT[3]) // 2),
                               f"vrclt v{__version__}", fill=COL_TEXT, anchor="lm")
+        if status_key != "status_running":
+            draw_fit_text(d, STATUS_TEXT_BOX, tr(lang, status_key),
+                          fonts=(self._font_small, self._font_tiny),
+                          fill=dot, max_lines=1, pad_x=4, pad_y=2)
         self._btn(d, BTN_UILANG, UI_LANG_LABELS.get(lang, lang))
         auto = self._get_auto_launch()
         if auto is None:
@@ -495,7 +515,7 @@ class DashboardPanel:
                       tr(lang, "my_to_other"),
                       fonts=(self._font_small, self._font_tiny),
                       max_lines=1, pad_x=0, pad_y=0, line_spacing=0)
-        self._lang_block(d, lang, BTN_PREV, BTN_LANG, BTN_NEXT,
+        self._lang_block(d, BTN_PREV, BTN_LANG, BTN_NEXT,
                          st.target_language, tr(lang, "out_lang"))
 
         # subtitles row
@@ -512,7 +532,7 @@ class DashboardPanel:
                       tr(lang, "other_to_sub"),
                       fonts=(self._font_small, self._font_tiny),
                       max_lines=1, pad_x=0, pad_y=0, line_spacing=0)
-        self._lang_block(d, lang, BTN_SUB_PREV, BTN_SUB_LANG, BTN_SUB_NEXT,
+        self._lang_block(d, BTN_SUB_PREV, BTN_SUB_LANG, BTN_SUB_NEXT,
                          st.inbound_language, tr(lang, "sub_lang"))
 
         # devices row
@@ -545,4 +565,18 @@ class DashboardPanel:
         self._btn(d, BTN_WRIST_EDIT, tr(lang, "wrist_move"),
                   fill=COL_DRAG if st.wrist_edit_mode else COL_BTN)
         self._btn(d, BTN_RESET, tr(lang, "pos_reset"))
+
+        # volume row (mirrors the font-size triple)
+        self._btn(d, BTN_VOL_MINUS, "−", fonts=(self._font_mid,))
+        d.rounded_rectangle(LBL_VOL_GAIN, 16, fill=(28, 30, 38, 255))
+        draw_fit_text(d, (LBL_VOL_GAIN[0], LBL_VOL_GAIN[1] + 6,
+                          LBL_VOL_GAIN[2], LBL_VOL_GAIN[1] + 46),
+                      f"{round(float(self._get_tts_gain()) * 100)}%",
+                      fonts=(self._font_small,), max_lines=1, pad_x=4, pad_y=2)
+        draw_fit_text(d, (LBL_VOL_GAIN[0], LBL_VOL_GAIN[3] - 34,
+                          LBL_VOL_GAIN[2], LBL_VOL_GAIN[3] - 6),
+                      tr(lang, "dash_voice_volume"),
+                      fonts=(self._font_tiny,), fill=COL_DIM, max_lines=1,
+                      pad_x=2, pad_y=1, line_spacing=0)
+        self._btn(d, BTN_VOL_PLUS, "+", fonts=(self._font_mid,))
         return img

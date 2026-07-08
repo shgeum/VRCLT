@@ -79,8 +79,11 @@ def wants_vr_renderer(cfg: dict) -> bool:
     return vr_panels_enabled(cfg)
 
 
-def make_wrist_panel(cfg, state, get_status, on_text_only_toggle=lambda enabled: None,
-                     on_transform_changed=lambda matrix, reset=False: None):
+def make_wrist_panel(cfg, state, get_status_info, on_text_only_toggle=lambda enabled: None,
+                     on_transform_changed=lambda matrix, reset=False: None,
+                     on_restart=lambda: None,
+                     on_font_size=lambda size: None,
+                     get_font_size=lambda: 27):
     from .vr.wrist_ui import WristPanel
     w = cfg.get("wrist_ui", {})
     try:
@@ -100,7 +103,10 @@ def make_wrist_panel(cfg, state, get_status, on_text_only_toggle=lambda enabled:
         font_path=resolve_font_path(w.get("font"), "NotoSansCJKkr-Bold.otf"),
         on_text_only_toggle=on_text_only_toggle,
         on_transform_changed=on_transform_changed,
-        get_status=get_status,
+        get_status_info=get_status_info,
+        on_restart=on_restart,
+        on_font_size=on_font_size,
+        get_font_size=get_font_size,
     )
 
 
@@ -127,11 +133,11 @@ def make_subtitle_panel(cfg, store, state, on_transform_changed=lambda matrix, r
     )
 
 
-def make_dashboard_panel(cfg, state, get_status, on_text_only_toggle,
+def make_dashboard_panel(cfg, state, get_status_info, on_text_only_toggle,
                          on_font_size, get_font_size,
                          get_auto_launch, set_auto_launch, on_restart,
                          get_devices, get_mic_device, get_tts_device,
-                         set_audio_devices):
+                         set_audio_devices, on_tts_gain, get_tts_gain):
     from .vr.dashboard_panel import DashboardPanel
     w = cfg.get("wrist_ui", {})
     return DashboardPanel(
@@ -139,7 +145,7 @@ def make_dashboard_panel(cfg, state, get_status, on_text_only_toggle,
         languages=cfg.get("control", {}).get("languages", ["en"]),
         inbound_languages=cfg.get("inbound", {}).get("languages", ["ko", "en"]),
         font_path=resolve_font_path(w.get("font"), "NotoSansCJKkr-Bold.otf"),
-        get_status=get_status,
+        get_status_info=get_status_info,
         on_text_only_toggle=on_text_only_toggle,
         on_font_size=on_font_size,
         get_font_size=get_font_size,
@@ -150,6 +156,8 @@ def make_dashboard_panel(cfg, state, get_status, on_text_only_toggle,
         get_mic_device=get_mic_device,
         get_tts_device=get_tts_device,
         set_audio_devices=set_audio_devices,
+        on_tts_gain=on_tts_gain,
+        get_tts_gain=get_tts_gain,
     )
 
 
@@ -262,7 +270,7 @@ class AppController:
             inbound_language=language_code_from_text(
                 cfg.get("inbound", {}).get("target_language", "ko")),
             ui_lang=i18n.detect(cfg.get("ui", {}).get("lang", "")),
-            text_only=self._is_text_only(cfg),
+            text_only=config_mod.is_text_only(cfg),
         )
         st.subscribe(self._persist_runtime_state)
         st.subscribe(lambda *_: self._notify())
@@ -283,7 +291,7 @@ class AppController:
         st.inbound_language = language_code_from_text(
             cfg.get("inbound", {}).get("target_language", "ko"))
         st.ui_lang = i18n.detect(cfg.get("ui", {}).get("lang", ""))
-        st.text_only = self._is_text_only(cfg)
+        st.text_only = config_mod.is_text_only(cfg)
 
     @staticmethod
     def _vr_config_signature(cfg: dict):
@@ -365,11 +373,37 @@ class AppController:
         except Exception:
             return False
 
+    def get_status_info(self) -> tuple[bool, str, str]:
+        """(connected, i18n status key, detail text). Non-blocking; safe to
+        call from the 30 Hz VR render thread and the Qt refresh timer."""
+        connected = self.connected()
+        with self._lock:
+            status = self.status
+            detail = self.last_error
+        key = "status_" + (status or "").strip().lower().replace(" ", "_")
+        if status == "Running" and not connected:
+            # surface session-level failure classes (quota, network) that the
+            # coarse runtime status can't distinguish from normal idle
+            for p in (self._pipeline, self._inbound):
+                sess = getattr(p, "session", None)
+                if sess is None:
+                    continue
+                if sess.error_class == "quota":
+                    return False, "status_quota_exceeded", sess.last_error
+                if sess.error_class:
+                    key, detail = "status_reconnecting", sess.last_error
+        return connected, key, detail
+
     def subtitles_snapshot(self):
         return self.store.snapshot()
 
     def set_translation_on(self, value: bool) -> None:
         self.state.translation_on = value
+
+    def set_hold_mute(self, value: bool) -> None:
+        """Transient hold-to-pause (hotkey held): pauses translation without
+        touching the persisted translation_on toggle."""
+        self.state.hold_mute = bool(value)
 
     def set_subtitles_on(self, value: bool) -> None:
         self.state.subtitles_on = value
@@ -440,8 +474,39 @@ class AppController:
 
         self._persist("close action", mutate)
 
+    def mic_level(self) -> tuple[float, float] | None:
+        """(rms, effective gate threshold incl. echo-guard boost) of the
+        running mic, or None when stopped/stale (mic died, restart window)."""
+        pipeline = self._pipeline
+        mic = getattr(pipeline, "mic", None) if pipeline is not None else None
+        if mic is None or (time.time() - mic.last_rms_time) > 0.5:
+            return None
+        return mic.last_rms, mic.last_effective_threshold
+
+    def tts_gain(self) -> float:
+        return float(self.cfg.get("outbound", {}).get("tts_gain", 1.0))
+
+    def set_tts_gain(self, value: float) -> None:
+        """Persist outbound.tts_gain and live-apply it to the running
+        translated-voice players (no restart). Safe from the VR render
+        thread (_persist saves off-thread; set_gain is a float write)."""
+        value = max(0.0, min(2.0, round(float(value), 2)))
+
+        def mutate():
+            self.raw_cfg.setdefault("outbound", {})["tts_gain"] = value
+            self.cfg.setdefault("outbound", {})["tts_gain"] = value
+
+        self._persist("tts gain", mutate)
+        pipeline = self._pipeline
+        if pipeline is not None:
+            for p in (getattr(pipeline, "tts_player", None),
+                      getattr(pipeline, "monitor", None)):
+                if p is not None:
+                    p.set_gain(value)
+
     def set_overlay_font_size(self, value: int) -> None:
-        value = max(18, min(72, int(value)))
+        value = max(config_mod.OVERLAY_FONT_MIN,
+                    min(config_mod.OVERLAY_FONT_MAX, int(value)))
 
         def mutate():
             self.raw_cfg.setdefault("overlay", {})["font_size"] = value
@@ -498,8 +563,10 @@ class AppController:
             height_m = float(height_m)
         except Exception:
             return
-        width_m = round(max(0.45, min(1.6, width_m)), 2)
-        height_m = round(max(0.10, min(0.60, height_m)), 2)
+        width_m = round(max(config_mod.OVERLAY_MIN_WIDTH_M,
+                            min(config_mod.OVERLAY_MAX_WIDTH_M, width_m)), 2)
+        height_m = round(max(config_mod.OVERLAY_MIN_HEIGHT_M,
+                             min(config_mod.OVERLAY_MAX_HEIGHT_M, height_m)), 2)
 
         def mutate():
             overlay = self.raw_cfg.setdefault("overlay", {})
@@ -570,82 +637,110 @@ class AppController:
         self._persist("subtitle transform", mutate)
         self._refresh_renderer_signature()
 
-    def set_text_only(self, value: bool) -> None:
-        value = bool(value)
-        self.state.text_only = value
+    def _spawn(self, name: str, fn: Callable[[], None]) -> threading.Thread:
+        """Start a fire-and-forget daemon worker."""
+        t = threading.Thread(target=fn, daemon=True, name=name)
+        t.start()
+        return t
 
+    def _mutate_and_restart(self, label: str, mutate_cfg: Callable[[dict], None], *,
+                            thread_name: str, force_profile: bool = False,
+                            skip_if_restarting: bool = False,
+                            on_done: Callable[[bool], None] | None = None,
+                            on_error: Callable[[Exception], None] | None = None) -> None:
+        """Snapshot raw_cfg -> mutate_cfg(cfg) -> apply profile -> save ->
+        restart, on a worker thread and under _lifecycle_lock so concurrent
+        restarts from other UIs serialize instead of clobbering each other.
+        Safe to call from the VR render thread. on_done(ok) always fires on
+        the worker (ok=False on the shutdown/skip paths); on_error(e) fires
+        before last_error when mutate/save/restart raise."""
         def apply():
-            with self._lock:
-                if self._restarting:
-                    return
+            ok = False
             try:
-                cfg = copy.deepcopy(self.raw_cfg)
-                if value:
-                    cfg.setdefault("app", {})["mode"] = "vrchat"
-                cfg.setdefault("outbound", {})["text_only"] = value
-                cfg = config_mod.apply_app_profile(cfg, force=True)
-                config_mod.save(cfg)
+                if skip_if_restarting:
+                    with self._lock:
+                        if self._restarting:
+                            return
+                with self._lifecycle_lock:
+                    if self._closed:
+                        return
+                    with self._lock:
+                        cfg = copy.deepcopy(self.raw_cfg)
+                    mutate_cfg(cfg)
+                    cfg = config_mod.apply_app_profile(cfg, force=force_profile)
+                    config_mod.save(cfg)
+                    ok = self._restart_locked(cfg)
             except Exception as e:
-                log.exception("failed to apply text-only mode")
-                self.state.text_only = not value
+                log.exception("failed to apply %s", label)
+                if on_error is not None:
+                    try:
+                        on_error(e)
+                    except Exception:
+                        log.debug("%s error callback failed", label, exc_info=True)
                 self.last_error = str(e)
                 self._notify()
-                return
-            self.restart(cfg)
+            finally:
+                if on_done is not None:
+                    try:
+                        on_done(ok)
+                    except Exception:
+                        log.debug("%s done callback failed", label, exc_info=True)
 
-        threading.Thread(target=apply, daemon=True, name="vrclt-text-only-restart").start()
+        self._spawn(thread_name, apply)
+
+    def set_text_only(self, value: bool) -> None:
+        value = bool(value)
+        self.state.text_only = value  # optimistic; reverted on failure
+
+        def mutate(cfg):
+            if value:
+                cfg.setdefault("app", {})["mode"] = "vrchat"
+            cfg.setdefault("outbound", {})["text_only"] = value
+
+        self._mutate_and_restart(
+            "text-only mode", mutate, thread_name="vrclt-text-only-restart",
+            force_profile=True, skip_if_restarting=True,
+            on_error=lambda e: setattr(self.state, "text_only", not value))
 
     def set_audio_devices(self, mic: str | None, tts: str | None,
                           on_done: Callable[[bool], None] = lambda ok: None) -> None:
         """Persist outbound.mic_device / outbound.tts_device (None = leave
         unchanged) and restart the runtime. Runs on a worker thread; safe to
         call from the VR render thread. on_done(ok) fires on the worker."""
-        def apply():
-            ok = False
-            try:
-                # snapshot/save/restart under the lifecycle lock so an
-                # in-flight restart from another UI can't be clobbered
-                with self._lifecycle_lock:
-                    if self._closed:
-                        return
-                    with self._lock:
-                        cfg = copy.deepcopy(self.raw_cfg)
-                    ob = cfg.setdefault("outbound", {})
-                    if mic is not None:
-                        ob["mic_device"] = mic
-                    if tts is not None:
-                        ob["tts_device"] = tts
-                    cfg = config_mod.apply_app_profile(cfg)
-                    config_mod.save(cfg)
-                    ok = self._restart_locked(cfg)
-            except Exception as e:
-                log.exception("failed to apply audio devices")
-                self.last_error = str(e)
-                self._notify()
-            finally:
-                try:
-                    on_done(ok)
-                except Exception:
-                    log.debug("audio-device done callback failed", exc_info=True)
+        def mutate(cfg):
+            ob = cfg.setdefault("outbound", {})
+            if mic is not None:
+                ob["mic_device"] = mic
+            if tts is not None:
+                ob["tts_device"] = tts
 
-        threading.Thread(target=apply, daemon=True,
-                         name="vrclt-audio-device-restart").start()
+        self._mutate_and_restart(
+            "audio devices", mutate, thread_name="vrclt-audio-device-restart",
+            on_done=on_done)
 
     def start(self) -> bool:
         return self.restart(self.raw_cfg)
 
-    def restart(self, cfg: dict | None = None) -> bool:
+    def restart(self, cfg: dict | None = None, *, reinit_audio: bool = False) -> bool:
         with self._lifecycle_lock:
             if self._closed:
                 return False
-            return self._restart_locked(cfg)
+            return self._restart_locked(cfg, reinit_audio=reinit_audio)
+
+    def reinit_audio_devices(self) -> bool:
+        """Restart the runtime, re-initializing PortAudio in the stopped
+        window so newly hot-plugged/removed devices become visible (PortAudio
+        snapshots its device list at init)."""
+        with self._lifecycle_lock:
+            if self._closed:
+                return False
+            return self._restart_locked(None, reinit_audio=True)
 
     def restart_async(self) -> None:
         """Fire-and-forget restart; safe to call from the Qt or VR threads."""
-        threading.Thread(target=self.restart, daemon=True,
-                         name="vrclt-restart").start()
+        self._spawn("vrclt-restart", self.restart)
 
-    def _restart_locked(self, cfg: dict | None) -> bool:
+    def _restart_locked(self, cfg: dict | None, reinit_audio: bool = False) -> bool:
         with self._lock:
             self._restarting = True
         try:
@@ -663,7 +758,12 @@ class AppController:
                 and wants_vr_renderer(new_cfg)
                 and self._vr_config_signature(new_cfg) == renderer_sig
             )
+            prev_thread = self._thread
             self.stop(timeout=8.0, keep_renderer=keep_renderer)
+            if reinit_audio:
+                # before the API-key check so devices refresh even when the
+                # subsequent start aborts (key missing)
+                self._reinit_portaudio(prev_thread)
             with self._lock:
                 self.raw_cfg = base_cfg
                 self.cfg = new_cfg
@@ -697,6 +797,34 @@ class AppController:
             with self._lock:
                 self._restarting = False
 
+    @staticmethod
+    def _reinit_portaudio(prev_thread: threading.Thread | None) -> bool:
+        """Re-init PortAudio between stop() and _start_runtime. Only safe with
+        every stream closed - stop() joining the runtime thread guarantees
+        that (the only PortAudio users are mic_in/player/devices; ProcTap and
+        the GL renderer are unrelated)."""
+        if prev_thread is not None and prev_thread.is_alive():
+            log.warning("PortAudio reinit skipped: runtime thread still alive "
+                        "(streams may be open)")
+            return False
+        import sounddevice as sd
+        try:
+            sd.stop()  # defensively close a leftover sd.play() (sound test)
+            # private but long-stable sounddevice API; the pair keeps the
+            # module's _initialized counter balanced for its atexit handler
+            terminate = getattr(sd, "_terminate", None)
+            initialize = getattr(sd, "_initialize", None)
+            if terminate is None or initialize is None:
+                log.warning("PortAudio reinit unavailable in this sounddevice version")
+                return False
+            terminate()
+            initialize()
+            log.info("PortAudio reinitialized - device list refreshed")
+            return True
+        except Exception:
+            log.exception("PortAudio reinit failed")
+            return False
+
     def get_steamvr_auto_launch(self) -> bool | None:
         """Cached SteamVR auto-launch state (SteamVR owns the truth);
         None when unknown/unavailable. Refreshes in the background so the
@@ -726,8 +854,7 @@ class AppController:
             if changed:
                 self._notify()
 
-        threading.Thread(target=refresh, daemon=True,
-                         name="vrclt-autolaunch-poll").start()
+        self._spawn("vrclt-autolaunch-poll", refresh)
         return value
 
     def set_steamvr_auto_launch(self, value: bool) -> None:
@@ -751,8 +878,7 @@ class AppController:
                         self._auto_launch_cache = (0.0, None)
             self._notify()
 
-        threading.Thread(target=apply, daemon=True,
-                         name="vrclt-steamvr-autolaunch").start()
+        self._spawn("vrclt-steamvr-autolaunch", apply)
 
     def shutdown(self, timeout: float = 8.0) -> None:
         """Stop for good: a queued restart() arriving after this is a no-op."""
@@ -825,7 +951,7 @@ class AppController:
                 ib = inbound
                 if mult > 1.0:
                     pipeline.mic.set_threshold_boost(
-                        lambda: mult if (state.translation_on and ib.tap.active(hold_sec)) else 1.0)
+                        lambda: mult if (state.translation_active and ib.tap.active(hold_sec)) else 1.0)
                 if hold_sec > 0.0:
                     pipeline.mic.set_suppressed(
                         lambda: ib.tap.active(hold_sec),
@@ -856,13 +982,17 @@ class AppController:
                 if cfg.get("wrist_ui", {}).get("enabled", True):
                     panels.insert(0, make_wrist_panel(
                         cfg, state,
-                        get_status=self.connected,
+                        get_status_info=self.get_status_info,
                         on_text_only_toggle=self.set_text_only,
-                        on_transform_changed=self.set_wrist_transform))
+                        on_transform_changed=self.set_wrist_transform,
+                        on_restart=self.restart_async,
+                        on_font_size=self.set_overlay_font_size,
+                        get_font_size=lambda: int(
+                            self.cfg.get("overlay", {}).get("font_size", 27))))
                 if cfg.get("steamvr", {}).get("dashboard_panel", True):
                     panels.append(make_dashboard_panel(
                         cfg, state,
-                        get_status=self.connected,
+                        get_status_info=self.get_status_info,
                         on_text_only_toggle=self.set_text_only,
                         on_font_size=self.set_overlay_font_size,
                         get_font_size=lambda: int(
@@ -875,7 +1005,9 @@ class AppController:
                             self.cfg.get("outbound", {}).get("mic_device", "") or ""),
                         get_tts_device=lambda: str(
                             self.cfg.get("outbound", {}).get("tts_device", "") or ""),
-                        set_audio_devices=self.set_audio_devices))
+                        set_audio_devices=self.set_audio_devices,
+                        on_tts_gain=self.set_tts_gain,
+                        get_tts_gain=self.tts_gain))
                 if panels:
                     from .vr.render import VrRenderer
                     renderer = VrRenderer(panels, can_start=steamvr_running)
@@ -961,12 +1093,3 @@ class AppController:
             self.last_error = error
         self._notify()
 
-    @staticmethod
-    def _is_text_only(cfg: dict) -> bool:
-        ob = cfg.get("outbound", {})
-        return bool(
-            ob.get("text_only", False)
-            or (not ob.get("voice_output", True)
-                and ob.get("passthrough_while_translating", False)
-                and ob.get("chatbox", False))
-        )

@@ -11,6 +11,7 @@ import logging
 import queue
 import threading
 
+import numpy as np
 import sounddevice as sd
 
 from . import devices
@@ -20,10 +21,12 @@ log = logging.getLogger(__name__)
 
 class PcmPlayer:
     def __init__(self, device_substr: str, name: str = "player", rate: int = 24000,
-                 prebuffer_ms: int = 120, slice_ms: int = 100, block_ms: int = 20):
+                 prebuffer_ms: int = 120, slice_ms: int = 100, block_ms: int = 20,
+                 gain: float = 1.0):
         self._device_substr = device_substr
         self._name = name
         self._rate = rate
+        self._gain = max(0.0, min(2.0, float(gain)))
         self._slice_bytes = max(1, rate * max(1, slice_ms) // 1000) * 2
         self._blocksize = max(1, rate * max(1, block_ms) // 1000)
         self._prebuffer_bytes = rate * 2 * prebuffer_ms // 1000
@@ -31,6 +34,17 @@ class PcmPlayer:
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._epoch = 0
+
+    def set_gain(self, gain: float) -> None:
+        """Live volume change; a plain float write is atomic under the GIL."""
+        self._gain = max(0.0, min(2.0, float(gain)))
+
+    def _apply_gain(self, data: bytes) -> bytes:
+        g = self._gain
+        if abs(g - 1.0) < 1e-3:
+            return data  # fast path keeps unity playback zero-cost
+        x = np.frombuffer(data, dtype=np.int16).astype(np.float32) * g
+        return np.clip(x, -32768.0, 32767.0).astype(np.int16).tobytes()
 
     def start(self) -> None:
         idx = devices.find_output(self._device_substr)
@@ -80,7 +94,7 @@ class PcmPlayer:
                     # turn gap / underrun: flush remainder and re-buffer next turn
                     if pending:
                         try:
-                            stream.write(bytes(pending))
+                            stream.write(self._apply_gain(bytes(pending)))
                         except Exception:
                             log.exception("%s: write failed", self._name)
                         pending.clear()
@@ -95,7 +109,7 @@ class PcmPlayer:
                     continue  # keep buffering until we have a cushion
                 playing = True
                 try:
-                    stream.write(bytes(pending))
+                    stream.write(self._apply_gain(bytes(pending)))
                 except Exception:
                     log.exception("%s: write failed", self._name)
                 pending.clear()

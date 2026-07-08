@@ -44,6 +44,22 @@ def _is_invalid_api_key_error(exc: Exception) -> bool:
     return (str(code) == "1007" and "api key" in text) or "api key not valid" in text
 
 
+def _looks_like_glossary_rejection(exc: Exception) -> bool:
+    text = str(exc).lower()
+    code = str(getattr(exc, "code", None) or getattr(exc, "status_code", None))
+    return code in ("400", "1007", "1008") and "system_instruction" in text
+
+
+def _classify_session_error(exc: Exception) -> str:
+    """Short reason class for UI display: 'quota' | 'network'."""
+    text = str(exc).lower()
+    code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    if str(code) == "429" or "resource_exhausted" in text or "quota" in text \
+            or "rate limit" in text:
+        return "quota"
+    return "network"
+
+
 class AudioSource:
     """Interface the session pulls 16 kHz mono int16 PCM from."""
 
@@ -59,6 +75,7 @@ class LiveTranslateSession:
                  enabled=lambda: True,
                  send_interval_ms: int = 100, idle_disconnect_sec: float = 15.0,
                  turn_end_silence_sec: float = 0.55,
+                 glossary: str = "",
                  on_src=None, on_dst=None, on_audio=None, on_turn_complete=None,
                  on_interrupted=None, on_session_state=None):
         self._client = genai.Client(api_key=api_key)
@@ -77,7 +94,18 @@ class LiveTranslateSession:
         self._on_turn_complete = on_turn_complete
         self._on_interrupted = on_interrupted
         self._on_session_state = on_session_state
+        glossary = str(glossary or "").strip()
+        if len(glossary) > 2000:
+            log.warning("[%s] glossary truncated to 2000 chars", name)
+            glossary = glossary[:2000]
+        self._glossary = glossary
+        self._glossary_disabled = False
         self.connected = False
+        # last-failure diagnostics for the status UIs (written on the session
+        # asyncio thread; read lock-free from the Qt/VR threads)
+        self.last_error = ""
+        self.error_class = ""   # "" | "quota" | "network"
+        self.next_retry_at = 0.0
         self._closing = False
         self._restart = False
         # diagnostics (logged every 15s by the watchdog while connected)
@@ -91,17 +119,28 @@ class LiveTranslateSession:
         """Apply changed settings (e.g. target language) by reconnecting."""
         self._restart = True
 
+    def _glossary_instruction(self) -> str:
+        if not self._glossary or self._glossary_disabled:
+            return ""
+        return ("Glossary: always translate the following terms exactly as "
+                "specified (source=target), overriding your default wording:\n"
+                + self._glossary)
+
     def _model_and_config(self) -> tuple[str, types.LiveConnectConfig]:
         target = self._get_target()
+        instr = self._glossary_instruction()
         if target in AGENT_FALLBACK_LANGUAGES:
+            system = AGENT_INSTRUCTION.format(
+                language=AGENT_FALLBACK_LANGUAGES[target])
+            if instr:
+                system += "\n\n" + instr
             return AGENT_MODEL, types.LiveConnectConfig(
                 response_modalities=["AUDIO"],
-                system_instruction=AGENT_INSTRUCTION.format(
-                    language=AGENT_FALLBACK_LANGUAGES[target]),
+                system_instruction=system,
                 input_audio_transcription=types.AudioTranscriptionConfig(),
                 output_audio_transcription=types.AudioTranscriptionConfig(),
             )
-        return self._model, types.LiveConnectConfig(
+        kwargs = dict(
             response_modalities=["AUDIO"],
             translation_config=types.TranslationConfig(
                 target_language_code=target,
@@ -110,6 +149,11 @@ class LiveTranslateSession:
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
         )
+        if instr:
+            # only attached when a glossary is set, so the empty-glossary
+            # config stays byte-identical to the pre-glossary behavior
+            kwargs["system_instruction"] = instr
+        return self._model, types.LiveConnectConfig(**kwargs)
 
     async def run(self, stop: asyncio.Event) -> None:
         """Supervisor: wait for voice, run sessions, reconnect with backoff."""
@@ -138,6 +182,16 @@ class LiveTranslateSession:
                         "Gemini API key is invalid. Update the API key in Settings."
                     ) from e
                 clean = False
+                self.error_class = _classify_session_error(e)
+                self.last_error = str(e)[:200]
+                if self._glossary and not self._glossary_disabled \
+                        and _looks_like_glossary_rejection(e):
+                    # self-heal: never loop forever on a server that rejects
+                    # system_instruction for the translate model
+                    self._glossary_disabled = True
+                    log.warning("[%s] model rejected the glossary "
+                                "system_instruction - continuing without it",
+                                self.name)
                 log.exception("[%s] session error", self.name)
             if stop.is_set():
                 break
@@ -146,6 +200,7 @@ class LiveTranslateSession:
                 await asyncio.sleep(0.2)
             else:
                 log.info("[%s] reconnecting in %.0fs", self.name, backoff)
+                self.next_retry_at = time.time() + backoff
                 await _sleep_interruptible(backoff, stop)
                 backoff = min(backoff * 2, RECONNECT_MAX_BACKOFF)
 
@@ -158,6 +213,11 @@ class LiveTranslateSession:
         async with self._client.aio.live.connect(model=model, config=config) as session:
             self._closing = False
             self.connected = True
+            # clear on successful connect (not on retry start) so the status
+            # UI doesn't flicker between backoff sleeps and connect attempts
+            self.last_error = ""
+            self.error_class = ""
+            self.next_retry_at = 0.0
             if self._on_session_state:
                 self._on_session_state(True)
             log.info("[%s] session started (target=%s)", self.name, target)

@@ -137,7 +137,8 @@ API 密钥会以明文保存在该文件中。
 - 字幕 ON/OFF
 - 使用 PC 全局热键切换翻译/字幕
 - 输出语言和字幕语言，并可搜索添加 Gemini Live Translation 支持的 70+ 种语言
-- 麦克风输入和翻译语音输出设备选择
+- 麦克风输入和翻译语音输出设备选择，附输出测试音按钮；刷新设备会重启运行时并识别后插入的设备
+- 翻译语音音量滑块和带检测阈值标记的实时麦克风电平表
 - PC 字幕位置移动/重置、字幕框大小和字号
 - 实时字幕预览
 
@@ -191,8 +192,8 @@ VRChat 模式可使用:
 - 翻译文本的 OSC 聊天框输出
 - `VRCLT_Enabled`、`VRCLT_Lang` 等角色 OSC 参数
 - 用于入站字幕的 SteamVR 字幕叠加层
-- 可在 VR 内控制的 SteamVR 手腕菜单
-- SteamVR 仪表板设置面板（打开 SteamVR 菜单并选择 vrclt 图标）；包含麦克风和语音输出设备选择 — 最后一次点击稍后会随运行时重启一起生效
+- 可在 VR 内控制的 SteamVR 手腕菜单 — 含运行时重启、字幕字号和连接/错误状态显示
+- SteamVR 仪表板设置面板（打开 SteamVR 菜单并选择 vrclt 图标）；包含麦克风和语音输出设备选择 — 最后一次点击稍后会随运行时重启一起生效 — 以及翻译语音音量和错误状态显示（正在重连、配额用尽、API 密钥无效）
 - 随 SteamVR 自动启动: 发布版 exe 会自动注册到 SteamVR 设置 > 启动/叠加层应用，可在 SteamVR 设置或 vrclt 设置中开关自动启动
 - 更新到新版本后请先运行一次新 exe。注册本身会保留，但自动启动指向的 exe 路径需要首次运行时才会更新为新文件
 - VR 字幕编辑 laser/cursor 显示和角落尺寸调整手柄
@@ -248,6 +249,8 @@ PC 热键:
 | `hotkeys.enabled` | `true` | 启用 Windows 全局热键。 |
 | `hotkeys.translation_toggle` | `Ctrl+Alt+T` | 翻译 ON/OFF 切换热键。留空会禁用该热键。 |
 | `hotkeys.subtitles_toggle` | `Ctrl+Alt+S` | 字幕 ON/OFF 切换热键。留空会禁用该热键。 |
+| `hotkeys.enabled_in_vr` | `true` | SteamVR 运行时保持全局热键有效。 |
+| `hotkeys.translation_hold` | `""` | 按住期间暂停翻译（原声直通）的热键。留空会禁用。 |
 
 出站翻译:
 
@@ -258,11 +261,13 @@ PC 热键:
 | `outbound.echo_target_language` | `false` | 对已经是目标语言的输入也进行复述。 |
 | `outbound.mic_device` | `""` | 麦克风设备名片段。留空时使用默认输入。 |
 | `outbound.tts_device` | `CABLE Input` | 翻译语音和原声直通的输出设备。 |
+| `outbound.tts_gain` | `1.0` | 翻译语音音量 `0.0`–`2.0`（也应用于监听输出；原声直通保持不变）。 |
 | `outbound.monitor_device` | `""` | 可选的本地翻译语音监听输出。 |
 | `outbound.text_only` | `false` | VRChat 仅文本模式。使用原声直通和翻译聊天框文本。 |
 | `outbound.voice_output` | `true` | 启用翻译 TTS 音频输出。 |
 | `outbound.passthrough_while_translating` | `false` | 翻译启用时也发送原始麦克风音频。 |
 | `outbound.chatbox` | `true` | 将翻译文本发送到 VRChat OSC 聊天框。 |
+| `outbound.glossary` | `""` | 翻译词汇表。每行 `原文=译文`，用于固定名字/术语的译法。 |
 
 入站字幕:
 

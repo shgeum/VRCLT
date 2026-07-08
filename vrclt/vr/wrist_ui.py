@@ -12,36 +12,35 @@ Textures are persistent OpenGL textures (see vr/render.py for why).
 """
 import logging
 import math
-import os
 import threading
-from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw
 
+from ..config import APPDATA_DIR
 from ..resources import bundled_font, resolve_font_path
 from ..state import AppState
 from ..i18n import tr, LANGS as UI_LANGS, UI_LANG_LABELS
 from .font_fallback import load_fallback_font
 from .panel_common import (
     COL_BG, COL_BTN, COL_DIM, COL_DRAG, COL_OFF, COL_ON, COL_SUB_ON, COL_TEXT,
-    LASER_TEX_H, LASER_TEX_W, LASER_WIDTH_M,
-    coerce_transform, create_overlay_set, cursor_texture, cycle, draw_fit_text,
-    haptic, language_label, laser_base, laser_texture, load_saved_transform,
-    np_to_hmd34, pointer_matrix, pose_to_np, save_transform, translate,
+    coerce_transform, create_overlay_set, cycle, draw_fit_text, haptic,
+    lang_block, laser_base, load_saved_transform, np_to_hmd34, pointer_matrix,
+    pose_to_np, ray_plane_hit, save_transform, setup_pointer_overlays,
+    status_dot_color, translate,
 )
 from .render import GlTexture, flip_bounds
 
 log = logging.getLogger(__name__)
 
-TEX_W, TEX_H = 640, 560
+TEX_W, TEX_H = 640, 648
 MAX_RAY_M = 1.2
 
 GAZE_ON_DEG = 22.0
 GAZE_OFF_DEG = 35.0
 GAZE_DIST_M = 0.95
 
-TRANSFORM_PATH = Path(os.environ.get("LOCALAPPDATA", ".")) / "vrclt" / "wrist_transform.json"
+TRANSFORM_PATH = APPDATA_DIR / "wrist_transform.json"
 
 BTN_UILANG = (108, 14, 196, 66)      # cycles the UI display language
 BTN_TEXT_ONLY = (204, 14, 336, 66)
@@ -56,12 +55,20 @@ BTN_SUB_TOGGLE = (16, 322, 306, 538)
 BTN_SUB_PREV = (322, 322, 388, 538)
 BTN_SUB_LANG = (388, 322, 556, 538)  # label only
 BTN_SUB_NEXT = (556, 322, 624, 538)
+# bottom row: restart + subtitle font size (mirrors the dashboard panel)
+BTN_RESTART = (16, 554, 200, 630)
+BTN_FONT_MINUS = (216, 554, 296, 630)
+LBL_FONT_SIZE = (304, 554, 404, 630)   # label only
+BTN_FONT_PLUS = (412, 554, 492, 630)
+LBL_STATUS = (508, 554, 624, 630)      # label only: non-nominal status text
 
 BUTTONS = (("toggle", BTN_TOGGLE), ("prev", BTN_PREV), ("next", BTN_NEXT),
            ("sub_toggle", BTN_SUB_TOGGLE), ("sub_prev", BTN_SUB_PREV),
            ("sub_next", BTN_SUB_NEXT), ("edit", BTN_EDIT), ("sub_edit", BTN_SUB_EDIT),
            ("reset", BTN_RESET),
-           ("uilang", BTN_UILANG), ("text_only", BTN_TEXT_ONLY))
+           ("uilang", BTN_UILANG), ("text_only", BTN_TEXT_ONLY),
+           ("restart", BTN_RESTART), ("font_minus", BTN_FONT_MINUS),
+           ("font_plus", BTN_FONT_PLUS))
 
 CURSOR_SIZE_M = 0.016
 
@@ -77,7 +84,10 @@ class WristPanel:
                  font_path: str = bundled_font("NotoSansCJKkr-Bold.otf"),
                  on_text_only_toggle=lambda enabled: None,
                  on_transform_changed=lambda matrix, reset=False: None,
-                 get_status=lambda: False):
+                 get_status_info=lambda: (False, "status_stopped", ""),
+                 on_restart=lambda: None,
+                 on_font_size=lambda size: None,
+                 get_font_size=lambda: 27):
         self._state = state
         self._languages = languages or ["en"]
         self._inbound_languages = inbound_languages or ["ko", "en"]
@@ -90,8 +100,11 @@ class WristPanel:
         self._configured_transform = coerce_transform(transform, "wrist panel")
         self._on_transform_changed = on_transform_changed
         self._pointer_mat = pointer_matrix(pointer_tilt_deg)
-        self._get_status = get_status
+        self._get_status_info = get_status_info
         self._on_text_only_toggle = on_text_only_toggle
+        self._on_restart = on_restart
+        self._on_font_size = on_font_size
+        self._get_font_size = get_font_size
         font_path = resolve_font_path(font_path, "NotoSansCJKkr-Bold.otf")
         self._font_big = load_fallback_font(font_path, 54, bold=True)
         self._font_mid = load_fallback_font(font_path, 36, bold=True)
@@ -131,21 +144,9 @@ class WristPanel:
         ovl.setOverlayTextureBounds(self._h, bounds)
         self._tex = GlTexture(TEX_W, TEX_H)
 
-        ovl.setOverlayWidthInMeters(self._h_laser, LASER_WIDTH_M)
-        ovl.setOverlaySortOrder(self._h_laser, 200)
-        ovl.setOverlayTextureBounds(self._h_laser, bounds)
-        laser_tex = GlTexture(LASER_TEX_W, LASER_TEX_H)
-        laser_tex.update(laser_texture())
-        ovl.setOverlayTexture(self._h_laser, laser_tex.vr_texture(openvr))
-        self._laser_tex = laser_tex
-
-        ovl.setOverlayWidthInMeters(self._h_cursor, CURSOR_SIZE_M)
-        ovl.setOverlaySortOrder(self._h_cursor, 201)
-        ovl.setOverlayTextureBounds(self._h_cursor, bounds)
-        cursor_tex = GlTexture(64, 64)
-        cursor_tex.update(cursor_texture())
-        ovl.setOverlayTexture(self._h_cursor, cursor_tex.vr_texture(openvr))
-        self._cursor_tex = cursor_tex
+        self._laser_tex, self._cursor_tex = setup_pointer_overlays(
+            openvr, ovl, self._h_laser, self._h_cursor,
+            laser_sort=200, cursor_sort=201, cursor_size_m=CURSOR_SIZE_M)
 
         ovl.showOverlay(self._h)
         log.info("wrist panel ready (hand=%s, GL texture)", self._hand)
@@ -212,7 +213,7 @@ class WristPanel:
                     np_to_hmd34(openvr, self._pointer_mat @ laser_base()))
                 self._laser_attached_to = self._finger_idx
 
-        status = bool(self._get_status())
+        status = self._get_status_info()
         if status != self._last_status:
             self._last_status = status
             self._dirty.set()
@@ -351,16 +352,10 @@ class WristPanel:
     # ---------------- interaction ----------------
     def _ray_hit(self, w4: np.ndarray, f4: np.ndarray):
         to_overlay = self._overlay_mat_inv @ np.linalg.inv(w4) @ f4 @ self._pointer_mat
-        origin = to_overlay @ np.array([0.0, 0.0, 0.0, 1.0])
-        direction = to_overlay @ np.array([0.0, 0.0, -1.0, 0.0])
-        dz = float(direction[2])
-        if abs(dz) < 1e-6:
+        xy = ray_plane_hit(to_overlay, MAX_RAY_M)
+        if xy is None:
             return None, False, None
-        t = -float(origin[2]) / dz
-        if t < 0.0 or t > MAX_RAY_M:
-            return None, False, None
-        x = float(origin[0] + t * direction[0])
-        y = float(origin[1] + t * direction[1])
+        x, y = xy
         half_w, half_h = self._width_m / 2, self._height_m / 2
         if abs(x) > half_w + 0.015 or abs(y) > half_h + 0.015:
             return None, False, None
@@ -393,6 +388,12 @@ class WristPanel:
             st.ui_lang = cycle(UI_LANGS, st.ui_lang, 1)
         elif button == "text_only":
             self._on_text_only_toggle(not st.text_only)
+        elif button == "restart":
+            self._on_restart()
+        elif button == "font_minus":
+            self._on_font_size(int(self._get_font_size()) - 2)
+        elif button == "font_plus":
+            self._on_font_size(int(self._get_font_size()) + 2)
         elif button == "reset":
             if st.edit_mode:
                 st.request_position_reset()
@@ -401,22 +402,16 @@ class WristPanel:
 
     # ---------------- rendering ----------------
     def _lang_block(self, d, prev_box, lang_box, next_box, code: str, caption: str) -> None:
-        for box, label in ((prev_box, "◀"), (next_box, "▶")):
-            d.rounded_rectangle(box, 16, fill=COL_BTN)
-            self._font_mid.draw(d, ((box[0] + box[2]) // 2, (box[1] + box[3]) // 2),
-                                label, fill=COL_TEXT, anchor="mm")
-        d.rounded_rectangle(lang_box, 16, fill=(28, 30, 38, 255))
-        label = language_label(code)
-        draw_fit_text(
-            d, (lang_box[0] + 4, lang_box[1] + 20, lang_box[2] - 4, lang_box[3] - 54),
-            label, fonts=(self._font_big, self._font_mid, self._font_small, self._font_tiny),
-            max_lines=1, pad_x=2, pad_y=2)
-        draw_fit_text(
-            d, (lang_box[0] + 4, lang_box[3] - 54, lang_box[2] - 4, lang_box[3] - 8),
-            caption, fonts=(self._font_tiny,), fill=COL_DIM, max_lines=1,
-            pad_x=2, pad_y=1, line_spacing=0)
+        lang_block(d, prev_box, lang_box, next_box, code, caption,
+                   fonts=(self._font_big, self._font_mid, self._font_small,
+                          self._font_tiny),
+                   arrow_font=self._font_mid, x_inset=4,
+                   label_top=20, label_bottom=54,
+                   caption_top=54, caption_bottom=8,
+                   label_pad=(2, 2), caption_pad=(2, 1))
 
-    def _render(self, connected: bool, dragging: bool) -> Image.Image:
+    def _render(self, info: tuple, dragging: bool) -> Image.Image:
+        connected, status_key, _detail = info
         lang = self._state.ui_lang
         wrist_edit = self._state.wrist_edit_mode
         sub_edit = self._state.edit_mode
@@ -426,7 +421,7 @@ class WristPanel:
                             outline=COL_DRAG if (dragging or wrist_edit or sub_edit) else None,
                             width=4)
 
-        dot = COL_ON if connected else (110, 110, 110, 255)
+        dot = status_dot_color(connected, status_key)
         d.ellipse((20, 28, 44, 52), fill=dot)
         self._font_tiny.draw(d, (54, 40), "vrclt", fill=COL_TEXT, anchor="lm")
         # UI display-language cycle
@@ -442,7 +437,7 @@ class WristPanel:
                             fonts=(self._font_small, self._font_tiny), max_lines=1,
                             pad_x=6, pad_y=2, line_spacing=0)
         d.rounded_rectangle(BTN_EDIT, 12, fill=COL_DRAG if wrist_edit else COL_BTN)
-        edit_label = tr(lang, "wrist_moving" if dragging else "wrist_move")
+        edit_label = tr(lang, "wrist_move")
         draw_fit_text(d, BTN_EDIT, edit_label,
                             fonts=(self._font_small, self._font_tiny), max_lines=1,
                             pad_x=5, pad_y=2, line_spacing=0)
@@ -488,6 +483,30 @@ class WristPanel:
                             max_lines=1, pad_x=0, pad_y=0, line_spacing=0)
         self._lang_block(d, BTN_SUB_PREV, BTN_SUB_LANG, BTN_SUB_NEXT,
                          self._state.inbound_language, tr(lang, "sub_lang"))
+
+        # bottom row: restart + subtitle font size + status text
+        d.rounded_rectangle(BTN_RESTART, 12, fill=COL_BTN)
+        draw_fit_text(d, BTN_RESTART, tr(lang, "btn_restart_runtime"),
+                      fonts=(self._font_small, self._font_tiny), max_lines=1,
+                      pad_x=6, pad_y=2, line_spacing=0)
+        for box, glyph in ((BTN_FONT_MINUS, "−"), (BTN_FONT_PLUS, "+")):
+            d.rounded_rectangle(box, 12, fill=COL_BTN)
+            self._font_mid.draw(d, ((box[0] + box[2]) // 2, (box[1] + box[3]) // 2),
+                                glyph, fill=COL_TEXT, anchor="mm")
+        d.rounded_rectangle(LBL_FONT_SIZE, 12, fill=(28, 30, 38, 255))
+        draw_fit_text(d, (LBL_FONT_SIZE[0], LBL_FONT_SIZE[1] + 6,
+                          LBL_FONT_SIZE[2], LBL_FONT_SIZE[1] + 44),
+                      str(int(self._get_font_size())),
+                      fonts=(self._font_small,), max_lines=1, pad_x=4, pad_y=2)
+        draw_fit_text(d, (LBL_FONT_SIZE[0], LBL_FONT_SIZE[3] - 30,
+                          LBL_FONT_SIZE[2], LBL_FONT_SIZE[3] - 6),
+                      tr(lang, "dash_font_size"),
+                      fonts=(self._font_tiny,), fill=COL_DIM, max_lines=1,
+                      pad_x=2, pad_y=1, line_spacing=0)
+        if status_key != "status_running":
+            draw_fit_text(d, LBL_STATUS, tr(lang, status_key),
+                          fonts=(self._font_tiny,), fill=dot, max_lines=2,
+                          pad_x=2, pad_y=2)
         return img
 
     # ---------------- transforms ----------------

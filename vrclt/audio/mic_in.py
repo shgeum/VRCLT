@@ -56,6 +56,11 @@ class MicCapture:
         self._stream: sd.RawInputStream | None = None
         self._current_api: str | None = None
         self._rs: soxr.ResampleStream | None = None
+        # level-meter taps: plain float writes from the audio callback, read
+        # lock-free by the Qt meter (atomic under the GIL)
+        self.last_rms = 0.0
+        self.last_rms_time = 0.0
+        self.last_effective_threshold = self._threshold
         # ~13 s of audio max; old chunks drop automatically while disconnected
         self.buffer: collections.deque[bytes] = collections.deque(maxlen=BUFFER_CHUNKS)
         self._raw_taps: list[collections.deque[bytes]] = []
@@ -118,6 +123,11 @@ class MicCapture:
             threshold = self._threshold * float(self._boost())
         except Exception:
             threshold = self._threshold
+        # meter taps: recorded before the suppress/gate early-returns so the
+        # level display stays live in every mode (incl. echo-suppressed)
+        self.last_rms = rms
+        self.last_rms_time = now
+        self.last_effective_threshold = threshold
         # raw passthrough taps always get the mic: the echo guard only
         # protects the Gemini send path below, so the user's real voice never
         # cuts out of passthrough while inbound audio is playing

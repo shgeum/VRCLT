@@ -134,10 +134,11 @@ class DesktopSubtitleOverlay(QtWidgets.QWidget):
     def _apply_style(self, edit: bool) -> None:
         overlay_cfg = self._controller.cfg.get("overlay", {})
         try:
-            font_size = int(overlay_cfg.get("font_size", 36))
+            font_size = int(overlay_cfg.get("font_size", 27))
         except Exception:
-            font_size = 36
-        font_size = max(18, min(72, font_size))
+            font_size = 27
+        font_size = max(config_mod.OVERLAY_FONT_MIN,
+                        min(config_mod.OVERLAY_FONT_MAX, font_size))
         font = QtGui.QFont(self.font())
         font.setPixelSize(font_size)
         font.setWeight(QtGui.QFont.Weight.Bold)

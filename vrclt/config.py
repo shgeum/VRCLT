@@ -16,6 +16,14 @@ log = logging.getLogger(__name__)
 APP_MODES = ("vrchat", "discord")
 CLOSE_ACTIONS = ("tray", "exit")
 APPDATA_DIR = Path(os.environ.get("LOCALAPPDATA", ".")) / "vrclt"
+# clamps for overlay.* config values, shared by the VR subtitle panel,
+# the controller, and both UIs (keep the panel and its callers in sync)
+OVERLAY_MIN_WIDTH_M = 0.45
+OVERLAY_MAX_WIDTH_M = 1.6
+OVERLAY_MIN_HEIGHT_M = 0.10
+OVERLAY_MAX_HEIGHT_M = 0.60
+OVERLAY_FONT_MIN = 18
+OVERLAY_FONT_MAX = 72
 RESET_PRESERVE_PATHS = (
     ("api_key",),
     ("control", "languages"),
@@ -25,6 +33,8 @@ RESET_PRESERVE_PATHS = (
     ("outbound", "mic_device"),
     ("outbound", "tts_device"),
     ("outbound", "monitor_device"),
+    ("outbound", "tts_gain"),   # note: the preserve loop skips falsy values,
+    ("outbound", "glossary"),   # so a muted 0.0 gain resets to 1.0 - acceptable
     ("inbound", "audio_device"),
 )
 
@@ -83,8 +93,10 @@ DEFAULTS = {
     },
     "hotkeys": {                        # Windows global hotkeys for desktop/PC controls
         "enabled": True,
+        "enabled_in_vr": True,          # keep hotkeys active while SteamVR runs
         "translation_toggle": "Ctrl+Alt+T",
         "subtitles_toggle": "Ctrl+Alt+S",
+        "translation_hold": "",         # hold to pause translation (passthrough); "" = off
     },
     "outbound": {                       # pipeline A: my voice -> others
         "enabled": True,
@@ -92,11 +104,13 @@ DEFAULTS = {
         "echo_target_language": False,
         "mic_device": "",               # substring; empty = default input device
         "tts_device": "CABLE Input",    # translated voice -> VB-Cable -> VRChat mic
+        "tts_gain": 1.0,                # translated-voice volume 0.0-2.0 (also monitor)
         "monitor_device": "",           # also play translated voice here ("" = off)
         "text_only": False,              # True = original mic + translated OSC text only
         "voice_output": True,            # False = no translated TTS output
         "passthrough_while_translating": False,  # True = raw mic always -> tts_device
         "chatbox": True,                # send translated text to VRChat chatbox
+        "glossary": "",                 # translation glossary, one "source=target" per line
     },
     "inbound": {                        # pipeline B: others' voices -> me (subtitles)
         "enabled": True,
@@ -343,6 +357,37 @@ def apply_app_profile(cfg: dict, mode: str | None = None, *, force: bool = False
 def normalize_close_action(value: str) -> str:
     value = (value or "").strip().lower()
     return value if value in CLOSE_ACTIONS else "tray"
+
+
+def get_path(data: dict, path: str, default=None):
+    """Read a dotted-path value ('outbound.mic_device') from a nested dict."""
+    cur = data
+    for part in path.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return default
+        cur = cur[part]
+    return cur
+
+
+def set_path(data: dict, path: str, value) -> None:
+    """Write a dotted-path value into a nested dict, creating levels."""
+    cur = data
+    parts = path.split(".")
+    for part in parts[:-1]:
+        cur = cur.setdefault(part, {})
+    cur[parts[-1]] = value
+
+
+def is_text_only(cfg: dict) -> bool:
+    """VRC text-only mode: raw voice passthrough + translated chatbox text
+    (either the explicit flag or the equivalent combination of outputs)."""
+    ob = cfg.get("outbound", {})
+    return bool(
+        ob.get("text_only", False)
+        or (not ob.get("voice_output", True)
+            and ob.get("passthrough_while_translating", False)
+            and ob.get("chatbox", False))
+    )
 
 
 def _apply_outbound_output_mode(cfg: dict) -> None:

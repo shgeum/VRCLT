@@ -51,6 +51,13 @@ def _clean(text: str) -> str:
     return _TRAILING_CJK_APOSTROPHE_RE.sub(".", text)
 
 
+def _normalize_glossary(value) -> str:
+    """Config may hold a string or a YAML list of 'source=target' lines."""
+    if isinstance(value, (list, tuple)):
+        return "\n".join(str(v).strip() for v in value if str(v).strip())
+    return str(value or "")
+
+
 class Segmenter:
     """Accumulates transcription fragments; finalizes on turnComplete, silence,
     or when the text outgrows the chatbox limit."""
@@ -103,13 +110,84 @@ class Segmenter:
             self._on_final(src, dst, lang or "auto")
 
 
-class OutboundPipeline:
+class _TranslationPipeline:
+    """Shared pipeline skeleton: Segmenter + LiveTranslateSession wiring,
+    state subscription, audio-sink fan-out, and the segment flush timer.
+    Subclasses provide the audio source, gating lambdas, and text sinks."""
+
+    LANGUAGE_FIELD = ""  # AppState field whose change reconnects the session
+
+    def __init__(self, cfg: dict, api_key: str, state: AppState, *,
+                 source, name: str, get_target_language, enabled,
+                 echo_target_language: bool,
+                 turn_end_silence_sec: float,
+                 finalize_silence_sec: float,
+                 partial_interval_sec: float = 0.3,
+                 audio_sinks: tuple = (),
+                 glossary: str = ""):
+        au = cfg["audio"]
+        self.state = state
+        self._audio_sinks = tuple(audio_sinks)
+        self.segmenter = Segmenter(finalize_silence_sec, self._on_final,
+                                   self._on_partial,
+                                   partial_interval_sec=partial_interval_sec)
+        self.session = LiveTranslateSession(
+            api_key=api_key,
+            model=cfg["model"],
+            source=source,
+            name=name,
+            get_target_language=get_target_language,
+            echo_target_language=echo_target_language,
+            enabled=enabled,
+            send_interval_ms=au["send_interval_ms"],
+            idle_disconnect_sec=au["mic_idle_disconnect_sec"],
+            turn_end_silence_sec=turn_end_silence_sec,
+            glossary=glossary,
+            on_src=self.segmenter.add_src,
+            on_dst=self.segmenter.add_dst,
+            on_audio=self._on_audio if self._audio_sinks else None,
+            on_turn_complete=self.segmenter.turn_complete,
+            on_interrupted=self._on_interrupted,
+        )
+        state.subscribe(self._on_state_change)
+
+    def detach(self) -> None:
+        """Stop reacting to state changes (the AppState outlives pipelines
+        across runtime restarts)."""
+        self.state.unsubscribe(self._on_state_change)
+
+    def _on_state_change(self, field: str, value) -> None:
+        if field == self.LANGUAGE_FIELD:
+            self.session.request_restart()
+
+    def _on_audio(self, pcm: bytes) -> None:
+        for sink in self._audio_sinks:
+            sink.play(pcm)
+
+    def _on_interrupted(self) -> None:
+        for sink in self._audio_sinks:
+            sink.interrupt()
+
+    def _on_partial(self, src: str, dst: str) -> None:
+        raise NotImplementedError
+
+    def _on_final(self, src: str, dst: str, lang: str) -> None:
+        raise NotImplementedError
+
+    async def _segment_tick(self, stop: asyncio.Event) -> None:
+        while not stop.is_set():
+            await asyncio.sleep(0.2)
+            self.segmenter.tick()
+
+
+class OutboundPipeline(_TranslationPipeline):
     """My voice -> translated voice into VB-Cable + translated text into chatbox."""
+
+    LANGUAGE_FIELD = "target_language"
 
     def __init__(self, cfg: dict, api_key: str, state: AppState):
         ob = cfg["outbound"]
         au = cfg["audio"]
-        self.state = state
         self.voice_output = ob.get("voice_output", True)
         self.passthrough_while_translating = ob.get("passthrough_while_translating", False)
         self.mic = MicCapture(ob["mic_device"], au.get("voice_rms_threshold", 90.0),
@@ -118,10 +196,11 @@ class OutboundPipeline:
         # continuously while translation is off. VRC text-only keeps the gate
         # enabled for Gemini text translation and uses a raw tap for passthrough.
         self.mic.set_gate_enabled(
-            lambda: state.translation_on
+            lambda: state.translation_active
             if self.voice_output and not self.passthrough_while_translating else True)
+        gain = max(0.0, min(2.0, float(ob.get("tts_gain", 1.0))))
         self.tts_player = PcmPlayer(ob["tts_device"], name="tts", rate=24000,
-                                    prebuffer_ms=TTS_PREBUFFER_MS) \
+                                    prebuffer_ms=TTS_PREBUFFER_MS, gain=gain) \
             if self.voice_output else None
         # passthrough: raw 48k mic audio straight to the cable when translation is off
         self.passthrough = PcmPlayer(ob["tts_device"], name="passthrough", rate=CAPTURE_RATE,
@@ -130,7 +209,8 @@ class OutboundPipeline:
                                      block_ms=PASSTHROUGH_BLOCK_MS) \
             if self.voice_output or self.passthrough_while_translating else None
         self._passthrough_tap = self.mic.add_raw_tap() if self.passthrough else None
-        self.monitor = PcmPlayer(ob["monitor_device"], name="monitor") \
+        # passthrough (raw voice) intentionally stays at unity gain
+        self.monitor = PcmPlayer(ob["monitor_device"], name="monitor", gain=gain) \
             if self.voice_output and ob["monitor_device"] else None
         self.chatbox = None
         self._feedback_chatbox = cfg.get("control", {}).get("feedback_chatbox", True)
@@ -142,55 +222,30 @@ class OutboundPipeline:
                                    osc["notification_sfx"],
                                    chunk_display_sec=osc.get("chunk_display_sec", 4.0))
 
-        self.segmenter = Segmenter(au["finalize_silence_sec"], self._on_final, self._on_partial)
-        self.session = LiveTranslateSession(
-            api_key=api_key,
-            model=cfg["model"],
+        self._last_active = state.translation_active
+        super().__init__(
+            cfg, api_key, state,
             source=self.mic,
             name="outbound",
             get_target_language=lambda: self.state.target_language,
+            enabled=lambda: self.state.translation_active,
             echo_target_language=ob["echo_target_language"],
-            enabled=lambda: self.state.translation_on,
-            send_interval_ms=au["send_interval_ms"],
-            idle_disconnect_sec=au["mic_idle_disconnect_sec"],
             turn_end_silence_sec=au.get("turn_end_silence_sec", 0.55),
-            on_src=self.segmenter.add_src,
-            on_dst=self.segmenter.add_dst,
-            on_audio=self._on_audio if self.voice_output else None,
-            on_turn_complete=self.segmenter.turn_complete,
-            on_interrupted=self._on_interrupted,
+            finalize_silence_sec=au["finalize_silence_sec"],
+            audio_sinks=tuple(p for p in (self.tts_player, self.monitor) if p),
+            glossary=_normalize_glossary(ob.get("glossary", "")),
         )
-        self.state.subscribe(self._on_state_change)
-
-    def detach(self) -> None:
-        """Stop reacting to state changes (the AppState outlives pipelines
-        across runtime restarts)."""
-        self.state.unsubscribe(self._on_state_change)
 
     # -- state changes (called from OSC control / UI threads) --
     def _on_state_change(self, field: str, value) -> None:
-        if field == "target_language":
-            self.session.request_restart()
-        if field == "translation_on":
-            if value:
-                # Leaving passthrough: keep only a small speech onset cushion for
-                # Gemini and drop raw audio that may still be queued for VB-Cable.
-                self.mic.trim_to(0.5)
-                if self.passthrough:
-                    self.passthrough.interrupt()
-            else:
-                # Entering passthrough: stop stale translated audio immediately
-                # and start from fresh mic frames rather than replaying the last
-                # gated chunks that were meant for Gemini.
-                self.mic.trim_to(0.0)
-                if self._passthrough_tap is not None:
-                    self.mic.drain_tap(self._passthrough_tap)
-                if self.tts_player:
-                    self.tts_player.interrupt()
-                if self.monitor:
-                    self.monitor.interrupt()
-                if self.passthrough:
-                    self.passthrough.interrupt()
+        super()._on_state_change(field, value)
+        if field in ("translation_on", "hold_mute"):
+            # the audio transition follows the EFFECTIVE state (toggle minus
+            # hold-mute) so a held hotkey behaves exactly like toggling off
+            active = self.state.translation_active
+            if active != self._last_active:
+                self._last_active = active
+                self._apply_translation_transition(active)
         if self.chatbox and self._feedback_chatbox:
             if field == "translation_on":
                 if value:
@@ -203,6 +258,27 @@ class OutboundPipeline:
                 self.chatbox.send(self._feedback(
                     "osc_feedback_language", language=language_label(str(value))))
 
+    def _apply_translation_transition(self, active: bool) -> None:
+        if active:
+            # Leaving passthrough: keep only a small speech onset cushion for
+            # Gemini and drop raw audio that may still be queued for VB-Cable.
+            self.mic.trim_to(0.5)
+            if self.passthrough:
+                self.passthrough.interrupt()
+        else:
+            # Entering passthrough: stop stale translated audio immediately
+            # and start from fresh mic frames rather than replaying the last
+            # gated chunks that were meant for Gemini.
+            self.mic.trim_to(0.0)
+            if self._passthrough_tap is not None:
+                self.mic.drain_tap(self._passthrough_tap)
+            if self.tts_player:
+                self.tts_player.interrupt()
+            if self.monitor:
+                self.monitor.interrupt()
+            if self.passthrough:
+                self.passthrough.interrupt()
+
     def _feedback(self, key: str, **values) -> str:
         text = i18n.tr(self.state.ui_lang, key)
         if values:
@@ -213,17 +289,8 @@ class OutboundPipeline:
         return f"[vrclt] {text}"
 
     # -- session callbacks (worker event loop) --
-    def _on_audio(self, pcm: bytes) -> None:
-        if self.tts_player:
-            self.tts_player.play(pcm)
-        if self.monitor:
-            self.monitor.play(pcm)
-
     def _on_interrupted(self) -> None:
-        if self.tts_player:
-            self.tts_player.interrupt()
-        if self.monitor:
-            self.monitor.interrupt()
+        super()._on_interrupted()
         self._last_chatbox_payload = ""
 
     def _chatbox_payload(self, src: str, dst: str, *, partial: bool = False) -> str:
@@ -290,11 +357,6 @@ class OutboundPipeline:
             if self.chatbox:
                 self.chatbox.stop()
 
-    async def _segment_tick(self, stop: asyncio.Event) -> None:
-        while not stop.is_set():
-            await asyncio.sleep(0.2)
-            self.segmenter.tick()
-
     async def _route_passthrough(self, stop: asyncio.Event) -> None:
         """Route raw mic frames to the cable when passthrough should be audible."""
         if self._passthrough_tap is None:
@@ -302,20 +364,21 @@ class OutboundPipeline:
         while not stop.is_set():
             await asyncio.sleep(PASSTHROUGH_POLL_SEC)
             chunks = self.mic.drain_tap(self._passthrough_tap)
-            if self.state.translation_on and not self.passthrough_while_translating:
+            if self.state.translation_active and not self.passthrough_while_translating:
                 continue
             if chunks:
                 self.passthrough.play(b"".join(chunks))
 
 
-class InboundPipeline:
+class InboundPipeline(_TranslationPipeline):
     """Others' voices (VRChat process audio) -> my-language subtitles."""
+
+    LANGUAGE_FIELD = "inbound_language"
 
     def __init__(self, cfg: dict, api_key: str, store: SubtitleStore, state: AppState):
         ib = cfg["inbound"]
         au = cfg["audio"]
         self.store = store
-        self.state = state
         self._process_name = ib["process"]
         self.tap = GameAudioTap(
             self._process_name,
@@ -326,48 +389,22 @@ class InboundPipeline:
         self._tap_running = False
         self.player = PcmPlayer(ib["audio_device"], name="inbound-audio") if ib["play_audio"] else None
 
-        self.segmenter = Segmenter(
-            au.get("subtitle_finalize_silence_sec", au["finalize_silence_sec"]),
-            self._on_final,
-            self._on_partial,
-            partial_interval_sec=au.get("subtitle_partial_interval_sec", 0.15),
-        )
-        self.session = LiveTranslateSession(
-            api_key=api_key,
-            model=cfg["model"],
+        super().__init__(
+            cfg, api_key, state,
             source=self.tap,
             name="inbound",
             get_target_language=lambda: self.state.inbound_language,
-            echo_target_language=False,
             enabled=lambda: self._tap_running and self.state.subtitles_on,
-            send_interval_ms=au["send_interval_ms"],
-            idle_disconnect_sec=au["mic_idle_disconnect_sec"],
+            echo_target_language=False,
             turn_end_silence_sec=au.get(
                 "inbound_turn_end_silence_sec",
                 au.get("turn_end_silence_sec", 0.55),
             ),
-            on_src=self.segmenter.add_src,
-            on_dst=self.segmenter.add_dst,
-            on_audio=self._on_audio if self.player else None,
-            on_turn_complete=self.segmenter.turn_complete,
-            on_interrupted=self._on_interrupted,
+            finalize_silence_sec=au.get("subtitle_finalize_silence_sec",
+                                        au["finalize_silence_sec"]),
+            partial_interval_sec=au.get("subtitle_partial_interval_sec", 0.15),
+            audio_sinks=(self.player,) if self.player else (),
         )
-        state.subscribe(self._on_state_change)
-
-    def detach(self) -> None:
-        self.state.unsubscribe(self._on_state_change)
-
-    def _on_state_change(self, field: str, value) -> None:
-        if field == "inbound_language":
-            self.session.request_restart()
-
-    def _on_audio(self, pcm: bytes) -> None:
-        if self.player:
-            self.player.play(pcm)
-
-    def _on_interrupted(self) -> None:
-        if self.player:
-            self.player.interrupt()
 
     def _on_partial(self, src: str, dst: str) -> None:
         self.store.set_partial(src, dst)
@@ -429,8 +466,3 @@ class InboundPipeline:
             elif pid is None and not waiting_logged:
                 waiting_logged = True
                 log.info("inbound: waiting for %s to start...", self._process_name)
-
-    async def _segment_tick(self, stop: asyncio.Event) -> None:
-        while not stop.is_set():
-            await asyncio.sleep(0.2)
-            self.segmenter.tick()

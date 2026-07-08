@@ -18,6 +18,7 @@ class AppState:
         self._text_only = text_only
         self._edit_mode = False
         self._wrist_edit_mode = False
+        self._hold_mute = False
         self._listeners = []
 
     def subscribe(self, fn) -> None:
@@ -71,6 +72,31 @@ class AppState:
         if changed:
             log.info("state: target language -> %s", value)
             self._notify("target_language", value)
+
+    @property
+    def hold_mute(self) -> bool:
+        with self._lock:
+            return self._hold_mute
+
+    @hold_mute.setter
+    def hold_mute(self, value: bool) -> None:
+        """Transient hold-to-pause flag (hotkey held). Never persisted -
+        _persist_runtime_state ignores the 'hold_mute' field on purpose."""
+        value = bool(value)
+        with self._lock:
+            changed = value != self._hold_mute
+            self._hold_mute = value
+        if changed:
+            log.info("state: hold-mute %s",
+                     "ON (translation paused)" if value else "OFF")
+            self._notify("hold_mute", value)
+
+    @property
+    def translation_active(self) -> bool:
+        """translation_on minus the transient hold-mute; what the runtime
+        (session gate, mic gate, passthrough routing) actually obeys."""
+        with self._lock:
+            return self._translation_on and not self._hold_mute
 
     @property
     def subtitles_on(self) -> bool:

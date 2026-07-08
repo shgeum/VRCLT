@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import math
 import threading
 from pathlib import Path
 
@@ -12,58 +13,28 @@ from . import __version__
 from . import config as config_mod
 from . import i18n
 from .app_controller import resolve_ui_mode
+from .config import get_path as _get_path, set_path as _set_path
 from .desktop_overlay import DesktopSubtitleOverlay
-from .languages import (
-    language_code_from_text,
-    language_label,
-    supported_language_options,
-)
+from .languages import language_code_from_text, language_label
 from .hotkeys import HotkeyRegistration, WindowsGlobalHotkeys
 from .resources import bundled_font, resolve_font_path
-from .update_check import check_latest_release
+from .ui.settings_form import SettingsForm
+from .ui.tray import TrayIcon
+from .ui.update_banner import UpdateBanner
+from .ui.widgets import (
+    NoWheelComboBox,
+    build_language_picker,
+    code_from_language_combo,
+    set_language_picker_placeholder,
+)
 
 log = logging.getLogger(__name__)
 
 APP_FONT_SIZE_PT = 11
 HOTKEY_TRANSLATION_ID = 0x6100
 HOTKEY_SUBTITLES_ID = 0x6101
+HOTKEY_TRANSLATION_HOLD_ID = 0x6102
 _APP_FONT_FAMILIES: dict[str, str] = {}
-
-def _get_path(data: dict, path: str, default=None):
-    cur = data
-    for part in path.split("."):
-        if not isinstance(cur, dict) or part not in cur:
-            return default
-        cur = cur[part]
-    return cur
-
-
-def _set_path(data: dict, path: str, value) -> None:
-    cur = data
-    parts = path.split(".")
-    for part in parts[:-1]:
-        cur = cur.setdefault(part, {})
-    cur[parts[-1]] = value
-
-
-def _as_csv(value) -> str:
-    if isinstance(value, list):
-        return ", ".join(str(v) for v in value)
-    return "" if value is None else str(value)
-
-
-def _from_csv(value: str) -> list[str]:
-    return [v.strip() for v in value.split(",") if v.strip()]
-
-
-def _as_float_list(value) -> str:
-    if isinstance(value, list):
-        return ", ".join(str(v) for v in value)
-    return "" if value is None else str(value)
-
-
-def _from_float_list(value: str) -> list[float]:
-    return [float(v.strip()) for v in value.split(",") if v.strip()]
 
 
 def _device_names() -> tuple[list[str], list[str]]:
@@ -115,36 +86,64 @@ def _apply_app_font(app: QtWidgets.QApplication | None, lang: str = "") -> None:
     app.setFont(font)
 
 
+class _MicLevelMeter(QtWidgets.QWidget):
+    """Log-scaled mic RMS bar with the effective gate-threshold marker
+    (marker jumps right while the echo guard boosts the gate)."""
+
+    _LOG_MAX = math.log10(1 + 3000.0)  # RMS display ceiling
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(18)
+        self.setMinimumWidth(120)
+        self._rms: float | None = None
+        self._threshold: float | None = None
+
+    def set_level(self, rms: float | None, threshold: float | None) -> None:
+        if (rms, threshold) != (self._rms, self._threshold):
+            self._rms = rms
+            self._threshold = threshold
+            self.update()
+
+    @classmethod
+    def _frac(cls, value: float) -> float:
+        return max(0.0, min(1.0, math.log10(1 + max(0.0, value)) / cls._LOG_MAX))
+
+    def paintEvent(self, event) -> None:
+        p = QtGui.QPainter(self)
+        p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        r = self.rect().adjusted(0, 2, -1, -2)
+        p.setPen(QtGui.QColor("#303542"))
+        p.setBrush(QtGui.QColor("#1c1f29"))
+        p.drawRoundedRect(r, 4, 4)
+        if self._rms is not None and self._threshold is not None:
+            frac = self._frac(self._rms)
+            gate_open = self._rms >= self._threshold
+            if frac > 0:
+                bar = QtCore.QRectF(r.x() + 1, r.y() + 1,
+                                    max(2.0, (r.width() - 2) * frac),
+                                    r.height() - 2)
+                p.setPen(QtCore.Qt.PenStyle.NoPen)
+                p.setBrush(QtGui.QColor("#2ea043" if gate_open else "#8b949e"))
+                p.drawRoundedRect(bar, 3, 3)
+            tx = r.x() + 1 + (r.width() - 2) * self._frac(self._threshold)
+            p.setPen(QtGui.QPen(QtGui.QColor("#d29922"), 2))
+            p.drawLine(QtCore.QPointF(tx, r.y() + 1),
+                       QtCore.QPointF(tx, r.bottom() - 1))
+        p.end()
+
+
 class _UiSignals(QtCore.QObject):
     refresh = QtCore.Signal()
     save_done = QtCore.Signal(bool)
     mode_done = QtCore.Signal(bool)
     device_done = QtCore.Signal(bool)
     reset_done = QtCore.Signal(bool)
+    devices_reloaded = QtCore.Signal(bool)
+    test_done = QtCore.Signal(bool, str)
     translation_hotkey = QtCore.Signal()
     subtitles_hotkey = QtCore.Signal()
-    update_available = QtCore.Signal(object)
-
-
-class _NoWheelComboBox(QtWidgets.QComboBox):
-    def wheelEvent(self, event: QtGui.QWheelEvent) -> None:
-        if self.view().isVisible():
-            super().wheelEvent(event)
-        else:
-            event.ignore()
-
-
-class _HotkeyEdit(QtWidgets.QKeySequenceEdit):
-    focus_in = QtCore.Signal()
-    focus_out = QtCore.Signal()
-
-    def focusInEvent(self, event: QtGui.QFocusEvent) -> None:
-        self.focus_in.emit()
-        super().focusInEvent(event)
-
-    def focusOutEvent(self, event: QtGui.QFocusEvent) -> None:
-        super().focusOutEvent(event)
-        self.focus_out.emit()
+    translation_hold = QtCore.Signal(bool)
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -153,12 +152,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._controller = controller
         self._log_file = Path(log_file)
         self._quitting = False
-        self._fields = {}
         self._i18n_widgets = {}
         self._tab_dashboard_idx = -1
         self._tab_settings_idx = -1
         self._tab_logs_idx = -1
-        self._tray_actions = {}
         self._last_ui_lang = ""
         self._last_config_revision = getattr(controller, "config_revision", 0)
         self._hotkey_signature = None
@@ -167,11 +164,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._mode_thread = None
         self._device_thread = None
         self._reset_thread = None
-        self._update_thread = None
-        self._update_info = None
-        self._update_notified = False
+        self._test_thread = None
         self._app_mode_applying = False
         self._device_applying = False
+        self._devices_reloading = False
         self._app_mode_buttons = {}
         self._inputs, self._outputs = _device_names()
         self._signals = _UiSignals()
@@ -180,9 +176,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._signals.mode_done.connect(self._mode_done)
         self._signals.device_done.connect(self._device_done)
         self._signals.reset_done.connect(self._reset_done)
+        self._signals.devices_reloaded.connect(self._devices_reloaded)
+        self._signals.test_done.connect(self._test_done)
         self._signals.translation_hotkey.connect(self._toggle_translation)
         self._signals.subtitles_hotkey.connect(self._toggle_subtitles)
-        self._signals.update_available.connect(self._update_available)
+        self._signals.translation_hold.connect(self._controller.set_hold_mute)
 
         self.setWindowTitle("vrclt")
         self.resize(980, 720)
@@ -199,10 +197,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self._timer = QtCore.QTimer(self)
         self._timer.timeout.connect(self._refresh)
         self._timer.start(250)
+        # the mic meter needs a faster tick than the 250 ms refresh; runs
+        # only while the dashboard tab is visible (gated in _refresh)
+        self._meter_timer = QtCore.QTimer(self)
+        self._meter_timer.setInterval(75)
+        self._meter_timer.timeout.connect(self._tick_mic_meter)
         self._controller.subscribe(self._signals.refresh.emit)
         self._sync_hotkeys()
         self._refresh()
-        self._start_update_check()
+        self._update_banner.start_check(__version__)
         QtCore.QTimer.singleShot(1200, self._maybe_prompt_config_reset_after_update)
 
     # ---------------- construction ----------------
@@ -219,10 +222,6 @@ class MainWindow(QtWidgets.QMainWindow):
         label = QtWidgets.QLabel(self._tr(key))
         self._i18n_widgets[key] = label
         return label
-
-    def _status_label(self, status: str) -> str:
-        key = "status_" + (status or "").strip().lower().replace(" ", "_")
-        return i18n.tr(self._lang(), key)
 
     def _error_label(self, error: str) -> str:
         if error == "API key is empty.":
@@ -245,11 +244,11 @@ class MainWindow(QtWidgets.QMainWindow):
         if hasattr(self, "_text_only"):
             self._text_only.setText(self._tr("btn_text_only_on"))
         if hasattr(self, "_out_lang_add"):
-            self._set_language_picker_placeholder(self._out_lang_add, self._tr("ph_out_add"))
+            set_language_picker_placeholder(self._out_lang_add, self._tr("ph_out_add"))
         if hasattr(self, "_out_lang_add_btn"):
             self._out_lang_add_btn.setText(self._tr("btn_add"))
         if hasattr(self, "_sub_lang_add"):
-            self._set_language_picker_placeholder(self._sub_lang_add, self._tr("ph_sub_add"))
+            set_language_picker_placeholder(self._sub_lang_add, self._tr("ph_sub_add"))
         if hasattr(self, "_sub_lang_add_btn"):
             self._sub_lang_add_btn.setText(self._tr("btn_add"))
         if hasattr(self, "_btn_overlay_reset"):
@@ -258,6 +257,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._subtitle_view.setPlaceholderText(self._tr("subtitle_live_placeholder"))
         if hasattr(self, "_btn_devices"):
             self._btn_devices.setText(self._tr("btn_refresh_devices"))
+        if hasattr(self, "_btn_test_out"):
+            self._btn_test_out.setText(self._tr("btn_test_output"))
         if hasattr(self, "_btn_reset_config"):
             self._btn_reset_config.setText(self._tr("btn_reset_config"))
         if hasattr(self, "_btn_save"):
@@ -266,13 +267,12 @@ class MainWindow(QtWidgets.QMainWindow):
             self._btn_log_refresh.setText(self._tr("btn_refresh_log"))
         if hasattr(self, "_about_text"):
             self._about_text.setText(self._tr("about_paths").format(config=config_mod.CONFIG_PATH))
-        if hasattr(self, "_btn_update_open"):
-            self._btn_update_open.setText(self._tr("btn_update_open"))
-            self._sync_update_banner()
+        if hasattr(self, "_update_banner"):
+            self._update_banner.retranslate()
         if hasattr(self, "_close_action"):
             self._sync_close_action()
-        for key, action in self._tray_actions.items():
-            action.setText(self._tr(key))
+        if hasattr(self, "_tray"):
+            self._tray.retranslate()
 
     def _build_dashboard(self) -> None:
         page = QtWidgets.QWidget()
@@ -297,19 +297,8 @@ class MainWindow(QtWidgets.QMainWindow):
         root.addLayout(top)
         root.addWidget(self._error_text)
 
-        self._update_bar = QtWidgets.QWidget()
-        self._update_bar.setObjectName("updateBar")
-        update_layout = QtWidgets.QHBoxLayout(self._update_bar)
-        update_layout.setContentsMargins(12, 10, 12, 10)
-        self._update_text = QtWidgets.QLabel("")
-        self._update_text.setObjectName("updateText")
-        self._update_text.setWordWrap(True)
-        self._btn_update_open = QtWidgets.QPushButton(self._tr("btn_update_open"))
-        self._btn_update_open.clicked.connect(self._open_update_release)
-        update_layout.addWidget(self._update_text, 1)
-        update_layout.addWidget(self._btn_update_open)
-        self._update_bar.hide()
-        root.addWidget(self._update_bar)
+        self._update_banner = UpdateBanner(self._tr, on_available=self._on_update_available)
+        root.addWidget(self._update_banner)
 
         controls = QtWidgets.QGridLayout()
         self._btn_trans = QtWidgets.QPushButton()
@@ -318,9 +307,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._btn_sub = QtWidgets.QPushButton()
         self._btn_sub.clicked.connect(
             lambda: self._controller.set_subtitles_on(not self._controller.state.subtitles_on))
-        self._out_lang = _NoWheelComboBox()
-        self._sub_lang = _NoWheelComboBox()
-        self._ui_lang = _NoWheelComboBox()
+        self._out_lang = NoWheelComboBox()
+        self._sub_lang = NoWheelComboBox()
+        self._ui_lang = NoWheelComboBox()
         self._ui_lang.addItems([i18n.UI_LANG_LABELS[c] for c in i18n.LANGS])
         self._out_lang.currentTextChanged.connect(self._pick_out_lang)
         self._sub_lang.currentTextChanged.connect(self._pick_sub_lang)
@@ -331,11 +320,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._voice_out_device = self._build_dashboard_device_combo(
             "outbound.tts_device", self._outputs,
             self._controller.cfg.get("outbound", {}).get("tts_device", ""))
-        self._out_lang_add = self._build_language_picker(self._tr("ph_out_add"))
+        self._out_lang_add = build_language_picker(self._tr("ph_out_add"))
         self._out_lang_add.lineEdit().returnPressed.connect(self._add_output_language_from_input)
         self._out_lang_add_btn = QtWidgets.QPushButton(self._tr("btn_add"))
         self._out_lang_add_btn.clicked.connect(self._add_output_language_from_input)
-        self._sub_lang_add = self._build_language_picker(self._tr("ph_sub_add"))
+        self._sub_lang_add = build_language_picker(self._tr("ph_sub_add"))
         self._sub_lang_add.lineEdit().returnPressed.connect(self._add_inbound_language_from_input)
         self._sub_lang_add_btn = QtWidgets.QPushButton(self._tr("btn_add"))
         self._sub_lang_add_btn.clicked.connect(self._add_inbound_language_from_input)
@@ -347,12 +336,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self._text_only = QtWidgets.QCheckBox(self._tr("btn_text_only_on"))
         self._text_only.toggled.connect(self._apply_text_only)
         self._overlay_font_size = QtWidgets.QSpinBox()
-        self._overlay_font_size.setRange(18, 72)
+        self._overlay_font_size.setRange(config_mod.OVERLAY_FONT_MIN,
+                                         config_mod.OVERLAY_FONT_MAX)
         self._overlay_font_size.setSuffix(" px")
         self._overlay_font_size.setValue(
             int(self._controller.cfg.get("overlay", {}).get("font_size", 27)))
         self._overlay_font_size.valueChanged.connect(self._set_overlay_font_size)
-        self._close_action = _NoWheelComboBox()
+        self._close_action = NoWheelComboBox()
         self._sync_close_action()
         self._close_action.currentIndexChanged.connect(self._pick_close_action)
         self._dashboard_note = QtWidgets.QLabel("")
@@ -383,11 +373,28 @@ class MainWindow(QtWidgets.QMainWindow):
         controls.addWidget(self._label("label_mic_device"), 5, 0)
         controls.addWidget(self._mic_device, 5, 1)
         controls.addWidget(self._label("label_voice_out_device"), 5, 2)
-        controls.addWidget(self._voice_out_device, 5, 3)
+        self._btn_test_out = QtWidgets.QPushButton(self._tr("btn_test_output"))
+        self._btn_test_out.setFixedWidth(72)
+        self._btn_test_out.clicked.connect(self._test_output_device)
+        out_device_wrap = QtWidgets.QWidget()
+        out_device_layout = QtWidgets.QHBoxLayout(out_device_wrap)
+        out_device_layout.setContentsMargins(0, 0, 0, 0)
+        out_device_layout.setSpacing(6)
+        out_device_layout.addWidget(self._voice_out_device, 1)
+        out_device_layout.addWidget(self._btn_test_out)
+        controls.addWidget(out_device_wrap, 5, 3)
         controls.addWidget(self._label("label_add_out_lang"), 6, 0)
         controls.addWidget(out_lang_add_widget, 6, 1)
         controls.addWidget(self._label("label_add_sub_lang"), 6, 2)
         controls.addWidget(sub_lang_add_widget, 6, 3)
+        controls.addWidget(self._label("label_tts_gain"), 7, 0)
+        controls.addWidget(self._build_tts_gain_control(), 7, 1)
+        mic_label = self._label("label_mic_level")
+        mic_label.setToolTip(self._tr("tip_mic_level"))
+        controls.addWidget(mic_label, 7, 2)
+        self._mic_meter = _MicLevelMeter()
+        self._mic_meter.setToolTip(self._tr("tip_mic_level"))
+        controls.addWidget(self._mic_meter, 7, 3)
         root.addLayout(controls)
         root.addWidget(self._dashboard_note)
 
@@ -397,31 +404,41 @@ class MainWindow(QtWidgets.QMainWindow):
         root.addWidget(self._subtitle_view, 1)
         self._tab_dashboard_idx = self._tabs.addTab(page, self._tr("tab_dashboard"))
 
-    def _build_language_picker(self, placeholder: str = "") -> _NoWheelComboBox:
-        combo = _NoWheelComboBox()
-        combo.setEditable(True)
-        combo.setInsertPolicy(QtWidgets.QComboBox.InsertPolicy.NoInsert)
-        combo.setMinimumContentsLength(22)
-        combo.view().setMinimumWidth(300)
-        for code, label in supported_language_options():
-            combo.addItem(label, code)
-        completer = combo.completer()
-        if completer is not None:
-            completer.setFilterMode(QtCore.Qt.MatchFlag.MatchContains)
-            completer.setCompletionMode(QtWidgets.QCompleter.CompletionMode.PopupCompletion)
-        combo.setCurrentIndex(-1)
-        combo.setEditText("")
-        self._set_language_picker_placeholder(combo, placeholder)
-        return combo
+    def _build_tts_gain_control(self) -> QtWidgets.QWidget:
+        self._tts_gain_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self._tts_gain_slider.setRange(0, 200)
+        self._tts_gain_slider.setPageStep(10)
+        self._tts_gain_slider.setValue(round(self._controller.tts_gain() * 100))
+        self._tts_gain_label = QtWidgets.QLabel(f"{self._tts_gain_slider.value()}%")
+        self._tts_gain_label.setFixedWidth(48)
+        # debounce: live label instantly, save+apply 200 ms after the last move
+        self._tts_gain_timer = QtCore.QTimer(self)
+        self._tts_gain_timer.setSingleShot(True)
+        self._tts_gain_timer.setInterval(200)
+        self._tts_gain_timer.timeout.connect(
+            lambda: self._controller.set_tts_gain(self._tts_gain_slider.value() / 100.0))
+        self._tts_gain_slider.valueChanged.connect(self._tts_gain_changed)
+        wrap = QtWidgets.QWidget()
+        layout = QtWidgets.QHBoxLayout(wrap)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        layout.addWidget(self._tts_gain_slider, 1)
+        layout.addWidget(self._tts_gain_label)
+        return wrap
 
-    @staticmethod
-    def _set_language_picker_placeholder(combo: QtWidgets.QComboBox, text: str) -> None:
-        line_edit = combo.lineEdit()
-        if line_edit is not None:
-            line_edit.setPlaceholderText(text)
+    def _tts_gain_changed(self, value: int) -> None:
+        self._tts_gain_label.setText(f"{value}%")
+        self._tts_gain_timer.start()
 
-    def _build_dashboard_device_combo(self, path: str, names: list[str], current: str) -> _NoWheelComboBox:
-        combo = _NoWheelComboBox()
+    def _tick_mic_meter(self) -> None:
+        level = self._controller.mic_level()
+        if level is None:
+            self._mic_meter.set_level(None, None)
+        else:
+            self._mic_meter.set_level(*level)
+
+    def _build_dashboard_device_combo(self, path: str, names: list[str], current: str) -> NoWheelComboBox:
+        combo = NoWheelComboBox()
         combo.setEditable(True)
         combo.setInsertPolicy(QtWidgets.QComboBox.InsertPolicy.NoInsert)
         combo.setMinimumContentsLength(18)
@@ -499,6 +516,11 @@ class MainWindow(QtWidgets.QMainWindow):
         buttons.addWidget(self._btn_save)
         outer.addLayout(buttons)
 
+        self._settings_form = SettingsForm(
+            self._controller, self._tr, self._settings_layout,
+            get_devices=lambda: (self._inputs, self._outputs),
+            on_hotkey_capture_start=self._hotkeys.stop,
+            on_hotkey_capture_end=lambda: self._sync_hotkeys(force=True))
         self._populate_settings()
         self._tab_settings_idx = self._tabs.addTab(page, self._tr("tab_settings"))
 
@@ -524,55 +546,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_log_tail()
 
     def _build_tray(self) -> None:
-        self._tray = QtWidgets.QSystemTrayIcon(self._make_icon(), self)
-        self._tray.setToolTip("vrclt")
-        menu = QtWidgets.QMenu(self)
-        act_show = menu.addAction(self._tr("tray_show"))
-        act_settings = menu.addAction(self._tr("tray_settings"))
-        act_update = menu.addAction(self._tr("tray_update"))
-        act_update.setVisible(False)
-        menu.addSeparator()
-        act_trans = menu.addAction(self._tr("tray_trans"))
-        act_sub = menu.addAction(self._tr("tray_subs"))
-        menu.addSeparator()
-        act_quit = menu.addAction(self._tr("tray_quit"))
-        self._tray_actions = {
-            "tray_show": act_show,
-            "tray_settings": act_settings,
-            "tray_update": act_update,
-            "tray_trans": act_trans,
-            "tray_subs": act_sub,
-            "tray_quit": act_quit,
-        }
-        act_show.triggered.connect(self._show_main)
-        act_settings.triggered.connect(self._show_settings)
-        act_update.triggered.connect(self._open_update_release)
-        act_trans.triggered.connect(self._toggle_translation)
-        act_sub.triggered.connect(self._toggle_subtitles)
-        act_quit.triggered.connect(self._quit)
-        self._tray.setContextMenu(menu)
-        self._tray.activated.connect(
-            lambda reason: self._show_main()
-            if reason == QtWidgets.QSystemTrayIcon.ActivationReason.Trigger else None)
-        self._tray.messageClicked.connect(self._open_update_release)
-        self._tray.show()
-
-    def _make_icon(self) -> QtGui.QIcon:
-        pix = QtGui.QPixmap(64, 64)
-        pix.fill(QtCore.Qt.GlobalColor.transparent)
-        painter = QtGui.QPainter(pix)
-        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-        painter.setBrush(QtGui.QColor("#4a6eb4"))
-        painter.setPen(QtCore.Qt.PenStyle.NoPen)
-        painter.drawRoundedRect(6, 6, 52, 52, 14, 14)
-        painter.setPen(QtGui.QColor("#ffffff"))
-        font = painter.font()
-        font.setBold(True)
-        font.setPointSize(24)
-        painter.setFont(font)
-        painter.drawText(pix.rect(), QtCore.Qt.AlignmentFlag.AlignCenter, "V")
-        painter.end()
-        return QtGui.QIcon(pix)
+        self._tray = TrayIcon(
+            self, self._tr,
+            on_show=self._show_main,
+            on_show_settings=self._show_settings,
+            on_open_update=lambda: self._update_banner.open_release(),
+            on_toggle_translation=self._toggle_translation,
+            on_toggle_subtitles=self._toggle_subtitles,
+            on_quit=self._quit,
+            on_message_clicked=lambda: self._update_banner.open_release())
 
     def _apply_style(self) -> None:
         self.setStyleSheet("""
@@ -616,293 +598,24 @@ class MainWindow(QtWidgets.QMainWindow):
             }
         """)
 
-    # ---------------- settings form ----------------
+    # ---------------- settings form (thin delegates; see ui/settings_form) ----
     def _populate_settings(self) -> None:
-        self._clear_layout(self._settings_layout)
-        self._fields.clear()
-        cfg = self._controller.raw_cfg
-        self._add_group("grp_api", [
-            ("api_key", "f.api_key", "password"),
-            ("model", "f.model", "text"),
-            ("app.mode", "f.app.mode", "appmode"),
-            ("app.profiles.discord.process", "f.app.profiles.discord.process", "text"),
-        ], cfg)
-        self._add_group("grp_lang", [
-            ("outbound.target_language", "f.outbound.target_language", "language"),
-            ("control.languages", "f.control.languages", "csv"),
-            ("inbound.target_language", "f.inbound.target_language", "language"),
-            ("inbound.languages", "f.inbound.languages", "csv"),
-        ], cfg)
-        self._add_group("grp_ui", [
-            ("ui.mode", "f.ui.mode", "uimode"),
-            ("ui.lang", "f.ui.lang", "text"),
-        ], cfg)
-        self._add_group("grp_hotkeys", [
-            ("hotkeys.enabled", "f.hotkeys.enabled", "bool"),
-            ("hotkeys.translation_toggle", "f.hotkeys.translation_toggle", "hotkey"),
-            ("hotkeys.subtitles_toggle", "f.hotkeys.subtitles_toggle", "hotkey"),
-        ], cfg)
-        self._add_group("grp_dev", [
-            ("outbound.mic_device", "f.outbound.mic_device", "input_device"),
-            ("outbound.text_only", "f.outbound.text_only", "bool"),
-            ("outbound.tts_device", "f.outbound.tts_device", "output_device"),
-            ("outbound.monitor_device", "f.outbound.monitor_device", "output_device"),
-            ("inbound.audio_device", "f.inbound.audio_device", "output_device"),
-            ("inbound.process", "f.inbound.process", "text"),
-        ], cfg)
-        self._add_group("grp_audio", [
-            ("audio.voice_rms_threshold", "f.audio.voice_rms_threshold", "float"),
-            ("audio.voice_hangover_sec", "f.audio.voice_hangover_sec", "float"),
-            ("audio.turn_end_silence_sec", "f.audio.turn_end_silence_sec", "float"),
-            ("audio.inbound_turn_end_silence_sec", "f.audio.inbound_turn_end_silence_sec", "float"),
-            ("audio.subtitle_partial_interval_sec", "f.audio.subtitle_partial_interval_sec", "float"),
-            ("audio.subtitle_finalize_silence_sec", "f.audio.subtitle_finalize_silence_sec", "float"),
-            ("audio.echo_guard_multiplier", "f.audio.echo_guard_multiplier", "float"),
-            ("audio.echo_guard_hold_sec", "f.audio.echo_guard_hold_sec", "float"),
-            ("audio.echo_guard_barge_in_multiplier", "f.audio.echo_guard_barge_in_multiplier", "float"),
-            ("audio.send_interval_ms", "f.audio.send_interval_ms", "int"),
-            ("audio.finalize_silence_sec", "f.audio.finalize_silence_sec", "float"),
-            ("audio.mic_idle_disconnect_sec", "f.audio.mic_idle_disconnect_sec", "float"),
-            ("outbound.echo_target_language", "f.outbound.echo_target_language", "bool"),
-            ("inbound.vad_enabled", "f.inbound.vad_enabled", "bool"),
-            ("inbound.vad_threshold", "f.inbound.vad_threshold", "float"),
-            ("inbound.vad_hangover_sec", "f.inbound.vad_hangover_sec", "float"),
-            ("inbound.play_audio", "f.inbound.play_audio", "bool"),
-        ], cfg)
-        self._add_group("grp_osc_vr", [
-            ("outbound.chatbox", "f.outbound.chatbox", "bool"),
-            ("osc.ip", "f.osc.ip", "text"),
-            ("osc.port", "f.osc.port", "int"),
-            ("osc.throttle_sec", "f.osc.throttle_sec", "float"),
-            ("osc.notification_sfx", "f.osc.notification_sfx", "bool"),
-            ("osc.show_source", "f.osc.show_source", "bool"),
-            ("osc.chunk_display_sec", "f.osc.chunk_display_sec", "float"),
-            ("control.enabled", "f.control.enabled", "bool"),
-            ("control.osc_listen_port", "f.control.osc_listen_port", "int"),
-            ("control.feedback_chatbox", "f.control.feedback_chatbox", "bool"),
-        ], cfg)
-        self._add_group("grp_overlay_wrist", [
-            ("overlay.enabled", "f.overlay.enabled", "bool"),
-            ("overlay.width_m", "f.overlay.width_m", "float"),
-            ("overlay.height_m", "f.overlay.height_m", "float"),
-            ("overlay.distance_m", "f.overlay.distance_m", "float"),
-            ("overlay.below_m", "f.overlay.below_m", "float"),
-            ("overlay.tilt_deg", "f.overlay.tilt_deg", "float"),
-            ("overlay.font_size", "f.overlay.font_size", "int"),
-            ("overlay.display_sec", "f.overlay.display_sec", "float"),
-            ("overlay.lines", "f.overlay.lines", "int"),
-            ("overlay.show_source", "f.overlay.show_source", "bool"),
-            ("wrist_ui.enabled", "f.wrist_ui.enabled", "bool"),
-            ("wrist_ui.hand", "f.wrist_ui.hand", "hand"),
-            ("wrist_ui.width_m", "f.wrist_ui.width_m", "float"),
-            ("wrist_ui.offset", "f.wrist_ui.offset", "float_csv"),
-            ("wrist_ui.tilt_deg", "f.wrist_ui.tilt_deg", "float"),
-            ("wrist_ui.roll_deg", "f.wrist_ui.roll_deg", "nullable_float"),
-            ("wrist_ui.pointer_tilt_deg", "f.wrist_ui.pointer_tilt_deg", "float"),
-        ], cfg)
-        self._add_steamvr_group(cfg)
-        self._settings_layout.addStretch(1)
-
-    def _add_steamvr_group(self, cfg: dict) -> None:
-        group = QtWidgets.QGroupBox(self._tr("grp_steamvr"))
-        form = QtWidgets.QFormLayout(group)
-        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-        for path, label_key, kind in (
-                ("steamvr.register", "f.steamvr.register", "bool"),
-                ("steamvr.dashboard_panel", "f.steamvr.dashboard_panel", "bool")):
-            widget = self._make_field(path, kind, _get_path(cfg, path))
-            self._fields[path] = (widget, kind)
-            form.addRow(self._tr(label_key), widget)
-        # Live toggle: SteamVR stores the auto-launch state, so this applies
-        # immediately (no save/restart) and mirrors SteamVR's own settings.
-        self._chk_autolaunch = QtWidgets.QCheckBox()
-        self._chk_autolaunch.clicked.connect(self._controller.set_steamvr_auto_launch)
-        form.addRow(self._tr("f.steamvr.auto_launch"), self._chk_autolaunch)
-        self._settings_layout.addWidget(group)
-        self._sync_steamvr_autolaunch()
-
-    def _sync_steamvr_autolaunch(self) -> None:
-        chk = getattr(self, "_chk_autolaunch", None)
-        if chk is None:
-            return
-        value = self._controller.get_steamvr_auto_launch()
-        available = value is not None
-        if chk.isEnabled() != available:
-            chk.setEnabled(available)
-            chk.setToolTip("" if available else self._tr("tip_steamvr_unavailable"))
-        if available and chk.isChecked() != bool(value):
-            blocked = chk.blockSignals(True)
-            chk.setChecked(bool(value))
-            chk.blockSignals(blocked)
-
-    def _add_group(self, title_key: str, fields: list[tuple[str, str, str]], cfg: dict) -> None:
-        group = QtWidgets.QGroupBox(self._tr(title_key))
-        form = QtWidgets.QFormLayout(group)
-        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-        for path, label_key, kind in fields:
-            widget = self._make_field(path, kind, _get_path(cfg, path))
-            self._fields[path] = (widget, kind)
-            form.addRow(self._tr(label_key), widget)
-        self._settings_layout.addWidget(group)
-
-    def _make_field(self, path: str, kind: str, value):
-        if kind == "bool":
-            w = QtWidgets.QCheckBox()
-            w.setChecked(bool(value))
-            return w
-        if kind in ("int", "float", "nullable_float"):
-            w = QtWidgets.QLineEdit("" if value is None else str(value))
-            return w
-        if kind == "password":
-            w = QtWidgets.QLineEdit("" if value is None else str(value))
-            w.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
-            return w
-        if kind == "csv":
-            return QtWidgets.QLineEdit(_as_csv(value))
-        if kind == "hotkey":
-            w = _HotkeyEdit()
-            w.setKeySequence(QtGui.QKeySequence("" if value is None else str(value)))
-            if hasattr(w, "setMaximumSequenceLength"):
-                w.setMaximumSequenceLength(1)
-            if hasattr(w, "setClearButtonEnabled"):
-                w.setClearButtonEnabled(True)
-            w.focus_in.connect(self._hotkeys.stop)
-            w.focus_out.connect(lambda: self._sync_hotkeys(force=True))
-            return w
-        if kind == "language":
-            w = self._build_language_picker()
-            self._set_language_combo_value(w, "" if value is None else str(value))
-            return w
-        if kind == "float_csv":
-            return QtWidgets.QLineEdit(_as_float_list(value))
-        if kind == "appmode":
-            w = _NoWheelComboBox()
-            w.addItems(list(config_mod.APP_MODES))
-            w.setCurrentText(str(value or "vrchat"))
-            return w
-        if kind == "uimode":
-            w = _NoWheelComboBox()
-            w.addItems(["auto", "vr", "desktop"])
-            w.setCurrentText(str(value or "auto"))
-            return w
-        if kind == "hand":
-            w = _NoWheelComboBox()
-            w.addItems(["left", "right"])
-            w.setCurrentText(str(value or "left"))
-            return w
-        if kind in ("input_device", "output_device"):
-            w = _NoWheelComboBox()
-            w.setEditable(True)
-            names = self._inputs if kind == "input_device" else self._outputs
-            w.addItems(names)
-            w.setCurrentText("" if value is None else str(value))
-            return w
-        return QtWidgets.QLineEdit("" if value is None else str(value))
-
-    def _field_value(self, widget, kind: str):
-        if kind == "bool":
-            return widget.isChecked()
-        if kind == "int":
-            return int(widget.text().strip())
-        if kind == "float":
-            return float(widget.text().strip())
-        if kind == "nullable_float":
-            text = widget.text().strip()
-            return None if not text else float(text)
-        if kind == "csv":
-            return _from_csv(widget.text())
-        if kind == "float_csv":
-            return _from_float_list(widget.text())
-        if kind == "hotkey":
-            return widget.keySequence().toString(
-                QtGui.QKeySequence.SequenceFormat.PortableText)
-        if kind == "language":
-            return self._code_from_language_combo(widget, [])
-        if isinstance(widget, QtWidgets.QComboBox):
-            return widget.currentText().strip()
-        return widget.text()
+        self._settings_form.populate()
 
     def _sync_settings_from_config(self) -> None:
-        focus = QtWidgets.QApplication.focusWidget()
-        for path, (widget, kind) in self._fields.items():
-            if focus is not None and (focus is widget or widget.isAncestorOf(focus)):
-                continue
-            self._set_field_widget_value(widget, kind, _get_path(self._controller.raw_cfg, path))
+        self._settings_form.sync_from_config()
 
-    def _set_field_widget_value(self, widget, kind: str, value) -> None:
-        blocked = widget.blockSignals(True)
-        try:
-            if kind == "bool":
-                widget.setChecked(bool(value))
-            elif kind == "language":
-                self._set_language_combo_value(widget, "" if value is None else str(value))
-            elif kind == "hotkey":
-                widget.setKeySequence(QtGui.QKeySequence("" if value is None else str(value)))
-            elif isinstance(widget, QtWidgets.QComboBox):
-                widget.setCurrentText("" if value is None else str(value))
-            elif kind == "csv":
-                widget.setText(_as_csv(value))
-            elif kind == "float_csv":
-                widget.setText(_as_float_list(value))
-            else:
-                widget.setText("" if value is None else str(value))
-        finally:
-            widget.blockSignals(blocked)
+    def _sync_steamvr_autolaunch(self) -> None:
+        self._settings_form.sync_steamvr_autolaunch()
 
     def _settings_from_fields(self) -> dict:
-        cfg = copy.deepcopy(self._controller.raw_cfg)
-        for path, (widget, kind) in self._fields.items():
-            _set_path(cfg, path, self._field_value(widget, kind))
-        return cfg
+        return self._settings_form.config_from_fields()
 
     # ---------------- actions ----------------
-    def _start_update_check(self) -> None:
-        if self._update_thread is not None:
-            return
-
-        def run():
-            info = check_latest_release(__version__)
-            if info is not None:
-                self._signals.update_available.emit(info)
-
-        self._update_thread = threading.Thread(
-            target=run, daemon=True, name="vrclt-update-check")
-        self._update_thread.start()
-
-    def _update_available(self, info) -> None:
-        self._update_info = info
-        self._sync_update_banner()
-        action = self._tray_actions.get("tray_update")
-        if action is not None:
-            action.setVisible(True)
-        if not self._update_notified:
-            self._update_notified = True
-            self._tray.showMessage(
-                self._tr("update_title"),
-                self._update_message(info),
-                QtWidgets.QSystemTrayIcon.MessageIcon.Information,
-                10000,
-            )
-
-    def _sync_update_banner(self) -> None:
-        if not hasattr(self, "_update_bar"):
-            return
-        info = self._update_info
-        self._update_bar.setVisible(info is not None)
-        if info is not None:
-            self._update_text.setText(self._update_message(info))
-
-    def _update_message(self, info) -> str:
-        return self._tr("update_body").format(
-            current=info.current_version,
-            latest=info.latest_version,
-        )
-
-    def _open_update_release(self) -> None:
-        info = self._update_info
-        if info is None:
-            return
-        QtGui.QDesktopServices.openUrl(QtCore.QUrl(info.release_url))
+    def _on_update_available(self, info, message: str) -> None:
+        """Fires once (from the banner) when a newer release is found."""
+        self._tray.set_update_visible(True)
+        self._tray.show_message(self._tr("update_title"), message, 10000)
 
     def _maybe_prompt_config_reset_after_update(self) -> None:
         previous = self._controller.last_config_version()
@@ -940,19 +653,50 @@ class MainWindow(QtWidgets.QMainWindow):
         if reply == QtWidgets.QMessageBox.StandardButton.Yes:
             self._run_config_reset()
 
+    def _spawn_restart(self, thread_name: str, op, done_signal) -> threading.Thread:
+        """Run op() (a controller call returning ok) on a daemon worker and
+        emit done_signal(ok) back onto the Qt thread."""
+        def run():
+            done_signal.emit(op())
+
+        t = threading.Thread(target=run, daemon=True, name=thread_name)
+        t.start()
+        return t
+
+    def _apply_config_async(self, build_cfg, *, fail_key: str, busy_key: str,
+                            note: QtWidgets.QLabel, done_signal,
+                            thread_name: str, on_busy,
+                            on_build_error=None) -> threading.Thread | None:
+        """Shared save-and-restart shape for the settings/dashboard handlers.
+        build_cfg() runs on the Qt thread and must validate + config_mod.save(),
+        returning the cfg to restart with (None = silent no-op). On exception
+        the note shows '{fail_key}: {e}' and on_build_error() rolls the
+        widgets back; on success the busy note is set, on_busy() disables the
+        controls, and the restart runs on a worker via _spawn_restart."""
+        try:
+            cfg = build_cfg()
+        except Exception as e:
+            note.setText(f"{self._tr(fail_key)}: {e}")
+            if on_build_error is not None:
+                on_build_error()
+            return None
+        if cfg is None:
+            return None
+        note.setText(self._tr(busy_key))
+        on_busy()
+        return self._spawn_restart(
+            thread_name, lambda: self._controller.restart(cfg), done_signal)
+
     def _run_config_reset(self) -> None:
         if self._reset_thread is not None and self._reset_thread.is_alive():
             return
         self._settings_note.setText(self._tr("msg_reset_restarting"))
         self._btn_reset_config.setEnabled(False)
         self._btn_save.setEnabled(False)
-
-        def run():
-            ok = self._controller.reset_config_preserving_language_lists(__version__)
-            self._signals.reset_done.emit(ok)
-
-        self._reset_thread = threading.Thread(target=run, daemon=True, name="vrclt-reset")
-        self._reset_thread.start()
+        self._reset_thread = self._spawn_restart(
+            "vrclt-reset",
+            lambda: self._controller.reset_config_preserving_language_lists(__version__),
+            self._signals.reset_done)
 
     def _reset_done(self, ok: bool) -> None:
         self._btn_reset_config.setEnabled(True)
@@ -963,7 +707,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._populate_settings()
 
     def _save_settings(self) -> None:
-        try:
+        def build():
             cfg = self._settings_from_fields()
             key_error = config_mod.api_key_validation_error(cfg.get("api_key", ""))
             if key_error:
@@ -974,18 +718,15 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             cfg = config_mod.apply_app_profile(cfg, force=force_profile)
             config_mod.save(cfg)
-        except Exception as e:
-            self._settings_note.setText(f"{self._tr('msg_save_failed')}: {e}")
-            return
-        self._settings_note.setText(self._tr("msg_save_restarting"))
-        self._btn_save.setEnabled(False)
+            return cfg
 
-        def run():
-            ok = self._controller.restart(cfg)
-            self._signals.save_done.emit(ok)
-
-        self._save_thread = threading.Thread(target=run, daemon=True, name="vrclt-restart")
-        self._save_thread.start()
+        thread = self._apply_config_async(
+            build, fail_key="msg_save_failed", busy_key="msg_save_restarting",
+            note=self._settings_note, done_signal=self._signals.save_done,
+            thread_name="vrclt-restart",
+            on_busy=lambda: self._btn_save.setEnabled(False))
+        if thread is not None:
+            self._save_thread = thread
 
     def _save_done(self, ok: bool) -> None:
         self._btn_save.setEnabled(True)
@@ -999,10 +740,56 @@ class MainWindow(QtWidgets.QMainWindow):
         self._controller.restart_async()
 
     def _reload_devices(self) -> None:
+        """Refresh device lists via a runtime restart with a PortAudio
+        reinit (the only way hot-plugged devices become visible)."""
+        if self._devices_reloading:
+            return
+        self._devices_reloading = True
+        self._btn_devices.setEnabled(False)
+        self._btn_test_out.setEnabled(False)
+        self._settings_note.setText(self._tr("msg_devices_refreshing"))
+        self._spawn_restart("vrclt-device-reload",
+                            self._controller.reinit_audio_devices,
+                            self._signals.devices_reloaded)
+
+    def _devices_reloaded(self, ok: bool) -> None:
+        self._devices_reloading = False
         self._inputs, self._outputs = _device_names()
+        self._btn_devices.setEnabled(True)
+        self._btn_test_out.setEnabled(True)
         self._sync_dashboard_devices(force=True)
         self._populate_settings()
-        self._settings_note.setText(self._tr("msg_devices_refreshed"))
+        self._settings_note.setText(
+            self._tr("msg_devices_refreshed") if ok
+            else self._tr("msg_saved_start_failed"))
+
+    def _test_output_device(self) -> None:
+        """Play a short test tone on the (unsaved) output-combo selection."""
+        if (self._test_thread is not None and self._test_thread.is_alive()) \
+                or self._device_applying or self._devices_reloading:
+            return
+        value = self._voice_out_device.currentText().strip()
+        self._btn_test_out.setEnabled(False)
+        self._btn_devices.setEnabled(False)
+        self._dashboard_note.setText(self._tr("msg_test_playing"))
+
+        def run():
+            try:
+                from .audio.devices import sine_test
+                sine_test(value, seconds=1.0)
+                self._signals.test_done.emit(True, "")
+            except Exception as e:
+                self._signals.test_done.emit(False, str(e))
+
+        self._test_thread = threading.Thread(
+            target=run, daemon=True, name="vrclt-sound-test")
+        self._test_thread.start()
+
+    def _test_done(self, ok: bool, error: str) -> None:
+        self._btn_test_out.setEnabled(not self._devices_reloading)
+        self._btn_devices.setEnabled(not self._devices_reloading)
+        self._dashboard_note.setText(
+            "" if ok else f"{self._tr('msg_test_failed')}: {error}")
 
     def _apply_dashboard_device(self, path: str, combo: QtWidgets.QComboBox) -> None:
         if self._device_applying:
@@ -1012,26 +799,25 @@ class MainWindow(QtWidgets.QMainWindow):
         current = str(_get_path(self._controller.raw_cfg, path, "") or "")
         if value == current:
             return
-        try:
+
+        def build():
             cfg = copy.deepcopy(self._controller.raw_cfg)
             _set_path(cfg, path, value)
             cfg = config_mod.apply_app_profile(cfg)
             config_mod.save(cfg)
-        except Exception as e:
-            self._dashboard_note.setText(f"{self._tr('msg_device_failed')}: {e}")
-            self._sync_dashboard_devices()
-            return
+            return cfg
 
-        self._dashboard_note.setText(self._tr("msg_device_applying"))
-        self._device_applying = True
-        self._set_dashboard_apply_enabled(False)
+        def busy():
+            self._device_applying = True
+            self._set_dashboard_apply_enabled(False)
 
-        def run():
-            ok = self._controller.restart(cfg)
-            self._signals.device_done.emit(ok)
-
-        self._device_thread = threading.Thread(target=run, daemon=True, name="vrclt-device-restart")
-        self._device_thread.start()
+        thread = self._apply_config_async(
+            build, fail_key="msg_device_failed", busy_key="msg_device_applying",
+            note=self._dashboard_note, done_signal=self._signals.device_done,
+            thread_name="vrclt-device-restart", on_busy=busy,
+            on_build_error=self._sync_dashboard_devices)
+        if thread is not None:
+            self._device_thread = thread
 
     def _device_done(self, ok: bool) -> None:
         self._device_applying = False
@@ -1047,7 +833,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if not mode or self._app_mode_applying:
             self._set_app_mode_checked(current)
             return
-        try:
+
+        def build():
             cfg = copy.deepcopy(self._controller.raw_cfg)
             cfg.setdefault("app", {})["mode"] = mode
             cfg = config_mod.apply_app_profile(cfg, force=True)
@@ -1055,23 +842,21 @@ class MainWindow(QtWidgets.QMainWindow):
                     self._profile_runtime_snapshot(self._controller.cfg):
                 # clicking the already-selected mode: nothing to write or restart
                 self._set_app_mode_checked(current)
-                return
+                return None
             config_mod.save(cfg)
-        except Exception as e:
-            self._dashboard_note.setText(f"{self._tr('msg_mode_failed')}: {e}")
-            self._set_app_mode_checked(current)
-            return
+            return cfg
 
-        self._dashboard_note.setText(self._tr("msg_mode_applying"))
-        self._app_mode_applying = True
-        self._set_dashboard_apply_enabled(False)
+        def busy():
+            self._app_mode_applying = True
+            self._set_dashboard_apply_enabled(False)
 
-        def run():
-            ok = self._controller.restart(cfg)
-            self._signals.mode_done.emit(ok)
-
-        self._mode_thread = threading.Thread(target=run, daemon=True, name="vrclt-mode-restart")
-        self._mode_thread.start()
+        thread = self._apply_config_async(
+            build, fail_key="msg_mode_failed", busy_key="msg_mode_applying",
+            note=self._dashboard_note, done_signal=self._signals.mode_done,
+            thread_name="vrclt-mode-restart", on_busy=busy,
+            on_build_error=lambda: self._set_app_mode_checked(current))
+        if thread is not None:
+            self._mode_thread = thread
 
     def _mode_done(self, ok: bool) -> None:
         self._app_mode_applying = False
@@ -1091,6 +876,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._mic_device.setEnabled(enabled)
         if hasattr(self, "_voice_out_device"):
             self._voice_out_device.setEnabled(enabled)
+        if hasattr(self, "_btn_test_out"):
+            self._btn_test_out.setEnabled(enabled)
 
     def _set_app_mode_checked(self, mode: str) -> None:
         for key, btn in self._app_mode_buttons.items():
@@ -1114,48 +901,37 @@ class MainWindow(QtWidgets.QMainWindow):
         if self._app_mode_applying:
             self._sync_text_only()
             return
-        try:
+
+        def build():
             cfg = copy.deepcopy(self._controller.raw_cfg)
             if enabled:
                 cfg.setdefault("app", {})["mode"] = "vrchat"
             cfg.setdefault("outbound", {})["text_only"] = bool(enabled)
             cfg = config_mod.apply_app_profile(cfg, force=True)
             config_mod.save(cfg)
-        except Exception as e:
-            self._dashboard_note.setText(f"{self._tr('msg_text_only_failed')}: {e}")
-            self._sync_text_only()
-            return
+            return cfg
 
-        self._dashboard_note.setText(self._tr("msg_text_only_applying"))
-        self._app_mode_applying = True
-        self._set_dashboard_apply_enabled(False)
+        def busy():
+            self._app_mode_applying = True
+            self._set_dashboard_apply_enabled(False)
 
-        def run():
-            ok = self._controller.restart(cfg)
-            self._signals.mode_done.emit(ok)
-
-        self._mode_thread = threading.Thread(target=run, daemon=True, name="vrclt-text-only-restart")
-        self._mode_thread.start()
+        thread = self._apply_config_async(
+            build, fail_key="msg_text_only_failed", busy_key="msg_text_only_applying",
+            note=self._dashboard_note, done_signal=self._signals.mode_done,
+            thread_name="vrclt-text-only-restart", on_busy=busy,
+            on_build_error=self._sync_text_only)
+        if thread is not None:
+            self._mode_thread = thread
 
     def _sync_text_only(self) -> None:
         blocked = self._text_only.blockSignals(True)
         try:
-            self._text_only.setChecked(self._is_text_only(self._controller.cfg))
+            self._text_only.setChecked(config_mod.is_text_only(self._controller.cfg))
             self._text_only.setEnabled(
                 not self._app_mode_applying
                 and self._controller.cfg.get("app", {}).get("mode", "vrchat") == "vrchat")
         finally:
             self._text_only.blockSignals(blocked)
-
-    @staticmethod
-    def _is_text_only(cfg: dict) -> bool:
-        ob = cfg.get("outbound", {})
-        return bool(
-            ob.get("text_only", False)
-            or (not ob.get("voice_output", True)
-                and ob.get("passthrough_while_translating", False)
-                and ob.get("chatbox", False))
-        )
 
     def _set_overlay_font_size(self, value: int) -> None:
         self._controller.set_overlay_font_size(value)
@@ -1180,14 +956,17 @@ class MainWindow(QtWidgets.QMainWindow):
     def _sync_hotkeys(self, force: bool = False) -> None:
         cfg = self._controller.cfg.get("hotkeys", {})
         enabled = bool(cfg.get("enabled", True))
+        enabled_in_vr = bool(cfg.get("enabled_in_vr", True))
         translation = str(cfg.get("translation_toggle", "") or "")
         subtitles = str(cfg.get("subtitles_toggle", "") or "")
+        hold = str(cfg.get("translation_hold", "") or "")
         pc_mode = resolve_ui_mode(self._controller.cfg) == "desktop"
-        signature = (enabled, pc_mode, translation, subtitles)
+        active = enabled and (pc_mode or enabled_in_vr)
+        signature = (active, translation, subtitles, hold)
         if not force and signature == self._hotkey_signature:
             return
         self._hotkey_signature = signature
-        if not enabled or not pc_mode:
+        if not active:
             self._hotkeys.configure([])
             return
         self._hotkeys.configure([
@@ -1197,6 +976,10 @@ class MainWindow(QtWidgets.QMainWindow):
             HotkeyRegistration(
                 HOTKEY_SUBTITLES_ID, "subtitles toggle", subtitles,
                 self._signals.subtitles_hotkey.emit),
+            HotkeyRegistration(
+                HOTKEY_TRANSLATION_HOLD_ID, "translation hold", hold,
+                lambda: self._signals.translation_hold.emit(True),
+                on_release=lambda: self._signals.translation_hold.emit(False)),
         ])
 
     def _add_output_language_from_input(self) -> None:
@@ -1215,7 +998,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _add_language_from_input(self, edit: QtWidgets.QComboBox, existing: list[str],
                                  add_fn) -> None:
-        code = self._code_from_language_combo(edit, existing)
+        code = code_from_language_combo(edit, existing)
         if not code:
             return
         add_fn(code)
@@ -1260,24 +1043,6 @@ class MainWindow(QtWidgets.QMainWindow):
     def _code_for_label(label: str, codes: list[str]) -> str:
         return language_code_from_text(label, codes)
 
-    @staticmethod
-    def _code_from_language_combo(combo: QtWidgets.QComboBox, fallback_codes: list[str]) -> str:
-        text = combo.currentText().strip()
-        data = combo.currentData()
-        if data and (not text or text == language_label(str(data))):
-            return str(data)
-        return language_code_from_text(text, fallback_codes)
-
-    @staticmethod
-    def _set_language_combo_value(combo: QtWidgets.QComboBox, code: str) -> None:
-        code = language_code_from_text(code)
-        idx = combo.findData(code)
-        if idx >= 0:
-            combo.setCurrentIndex(idx)
-        else:
-            combo.setCurrentIndex(-1)
-            combo.setEditText(code)
-
     # ---------------- refresh ----------------
     def _refresh(self) -> None:
         st = self._controller.state
@@ -1290,14 +1055,25 @@ class MainWindow(QtWidgets.QMainWindow):
         if revision != self._last_config_revision:
             self._last_config_revision = revision
             self._sync_settings_from_config()
-            self._sync_hotkeys()
-        connected = self._controller.connected()
-        status = self._controller.status
-        color = "#2ea043" if connected else ("#d29922" if status == "Running" else "#8b949e")
+        # unconditional: cheap signature early-out, and it un-stales the
+        # ui.mode=auto gate when SteamVR starts/stops between config saves
+        self._sync_hotkeys()
+        connected, status_key, detail = self._controller.get_status_info()
+        if connected:
+            color = "#2ea043"
+        elif status_key in ("status_api_key_invalid", "status_api_key_required",
+                            "status_failed"):
+            color = "#e06450"
+        elif status_key in ("status_running", "status_degraded",
+                            "status_reconnecting", "status_quota_exceeded"):
+            color = "#d29922"
+        else:
+            color = "#8b949e"
         self._set_style_if_changed(self._status_dot, f"background:{color}; border-radius:7px;")
         conn_key = "conn_on" if connected else "conn_off"
-        self._status_text.setText(f"{self._status_label(status)} | {i18n.tr(st.ui_lang, conn_key)}")
-        self._error_text.setText(self._error_label(self._controller.last_error))
+        self._status_text.setText(
+            f"{i18n.tr(st.ui_lang, status_key)} | {i18n.tr(st.ui_lang, conn_key)}")
+        self._error_text.setText(self._error_label(detail))
 
         self._btn_trans.setText(i18n.tr(st.ui_lang, "btn_trans_on" if st.translation_on else "btn_trans_off"))
         self._set_style_if_changed(
@@ -1321,6 +1097,20 @@ class MainWindow(QtWidgets.QMainWindow):
                 int(self._controller.cfg.get("overlay", {}).get("font_size", 27)))
         finally:
             self._overlay_font_size.blockSignals(blocked)
+
+        if not self._tts_gain_slider.isSliderDown() and \
+                not self._tts_gain_timer.isActive():
+            blocked = self._tts_gain_slider.blockSignals(True)
+            try:
+                self._tts_gain_slider.setValue(
+                    round(self._controller.tts_gain() * 100))
+                self._tts_gain_label.setText(f"{self._tts_gain_slider.value()}%")
+            finally:
+                self._tts_gain_slider.blockSignals(blocked)
+        want_meter = self.isVisible() and \
+            self._tabs.currentIndex() == self._tab_dashboard_idx
+        if want_meter != self._meter_timer.isActive():
+            (self._meter_timer.start if want_meter else self._meter_timer.stop)()
 
         self._sync_combo(self._out_lang, [
             language_label(c) for c in self._controller.cfg.get("control", {}).get("languages", ["en"])
@@ -1435,8 +1225,7 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             event.ignore()
             self.hide()
-            self._tray.showMessage("vrclt", self._tr("tray_still_running"),
-                                   QtWidgets.QSystemTrayIcon.MessageIcon.Information, 1500)
+            self._tray.show_message("vrclt", self._tr("tray_still_running"), 1500)
 
     def _quit(self) -> None:
         self._quitting = True
@@ -1447,17 +1236,6 @@ class MainWindow(QtWidgets.QMainWindow):
         # must not resurrect the runtime during interpreter teardown
         self._controller.shutdown()
         QtWidgets.QApplication.quit()
-
-    @staticmethod
-    def _clear_layout(layout) -> None:
-        while layout.count():
-            item = layout.takeAt(0)
-            widget = item.widget()
-            child = item.layout()
-            if widget is not None:
-                widget.deleteLater()
-            elif child is not None:
-                MainWindow._clear_layout(child)
 
 
 def run_qt_app(controller, log_file: Path) -> int:

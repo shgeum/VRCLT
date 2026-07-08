@@ -10,23 +10,27 @@
 """
 import logging
 import math
-import os
 import threading
-from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw
 
+from ..config import (
+    APPDATA_DIR,
+    OVERLAY_MAX_HEIGHT_M as MAX_HEIGHT_M,
+    OVERLAY_MAX_WIDTH_M as MAX_WIDTH_M,
+    OVERLAY_MIN_HEIGHT_M as MIN_HEIGHT_M,
+    OVERLAY_MIN_WIDTH_M as MIN_WIDTH_M,
+)
 from ..i18n import tr
 from ..resources import bundled_font, resolve_font_path
 from ..state import AppState
 from ..subtitles import SubtitleStore
 from .font_fallback import load_fallback_font
 from .panel_common import (
-    LASER_TEX_H, LASER_TEX_W, LASER_WIDTH_M,
-    coerce_transform, create_overlay_set, cursor_texture, haptic, laser_base,
-    laser_texture, load_saved_transform, np_to_hmd34, pointer_matrix,
-    pose_to_np, save_transform, translate,
+    coerce_transform, create_overlay_set, haptic, laser_base,
+    load_saved_transform, np_to_hmd34, pointer_matrix, pose_to_np,
+    ray_plane_hit, save_transform, setup_pointer_overlays, translate,
 )
 from .render import GlTexture, flip_bounds
 
@@ -34,10 +38,6 @@ log = logging.getLogger(__name__)
 
 TEX_W, TEX_H = 960, 240
 CURSOR_SIZE_M = 0.018
-MIN_WIDTH_M = 0.45
-MAX_WIDTH_M = 1.6
-MIN_HEIGHT_M = 0.10
-MAX_HEIGHT_M = 0.60
 MIN_TEX_H = 96
 MAX_TEX_H = 720
 HANDLE_PX = 46
@@ -47,7 +47,7 @@ RESIZE_HANDLE_M = 0.12
 GAZE_ON_DEG = 25.0
 GAZE_OFF_DEG = 40.0
 
-TRANSFORM_PATH = Path(os.environ.get("LOCALAPPDATA", ".")) / "vrclt" / "subtitle_transform.json"
+TRANSFORM_PATH = APPDATA_DIR / "subtitle_transform.json"
 
 COL_FINAL = (255, 255, 255, 255)
 COL_PARTIAL = (190, 190, 190, 255)
@@ -150,21 +150,9 @@ class SubtitlePanel:
         ovl.setOverlayTextureBounds(self._h, bounds)
         self._tex = GlTexture(TEX_W, MAX_TEX_H)
 
-        ovl.setOverlayWidthInMeters(self._h_laser, LASER_WIDTH_M)
-        ovl.setOverlaySortOrder(self._h_laser, 210)
-        ovl.setOverlayTextureBounds(self._h_laser, bounds)
-        laser_tex = GlTexture(LASER_TEX_W, LASER_TEX_H)
-        laser_tex.update(laser_texture())
-        ovl.setOverlayTexture(self._h_laser, laser_tex.vr_texture(openvr))
-        self._laser_tex = laser_tex
-
-        ovl.setOverlayWidthInMeters(self._h_cursor, CURSOR_SIZE_M)
-        ovl.setOverlaySortOrder(self._h_cursor, 211)
-        ovl.setOverlayTextureBounds(self._h_cursor, bounds)
-        cursor_tex = GlTexture(64, 64)
-        cursor_tex.update(cursor_texture())
-        ovl.setOverlayTexture(self._h_cursor, cursor_tex.vr_texture(openvr))
-        self._cursor_tex = cursor_tex
+        self._laser_tex, self._cursor_tex = setup_pointer_overlays(
+            openvr, ovl, self._h_laser, self._h_cursor,
+            laser_sort=210, cursor_sort=211, cursor_size_m=CURSOR_SIZE_M)
 
         self._overlay_mat = self._load_transform()
         if self._configured_transform is not None or TRANSFORM_PATH.exists():
@@ -476,16 +464,10 @@ class SubtitlePanel:
 
     def _ray_hit(self, h4: np.ndarray, f4: np.ndarray):
         to_overlay = np.linalg.inv(self._overlay_mat) @ np.linalg.inv(h4) @ f4 @ self._pointer_mat
-        origin = to_overlay @ np.array([0.0, 0.0, 0.0, 1.0])
-        direction = to_overlay @ np.array([0.0, 0.0, -1.0, 0.0])
-        dz = float(direction[2])
-        if abs(dz) < 1e-6:
+        xy = ray_plane_hit(to_overlay, 2.0)
+        if xy is None:
             return None
-        t = -float(origin[2]) / dz
-        if t < 0.0 or t > 2.0:
-            return None
-        x = float(origin[0] + t * direction[0])
-        y = float(origin[1] + t * direction[1])
+        x, y = xy
         half_w, half_h = self._width_m / 2, self._height_m / 2
         margin = max(0.04, RESIZE_HANDLE_M * 0.55)
         if abs(x) > half_w + margin or abs(y) > half_h + margin:
@@ -546,11 +528,16 @@ class SubtitlePanel:
         d.line([(x, y - length), (x, y)], fill=color, width=width)
 
     # ---------------- rendering ----------------
-    def _wrap(self, draw, text: str, font, max_width: int) -> list[str]:
+    def _wrap_chars(self, draw, text: str, font, max_width: int) -> list[str]:
+        """NOT panel_common.wrap_to_width on purpose: subtitles need "\\n" as
+        a forced break and strict per-character wrapping (word-wrap would
+        change CJK/mixed subtitle line breaks users are used to)."""
         lines = []
         line = ""
         for ch in text:
-            if font.textlength(draw, line + ch) > max_width or ch == "\n":
+            # check "\n" BEFORE measuring: PIL textlength raises on newlines,
+            # which would crash the whole VR render loop
+            if ch == "\n" or font.textlength(draw, line + ch) > max_width:
                 if line:
                     lines.append(line)
                 line = "" if ch == "\n" else ch
@@ -586,7 +573,7 @@ class SubtitlePanel:
 
         wrapped: list[tuple[str, tuple, object]] = []
         for text, color, font in rows:
-            for line in self._wrap(d, text, font, TEX_W - 56):
+            for line in self._wrap_chars(d, text, font, TEX_W - 56):
                 wrapped.append((line, color, font))
         line_h = int(self._font.line_height(d) * 1.3)
         max_rows = max(1, (tex_h - 28) // line_h)

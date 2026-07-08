@@ -6,6 +6,7 @@ import logging
 import os
 import string
 import threading
+import time
 from dataclasses import dataclass
 from typing import Callable
 
@@ -117,6 +118,9 @@ class HotkeyRegistration:
     name: str
     sequence: str
     callback: Callable[[], None]
+    # hold hotkeys: fires when the main key is released. WM_HOTKEY only
+    # reports presses, so release is detected by polling GetAsyncKeyState.
+    on_release: Callable[[], None] | None = None
 
 
 class HotkeyError(ValueError):
@@ -231,8 +235,9 @@ class WindowsGlobalHotkeys:
         msg = MSG()
         user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, PM_NOREMOVE)
 
-        by_id: dict[int, HotkeyRegistration] = {}
+        by_id: dict[int, tuple[HotkeyRegistration, ParsedHotkey]] = {}
         registered_ids: list[int] = []
+        hold_active: set[int] = set()
         try:
             for reg in self._registrations:
                 try:
@@ -250,7 +255,7 @@ class WindowsGlobalHotkeys:
                                 reg.name, reg.sequence, err)
                     continue
                 registered_ids.append(reg.hotkey_id)
-                by_id[reg.hotkey_id] = reg
+                by_id[reg.hotkey_id] = (reg, parsed)
 
             self._ready.set()
             while True:
@@ -259,13 +264,20 @@ class WindowsGlobalHotkeys:
                     break
                 if msg.message != WM_HOTKEY:
                     continue
-                reg = by_id.get(int(msg.wParam))
-                if reg is None:
+                entry = by_id.get(int(msg.wParam))
+                if entry is None:
                     continue
+                reg, parsed = entry
                 try:
                     reg.callback()
                 except Exception:
                     log.exception("hotkey callback failed: %s", reg.name)
+                if reg.on_release is not None and reg.hotkey_id not in hold_active:
+                    hold_active.add(reg.hotkey_id)
+                    threading.Thread(
+                        target=self._watch_release,
+                        args=(reg, parsed.vk, hold_active),
+                        daemon=True, name="vrclt-hotkey-hold").start()
         finally:
             for hotkey_id in registered_ids:
                 try:
@@ -273,3 +285,21 @@ class WindowsGlobalHotkeys:
                 except Exception:
                     log.debug("failed to unregister hotkey %s", hotkey_id, exc_info=True)
             self._ready.set()
+
+    @staticmethod
+    def _watch_release(reg: HotkeyRegistration, vk: int, hold_active: set) -> None:
+        """Poll the main key until released, then fire on_release. Runs
+        detached from the message loop so the release always fires even if
+        stop() tears the loop down mid-hold (no stuck mute)."""
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
+        user32.GetAsyncKeyState.restype = ctypes.c_short
+        try:
+            while user32.GetAsyncKeyState(vk) & 0x8000:
+                time.sleep(0.02)
+        finally:
+            hold_active.discard(reg.hotkey_id)
+            try:
+                reg.on_release()
+            except Exception:
+                log.exception("hotkey release callback failed: %s", reg.name)
