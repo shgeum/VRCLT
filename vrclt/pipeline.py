@@ -157,6 +157,8 @@ class _TranslationPipeline:
             self.session = QwenLiveTranslateSession(
                 model=qw.get("model", "qwen3.5-livetranslate-flash-realtime"),
                 endpoint=qw.get("endpoint", "intl"),
+                workspace_id=qw.get("workspace_id", ""),
+                base_url=qw.get("base_url", ""),
                 voice=qw.get("voice", "default"),
                 get_source_language=get_source_language,
                 **common,

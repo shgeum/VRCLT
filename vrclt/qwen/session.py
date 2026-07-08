@@ -33,10 +33,27 @@ from ..session_base import (AudioSource, FatalSessionError,
 
 log = logging.getLogger(__name__)
 
+# legacy shared domains: still fully supported, no workspace ID needed
 ENDPOINTS = {
     "intl": "wss://dashscope-intl.aliyuncs.com/api-ws/v1/realtime",
     "beijing": "wss://dashscope.aliyuncs.com/api-ws/v1/realtime",
 }
+# newer workspace-scoped domains Alibaba recommends (and the only form the
+# qwen3.5-livetranslate docs show); used when a workspace ID is configured
+WORKSPACE_ENDPOINTS = {
+    "intl": "wss://{workspace_id}.ap-southeast-1.maas.aliyuncs.com/api-ws/v1/realtime",
+    "beijing": "wss://{workspace_id}.cn-beijing.maas.aliyuncs.com/api-ws/v1/realtime",
+}
+
+
+def endpoint_url(endpoint: str, workspace_id: str = "", base_url: str = "") -> str:
+    if str(base_url or "").strip():
+        return str(base_url).strip()
+    endpoint = endpoint if endpoint in ENDPOINTS else "intl"
+    workspace_id = str(workspace_id or "").strip()
+    if workspace_id:
+        return WORKSPACE_ENDPOINTS[endpoint].format(workspace_id=workspace_id)
+    return ENDPOINTS[endpoint]
 ASR_MODEL = "qwen3-asr-flash-realtime"   # enables source transcripts
 MAX_GLOSSARY_PHRASES = 128
 # zeroed PCM appended once per local turn end (seconds); 0 disables. Without
@@ -126,7 +143,8 @@ class _CumulativeTextAdapter:
 class QwenLiveTranslateSession:
     def __init__(self, *, api_key: str, model: str, source: AudioSource, name: str,
                  get_target_language, get_source_language=lambda: "",
-                 endpoint: str = "intl", voice: str = "default",
+                 endpoint: str = "intl", workspace_id: str = "",
+                 base_url: str = "", voice: str = "default",
                  enabled=lambda: True,
                  send_interval_ms: int = 100, idle_disconnect_sec: float = 15.0,
                  turn_end_silence_sec: float = 0.55,
@@ -138,6 +156,8 @@ class QwenLiveTranslateSession:
         self._get_target = get_target_language
         self._get_source = get_source_language
         self._endpoint = endpoint if endpoint in ENDPOINTS else "intl"
+        self._workspace_id = workspace_id
+        self._base_url = base_url
         self._voice = str(voice or "default")
         self._enabled = enabled
         self._source = source
@@ -250,7 +270,8 @@ class QwenLiveTranslateSession:
         if not src_lang:
             log.warning("[%s] no source language configured - Qwen cannot "
                         "auto-detect and will assume English", self.name)
-        url = f"{ENDPOINTS[self._endpoint]}?model={self._model}"
+        url = endpoint_url(self._endpoint, self._workspace_id, self._base_url) \
+            + f"?model={self._model}"
         headers = {"Authorization": f"Bearer {self._api_key}"}
         log.info("[%s] connecting (model=%s target=%s source=%s endpoint=%s)",
                  self.name, self._model, target, src_lang or "(server default)",

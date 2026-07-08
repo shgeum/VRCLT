@@ -31,6 +31,8 @@ RESET_PRESERVE_PATHS = (
     ("provider",),
     ("qwen", "api_key"),
     ("qwen", "endpoint"),
+    ("qwen", "workspace_id"),
+    ("qwen", "base_url"),
     ("outbound", "source_language"),
     ("inbound", "source_language"),
     ("control", "languages"),
@@ -71,6 +73,10 @@ DEFAULTS = {
         "api_key": "",                  # empty -> use DASHSCOPE_API_KEY env var
         "model": "qwen3.5-livetranslate-flash-realtime",
         "endpoint": "intl",             # intl (Singapore) | beijing; keys are region-bound
+        "workspace_id": "",             # Model Studio workspace ID -> uses the newer
+                                        # {id}.<region>.maas.aliyuncs.com domain;
+                                        # "" = legacy shared dashscope domain
+        "base_url": "",                 # advanced: full wss:// URL override
         "voice": "default",             # translated-voice preset
     },
     "app": {
