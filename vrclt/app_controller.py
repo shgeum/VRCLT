@@ -137,7 +137,8 @@ def make_dashboard_panel(cfg, state, get_status_info, on_text_only_toggle,
                          on_font_size, get_font_size,
                          get_auto_launch, set_auto_launch, on_restart,
                          get_devices, get_mic_device, get_tts_device,
-                         set_audio_devices, on_tts_gain, get_tts_gain):
+                         set_audio_devices, on_tts_gain, get_tts_gain,
+                         get_provider):
     from .vr.dashboard_panel import DashboardPanel
     w = cfg.get("wrist_ui", {})
     return DashboardPanel(
@@ -158,6 +159,7 @@ def make_dashboard_panel(cfg, state, get_status_info, on_text_only_toggle,
         set_audio_devices=set_audio_devices,
         on_tts_gain=on_tts_gain,
         get_tts_gain=get_tts_gain,
+        get_provider=get_provider,
     )
 
 
@@ -1035,7 +1037,8 @@ class AppController:
                             self.cfg.get("outbound", {}).get("tts_device", "") or ""),
                         set_audio_devices=self.set_audio_devices,
                         on_tts_gain=self.set_tts_gain,
-                        get_tts_gain=self.tts_gain))
+                        get_tts_gain=self.tts_gain,
+                        get_provider=self.get_provider))
                 if panels:
                     from .vr.render import VrRenderer
                     renderer = VrRenderer(panels, can_start=steamvr_running)

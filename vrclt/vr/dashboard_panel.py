@@ -28,7 +28,7 @@ from .render import GlTexture, flip_bounds
 
 log = logging.getLogger(__name__)
 
-TEX_W, TEX_H = 1024, 854
+TEX_W, TEX_H = 1024, 950
 OVERLAY_KEY = "shgeum.vrclt.dashboard"
 OVERLAY_NAME = "vrclt"
 WIDTH_M = 2.4  # advisory; the dashboard scales overlays itself
@@ -78,6 +78,15 @@ BTN_RESET = (924, 662, 1008, 740)
 BTN_VOL_MINUS = (16, 760, 96, 838)
 LBL_VOL_GAIN = (104, 760, 244, 838)   # label only
 BTN_VOL_PLUS = (252, 760, 332, 838)
+# source-language row (Qwen has no auto-detect; Gemini renders a dim note
+# instead and the buttons are click-gated by provider)
+BTN_SRC_PREV = (16, 858, 80, 936)
+LBL_SRC_LANG = (88, 858, 424, 936)     # label only
+BTN_SRC_NEXT = (432, 858, 496, 936)
+BTN_INSRC_PREV = (528, 858, 592, 936)
+LBL_INSRC_LANG = (600, 858, 936, 936)  # label only
+BTN_INSRC_NEXT = (944, 858, 1008, 936)
+SRC_ROW_BOX = (16, 858, 1008, 936)     # gemini-mode note area
 
 BUTTONS = (("toggle", BTN_TOGGLE), ("prev", BTN_PREV), ("next", BTN_NEXT),
            ("sub_toggle", BTN_SUB_TOGGLE), ("sub_prev", BTN_SUB_PREV),
@@ -88,7 +97,9 @@ BUTTONS = (("toggle", BTN_TOGGLE), ("prev", BTN_PREV), ("next", BTN_NEXT),
            ("autostart", BTN_AUTOSTART), ("restart", BTN_RESTART),
            ("mic_prev", BTN_MIC_PREV), ("mic_next", BTN_MIC_NEXT),
            ("out_prev", BTN_OUT_PREV), ("out_next", BTN_OUT_NEXT),
-           ("vol_minus", BTN_VOL_MINUS), ("vol_plus", BTN_VOL_PLUS))
+           ("vol_minus", BTN_VOL_MINUS), ("vol_plus", BTN_VOL_PLUS),
+           ("src_prev", BTN_SRC_PREV), ("src_next", BTN_SRC_NEXT),
+           ("insrc_prev", BTN_INSRC_PREV), ("insrc_next", BTN_INSRC_NEXT))
 
 
 def _ensure_icon() -> bool:
@@ -126,7 +137,8 @@ class DashboardPanel:
                  get_tts_device=lambda: "",
                  set_audio_devices=lambda mic, tts, on_done: on_done(False),
                  on_tts_gain=lambda value: None,
-                 get_tts_gain=lambda: 1.0):
+                 get_tts_gain=lambda: 1.0,
+                 get_provider=lambda: "gemini"):
         self._state = state
         self._languages = languages or ["en"]
         self._inbound_languages = inbound_languages or ["ko", "en"]
@@ -143,6 +155,8 @@ class DashboardPanel:
         self._set_audio_devices = set_audio_devices
         self._on_tts_gain = on_tts_gain
         self._get_tts_gain = get_tts_gain
+        self._get_provider = get_provider
+        self._last_provider = None
         # device pickers: pending selections apply (save + runtime restart)
         # once, DEVICE_APPLY_DELAY_SEC after the last click
         self._dev_inputs, self._dev_outputs = get_devices()
@@ -243,6 +257,10 @@ class DashboardPanel:
             if auto != self._last_auto:
                 self._last_auto = auto
                 self._dirty.set()
+            provider = self._get_provider()  # settings save can flip it live
+            if provider != self._last_provider:
+                self._last_provider = provider
+                self._dirty.set()
             # events are authoritative, but resync visibility defensively
             try:
                 self._visible = bool(ovl.isOverlayVisible(self._h))
@@ -342,6 +360,16 @@ class DashboardPanel:
         elif button in ("vol_minus", "vol_plus"):
             step = 0.1 if button == "vol_plus" else -0.1
             self._on_tts_gain(float(self._get_tts_gain()) + step)
+        elif button in ("src_prev", "src_next"):
+            if self._get_provider() == "qwen":  # row is a dim note otherwise
+                st.source_language = cycle(
+                    self._languages, st.source_language,
+                    1 if button == "src_next" else -1)
+        elif button in ("insrc_prev", "insrc_next"):
+            if self._get_provider() == "qwen":
+                st.inbound_source_language = cycle(
+                    self._inbound_languages, st.inbound_source_language,
+                    1 if button == "insrc_next" else -1)
 
     # ---------------- audio device pickers ----------------
     @staticmethod
@@ -579,4 +607,28 @@ class DashboardPanel:
                       fonts=(self._font_tiny,), fill=COL_DIM, max_lines=1,
                       pad_x=2, pad_y=1, line_spacing=0)
         self._btn(d, BTN_VOL_PLUS, "+", fonts=(self._font_mid,))
+
+        # source-language row (Qwen only; Gemini auto-detects)
+        if self._get_provider() == "qwen":
+            self._source_block(d, BTN_SRC_PREV, LBL_SRC_LANG, BTN_SRC_NEXT,
+                               st.source_language, tr(lang, "dash_src_out"))
+            self._source_block(d, BTN_INSRC_PREV, LBL_INSRC_LANG, BTN_INSRC_NEXT,
+                               st.inbound_source_language,
+                               tr(lang, "dash_src_in"))
+        else:
+            d.rounded_rectangle(SRC_ROW_BOX, 16, fill=(28, 30, 38, 255))
+            draw_fit_text(d, (SRC_ROW_BOX[0] + 12, SRC_ROW_BOX[1] + 8,
+                              SRC_ROW_BOX[2] - 12, SRC_ROW_BOX[3] - 8),
+                          tr(lang, "dash_src_auto"),
+                          fonts=(self._font_small, self._font_tiny),
+                          fill=COL_DIM, max_lines=1, pad_x=4, pad_y=2)
         return img
+
+    def _source_block(self, d, prev_box, lang_box, next_box, code: str,
+                      caption: str) -> None:
+        lang_block(d, prev_box, lang_box, next_box, code or "—", caption,
+                   fonts=(self._font_mid, self._font_small, self._font_tiny),
+                   arrow_font=self._font_mid, x_inset=6,
+                   label_top=4, label_bottom=36,
+                   caption_top=34, caption_bottom=6,
+                   label_pad=(4, 1), caption_pad=(4, 1))
