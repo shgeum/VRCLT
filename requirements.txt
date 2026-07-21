@@ -10,6 +10,7 @@ psutil>=5.9
 python-osc>=1.8
 proc-tap==1.0.3
 onnxruntime>=1.17    # Silero VAD (inbound music gating)
+certifi>=2024.2.2    # TLS CA bundle for the frozen build's update check
 openvr==2.12.1401
 pillow>=10.0
 # Native app UI

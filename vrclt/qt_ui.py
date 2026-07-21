@@ -19,6 +19,7 @@ from .languages import language_code_from_text, language_label
 from .hotkeys import HotkeyRegistration, WindowsGlobalHotkeys
 from .resources import bundled_font, resolve_font_path
 from .ui.settings_form import SettingsForm
+from .ui.setup_banner import SetupBanner
 from .ui.tray import TrayIcon
 from .ui.update_banner import UpdateBanner
 from .ui.widgets import (
@@ -136,6 +137,7 @@ class _MicLevelMeter(QtWidgets.QWidget):
 
 class _UiSignals(QtCore.QObject):
     refresh = QtCore.Signal()
+    toast = QtCore.Signal(str)
     save_done = QtCore.Signal(bool)
     mode_done = QtCore.Signal(bool)
     device_done = QtCore.Signal(bool)
@@ -154,10 +156,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self._log_file = Path(log_file)
         self._quitting = False
         self._i18n_widgets = {}
+        self._i18n_groups = {}
+        self._i18n_tooltips = {}
         self._tab_dashboard_idx = -1
         self._tab_settings_idx = -1
         self._tab_logs_idx = -1
         self._last_ui_lang = ""
+        self._last_update_result = None
         self._last_config_revision = getattr(controller, "config_revision", 0)
         self._hotkey_signature = None
         self._hotkeys = WindowsGlobalHotkeys()
@@ -173,6 +178,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._inputs, self._outputs = _device_names()
         self._signals = _UiSignals()
         self._signals.refresh.connect(self._refresh)
+        self._signals.toast.connect(self._show_toast)
         self._signals.save_done.connect(self._save_done)
         self._signals.mode_done.connect(self._mode_done)
         self._signals.device_done.connect(self._device_done)
@@ -204,8 +210,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self._meter_timer.setInterval(75)
         self._meter_timer.timeout.connect(self._tick_mic_meter)
         self._controller.subscribe(self._signals.refresh.emit)
+        # worker threads only format a string here; tr() is a pure dict
+        # lookup and the signal marshals delivery to the Qt thread
+        self._controller.subscribe_errors(
+            lambda key, detail: self._signals.toast.emit(
+                f"{self._tr(key)}: {detail}"))
         self._sync_hotkeys()
         self._refresh()
+        self._update_banner.result_ready.connect(self._on_update_result)
         self._update_banner.start_check(__version__)
         QtCore.QTimer.singleShot(1200, self._maybe_prompt_config_reset_after_update)
 
@@ -224,6 +236,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self._i18n_widgets[key] = label
         return label
 
+    def _group(self, key: str) -> QtWidgets.QGroupBox:
+        box = QtWidgets.QGroupBox(self._tr(key))
+        self._i18n_groups[key] = box
+        return box
+
+    def _tip(self, widget, key: str) -> None:
+        """Register a retranslatable tooltip; skipped when the key is missing
+        (tr() would show the raw key to the user)."""
+        if not i18n.has(key):
+            return
+        widget.setToolTip(self._tr(key))
+        self._i18n_tooltips.setdefault(key, []).append(widget)
+
     def _error_label(self, error: str) -> str:
         if error == "API key is empty.":
             return self._tr("err_api_key_empty")
@@ -240,6 +265,11 @@ class MainWindow(QtWidgets.QMainWindow):
     def _apply_i18n(self) -> None:
         for key, widget in self._i18n_widgets.items():
             widget.setText(self._tr(key))
+        for key, box in self._i18n_groups.items():
+            box.setTitle(self._tr(key))
+        for key, widgets in self._i18n_tooltips.items():
+            for widget in widgets:
+                widget.setToolTip(self._tr(key))
         if self._tab_dashboard_idx >= 0:
             self._tabs.setTabText(self._tab_dashboard_idx, self._tr("tab_dashboard"))
         if self._tab_settings_idx >= 0:
@@ -260,10 +290,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._sub_lang_add_btn.setText(self._tr("btn_add"))
         if hasattr(self, "_src_lang"):
             set_language_picker_placeholder(self._src_lang, self._tr("ph_src_auto"))
-            self._src_lang.setToolTip(self._tr("tip_src_lang"))
         if hasattr(self, "_in_src_lang"):
             set_language_picker_placeholder(self._in_src_lang, self._tr("ph_src_auto"))
-            self._in_src_lang.setToolTip(self._tr("tip_src_lang"))
         if hasattr(self, "_btn_overlay_reset"):
             self._btn_overlay_reset.setText(self._tr("btn_overlay_reset"))
         if hasattr(self, "_subtitle_view"):
@@ -278,10 +306,15 @@ class MainWindow(QtWidgets.QMainWindow):
             self._btn_save.setText(self._tr("btn_save_restart"))
         if hasattr(self, "_btn_log_refresh"):
             self._btn_log_refresh.setText(self._tr("btn_refresh_log"))
+        if hasattr(self, "_btn_check_update"):
+            self._btn_check_update.setText(self._tr("btn_check_update"))
+            self._render_update_status()
         if hasattr(self, "_about_text"):
             self._about_text.setText(self._tr("about_paths").format(config=config_mod.CONFIG_PATH))
         if hasattr(self, "_update_banner"):
             self._update_banner.retranslate()
+        if hasattr(self, "_setup_banner"):
+            self._setup_banner.retranslate()
         if hasattr(self, "_close_action"):
             self._sync_close_action()
         if hasattr(self, "_tray"):
@@ -313,7 +346,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_banner = UpdateBanner(self._tr, on_available=self._on_update_available)
         root.addWidget(self._update_banner)
 
-        controls = QtWidgets.QGridLayout()
+        self._setup_banner = SetupBanner(
+            self._tr,
+            on_open_settings=lambda: self._tabs.setCurrentIndex(
+                self._tab_settings_idx),
+            on_open_url=QtGui.QDesktopServices.openUrl)
+        root.addWidget(self._setup_banner)
+
+        self._toast = QtWidgets.QLabel("")
+        self._toast.setObjectName("errorText")
+        self._toast.setWordWrap(True)
+        self._toast.hide()
+        root.addWidget(self._toast)
+        self._toast_timer = QtCore.QTimer(self)
+        self._toast_timer.setSingleShot(True)
+        self._toast_timer.timeout.connect(self._toast.hide)
+
         self._btn_trans = QtWidgets.QPushButton()
         self._btn_trans.clicked.connect(
             lambda: self._controller.set_translation_on(not self._controller.state.translation_on))
@@ -364,28 +412,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._btn_overlay_move.clicked.connect(self._toggle_overlay_move)
         self._btn_overlay_reset = QtWidgets.QPushButton(self._tr("btn_overlay_reset"))
         self._btn_overlay_reset.clicked.connect(self._reset_overlay_position)
-        controls.addWidget(self._label("label_app_mode"), 0, 0)
-        controls.addWidget(app_mode_widget, 0, 1, 1, 2)
-        controls.addWidget(self._text_only, 0, 3)
-        controls.addWidget(self._label("ctl_my_translate"), 1, 0)
-        controls.addWidget(self._btn_trans, 1, 1)
-        controls.addWidget(self._label("label_out_lang"), 1, 2)
-        controls.addWidget(self._out_lang, 1, 3)
-        controls.addWidget(self._label("ctl_their_sub"), 2, 0)
-        controls.addWidget(self._btn_sub, 2, 1)
-        controls.addWidget(self._label("label_sub_lang"), 2, 2)
-        controls.addWidget(self._sub_lang, 2, 3)
-        controls.addWidget(self._label("ui_lang"), 3, 0)
-        controls.addWidget(self._ui_lang, 3, 1)
-        controls.addWidget(self._label("label_pc_sub_size"), 3, 2)
-        controls.addWidget(self._overlay_font_size, 3, 3)
-        controls.addWidget(self._label("label_close_action"), 4, 0)
-        controls.addWidget(self._close_action, 4, 1)
-        controls.addWidget(self._btn_overlay_move, 4, 2)
-        controls.addWidget(self._btn_overlay_reset, 4, 3)
-        controls.addWidget(self._label("label_mic_device"), 5, 0)
-        controls.addWidget(self._mic_device, 5, 1)
-        controls.addWidget(self._label("label_voice_out_device"), 5, 2)
         self._btn_test_out = QtWidgets.QPushButton(self._tr("btn_test_output"))
         self._btn_test_out.setFixedWidth(72)
         self._btn_test_out.clicked.connect(self._test_output_device)
@@ -395,19 +421,8 @@ class MainWindow(QtWidgets.QMainWindow):
         out_device_layout.setSpacing(6)
         out_device_layout.addWidget(self._voice_out_device, 1)
         out_device_layout.addWidget(self._btn_test_out)
-        controls.addWidget(out_device_wrap, 5, 3)
-        controls.addWidget(self._label("label_add_out_lang"), 6, 0)
-        controls.addWidget(out_lang_add_widget, 6, 1)
-        controls.addWidget(self._label("label_add_sub_lang"), 6, 2)
-        controls.addWidget(sub_lang_add_widget, 6, 3)
-        controls.addWidget(self._label("label_tts_gain"), 7, 0)
-        controls.addWidget(self._build_tts_gain_control(), 7, 1)
-        mic_label = self._label("label_mic_level")
-        mic_label.setToolTip(self._tr("tip_mic_level"))
-        controls.addWidget(mic_label, 7, 2)
+        tts_gain_widget = self._build_tts_gain_control()
         self._mic_meter = _MicLevelMeter()
-        self._mic_meter.setToolTip(self._tr("tip_mic_level"))
-        controls.addWidget(self._mic_meter, 7, 3)
         # source languages (Qwen only - Gemini auto-detects, combos disabled)
         self._src_lang = build_language_picker(self._tr("ph_src_auto"))
         self._src_lang.activated.connect(lambda _i: self._pick_src_lang())
@@ -416,14 +431,100 @@ class MainWindow(QtWidgets.QMainWindow):
         self._in_src_lang.activated.connect(lambda _i: self._pick_in_src_lang())
         self._in_src_lang.lineEdit().returnPressed.connect(self._pick_in_src_lang)
         src_label = self._label("label_src_lang")
-        src_label.setToolTip(self._tr("tip_src_lang"))
         in_src_label = self._label("label_in_src_lang")
-        in_src_label.setToolTip(self._tr("tip_src_lang"))
-        controls.addWidget(src_label, 8, 0)
-        controls.addWidget(self._src_lang, 8, 1)
-        controls.addWidget(in_src_label, 8, 2)
-        controls.addWidget(self._in_src_lang, 8, 3)
-        root.addLayout(controls)
+        mic_label = self._label("label_mic_level")
+
+        self._tip(app_mode_widget, "tip_app_mode")
+        self._tip(self._text_only, "tip_text_only")
+        self._tip(self._btn_trans, "tip_translate_toggle")
+        self._tip(self._btn_sub, "tip_subtitles_toggle")
+        self._tip(self._out_lang, "tip_out_lang")
+        self._tip(self._sub_lang, "tip_sub_lang")
+        self._tip(out_lang_add_widget, "tip_add_out_lang")
+        self._tip(sub_lang_add_widget, "tip_add_sub_lang")
+        self._tip(self._mic_device, "tip_mic_device")
+        self._tip(self._voice_out_device, "tip_voice_out_device")
+        self._tip(self._btn_test_out, "tip_test_output")
+        self._tip(tts_gain_widget, "tip_tts_gain")
+        self._tip(mic_label, "tip_mic_level")
+        self._tip(self._mic_meter, "tip_mic_level")
+        self._tip(src_label, "tip_src_lang")
+        self._tip(self._src_lang, "tip_src_lang")
+        self._tip(in_src_label, "tip_src_lang")
+        self._tip(self._in_src_lang, "tip_src_lang")
+        self._tip(self._overlay_font_size, "tip_pc_sub_size")
+        self._tip(self._btn_overlay_move, "tip_overlay_move")
+        self._tip(self._close_action, "tip_close_action")
+
+        grp_mode = self._group("dash_grp_mode")
+        mode_lay = QtWidgets.QHBoxLayout(grp_mode)
+        mode_lay.addWidget(self._label("label_app_mode"))
+        mode_lay.addWidget(app_mode_widget, 1)
+        mode_lay.addWidget(self._text_only)
+
+        grp_out = self._group("dash_grp_out")
+        out_lay = QtWidgets.QGridLayout(grp_out)
+        out_lay.addWidget(self._label("ctl_my_translate"), 0, 0)
+        out_lay.addWidget(self._btn_trans, 0, 1)
+        out_lay.addWidget(self._label("label_out_lang"), 1, 0)
+        out_lay.addWidget(self._out_lang, 1, 1)
+        out_lay.addWidget(self._label("label_add_out_lang"), 2, 0)
+        out_lay.addWidget(out_lang_add_widget, 2, 1)
+        out_lay.addWidget(src_label, 3, 0)
+        out_lay.addWidget(self._src_lang, 3, 1)
+        out_lay.setColumnStretch(1, 1)
+
+        grp_in = self._group("dash_grp_in")
+        in_lay = QtWidgets.QGridLayout(grp_in)
+        in_lay.addWidget(self._label("ctl_their_sub"), 0, 0)
+        in_lay.addWidget(self._btn_sub, 0, 1)
+        in_lay.addWidget(self._label("label_sub_lang"), 1, 0)
+        in_lay.addWidget(self._sub_lang, 1, 1)
+        in_lay.addWidget(self._label("label_add_sub_lang"), 2, 0)
+        in_lay.addWidget(sub_lang_add_widget, 2, 1)
+        in_lay.addWidget(in_src_label, 3, 0)
+        in_lay.addWidget(self._in_src_lang, 3, 1)
+        in_lay.setColumnStretch(1, 1)
+
+        pipes = QtWidgets.QHBoxLayout()
+        pipes.addWidget(grp_out, 1)
+        pipes.addWidget(grp_in, 1)
+
+        grp_audio = self._group("dash_grp_audio")
+        audio_lay = QtWidgets.QGridLayout(grp_audio)
+        audio_lay.addWidget(self._label("label_mic_device"), 0, 0)
+        audio_lay.addWidget(self._mic_device, 0, 1)
+        audio_lay.addWidget(self._label("label_voice_out_device"), 0, 2)
+        audio_lay.addWidget(out_device_wrap, 0, 3)
+        audio_lay.addWidget(mic_label, 1, 0)
+        audio_lay.addWidget(self._mic_meter, 1, 1)
+        audio_lay.addWidget(self._label("label_tts_gain"), 1, 2)
+        audio_lay.addWidget(tts_gain_widget, 1, 3)
+        audio_lay.setColumnStretch(1, 1)
+        audio_lay.setColumnStretch(3, 1)
+
+        grp_display = self._group("dash_grp_display")
+        disp_lay = QtWidgets.QHBoxLayout(grp_display)
+        disp_lay.addWidget(self._label("label_pc_sub_size"))
+        disp_lay.addWidget(self._overlay_font_size)
+        disp_lay.addStretch(1)
+        disp_lay.addWidget(self._btn_overlay_move)
+        disp_lay.addWidget(self._btn_overlay_reset)
+
+        grp_app = self._group("dash_grp_app")
+        app_lay = QtWidgets.QHBoxLayout(grp_app)
+        app_lay.addWidget(self._label("ui_lang"))
+        app_lay.addWidget(self._ui_lang)
+        app_lay.addSpacing(18)
+        app_lay.addWidget(self._label("label_close_action"))
+        app_lay.addWidget(self._close_action)
+        app_lay.addStretch(1)
+
+        root.addWidget(grp_mode)
+        root.addLayout(pipes)
+        root.addWidget(grp_audio)
+        root.addWidget(grp_display)
+        root.addWidget(grp_app)
         root.addWidget(self._dashboard_note)
 
         self._subtitle_view = QtWidgets.QPlainTextEdit()
@@ -565,10 +666,20 @@ class MainWindow(QtWidgets.QMainWindow):
             self._tr("about_paths").format(config=config_mod.CONFIG_PATH)
         )
         self._about_text.setWordWrap(True)
+        update_row = QtWidgets.QHBoxLayout()
+        self._btn_check_update = QtWidgets.QPushButton(self._tr("btn_check_update"))
+        self._btn_check_update.clicked.connect(self._check_updates)
+        self._update_status = QtWidgets.QLabel(
+            self._tr("update_status_idle").format(current=__version__))
+        self._update_status.setObjectName("noteText")
+        self._update_status.setWordWrap(True)
+        update_row.addWidget(self._btn_check_update)
+        update_row.addWidget(self._update_status, 1)
         root.addWidget(self._label("label_log_file"))
         root.addWidget(self._log_path)
         root.addWidget(self._btn_log_refresh)
         root.addWidget(self._log_text, 1)
+        root.addLayout(update_row)
         root.addWidget(self._about_text)
         self._tab_logs_idx = self._tabs.addTab(page, self._tr("tab_logs"))
         self._load_log_tail()
@@ -616,6 +727,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 background: #1c1f29; border: 1px solid #d29922; border-radius: 6px;
             }
             #updateText { color: #ffd580; font-weight: 600; }
+            #setupBar {
+                background: #1c1f29; border: 1px solid #2870aa; border-radius: 6px;
+            }
+            #setupTitle { color: #7db8e8; font-weight: 700; }
+            #setupText { color: #c9d4e3; }
+            QToolTip {
+                background: #1c1f29; color: #f0f0f0;
+                border: 1px solid #303542; padding: 4px 6px;
+            }
             QPushButton[modeButton="true"] {
                 background: #1c1f29; border: 1px solid #303542; border-radius: 8px;
                 padding: 10px 14px; font-weight: 600;
@@ -644,6 +764,44 @@ class MainWindow(QtWidgets.QMainWindow):
         """Fires once (from the banner) when a newer release is found."""
         self._tray.set_update_visible(True)
         self._tray.show_message(self._tr("update_title"), message, 10000)
+
+    def _show_toast(self, text: str, msecs: int = 8000) -> None:
+        """Transient dashboard notice for background failures (Qt thread)."""
+        self._toast.setText(text)
+        self._toast.show()
+        self._toast_timer.start(msecs)
+
+    def _check_updates(self) -> None:
+        if self._update_banner.start_check(__version__, force=True):
+            self._btn_check_update.setEnabled(False)
+            self._update_status.setToolTip("")
+            self._update_status.setText(self._tr("update_checking"))
+
+    def _on_update_result(self, result) -> None:
+        self._last_update_result = result
+        self._btn_check_update.setEnabled(True)
+        self._render_update_status()
+
+    def _render_update_status(self) -> None:
+        result = self._last_update_result
+        if result is None:
+            self._update_status.setText(
+                self._tr("update_status_idle").format(current=__version__))
+            return
+        self._update_status.setToolTip("")
+        if result.status == "update":
+            self._update_status.setText(
+                self._tr("update_available_short").format(
+                    latest=result.info.latest_version, current=__version__))
+        elif result.status == "up_to_date":
+            self._update_status.setText(
+                self._tr("update_up_to_date").format(current=__version__))
+        else:
+            err_key = f"update_err_{result.error_kind}"
+            reason = self._tr(err_key) if i18n.has(err_key) else result.detail
+            self._update_status.setText(
+                self._tr("update_check_failed").format(reason=reason))
+            self._update_status.setToolTip(result.detail)
 
     def _maybe_prompt_config_reset_after_update(self) -> None:
         previous = self._controller.last_config_version()
@@ -1120,6 +1278,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self._status_text.setText(
             f"{i18n.tr(st.ui_lang, status_key)} | {i18n.tr(st.ui_lang, conn_key)}")
         self._error_text.setText(self._error_label(detail))
+
+        cfg = self._controller.cfg
+        prov = config_mod.provider(cfg)
+        self._setup_banner.sync(
+            prov, bool(config_mod.api_key_for(cfg, prov)),
+            str(cfg.get("qwen", {}).get("endpoint", "intl") or "intl").strip())
 
         self._btn_trans.setText(i18n.tr(st.ui_lang, "btn_trans_on" if st.translation_on else "btn_trans_off"))
         self._set_style_if_changed(

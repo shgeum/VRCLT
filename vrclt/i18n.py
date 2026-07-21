@@ -497,6 +497,340 @@ STRINGS = {
                           "ja": "自動起動 OFF", "zh": "自动启动 关"},
     "dash_font_size": {"ko": "자막 크기", "en": "Subtitle size",
                        "ja": "字幕サイズ", "zh": "字幕大小"},
+    # ---- update check (Logs/About tab) ----
+    "btn_check_update": {"ko": "업데이트 확인", "en": "Check for updates",
+                         "ja": "アップデートを確認", "zh": "检查更新"},
+    "update_checking": {"ko": "업데이트 확인 중…", "en": "Checking for updates…",
+                        "ja": "アップデートを確認中…", "zh": "正在检查更新…"},
+    "update_status_idle": {"ko": "현재 버전: v{current}", "en": "Current version: v{current}",
+                           "ja": "現在のバージョン: v{current}", "zh": "当前版本：v{current}"},
+    "update_up_to_date": {"ko": "v{current} — 최신 버전입니다", "en": "v{current} — up to date",
+                          "ja": "v{current} — 最新です", "zh": "v{current} — 已是最新"},
+    "update_available_short": {"ko": "업데이트 가능: {latest} (현재 v{current})",
+                               "en": "Update available: {latest} (current v{current})",
+                               "ja": "アップデートあり: {latest} (現在 v{current})",
+                               "zh": "有可用更新：{latest}（当前 v{current}）"},
+    "update_check_failed": {"ko": "업데이트 확인 실패: {reason}",
+                            "en": "Update check failed: {reason}",
+                            "ja": "アップデート確認失敗: {reason}",
+                            "zh": "检查更新失败：{reason}"},
+    "update_err_rate_limited": {"ko": "GitHub 요청 한도 초과 — 잠시 후 다시 시도하세요",
+                                "en": "GitHub rate limit reached — try again later",
+                                "ja": "GitHubのリクエスト上限に達しました — 後でもう一度お試しください",
+                                "zh": "已达 GitHub 请求上限——请稍后再试"},
+    "update_err_no_release": {"ko": "릴리스를 찾을 수 없음", "en": "No release found",
+                              "ja": "リリースが見つかりません", "zh": "未找到发布版本"},
+    "update_err_ssl": {"ko": "보안 연결(TLS) 실패", "en": "Secure connection (TLS) failed",
+                       "ja": "セキュア接続 (TLS) に失敗", "zh": "安全连接 (TLS) 失败"},
+    "update_err_timeout": {"ko": "연결 시간 초과", "en": "Connection timed out",
+                           "ja": "接続がタイムアウトしました", "zh": "连接超时"},
+    "update_err_network": {"ko": "네트워크 오류", "en": "Network error",
+                           "ja": "ネットワークエラー", "zh": "网络错误"},
+    "update_err_http": {"ko": "GitHub API 오류", "en": "GitHub API error",
+                        "ja": "GitHub APIエラー", "zh": "GitHub API 错误"},
+    "update_err_parse": {"ko": "GitHub 응답이 올바르지 않음",
+                         "en": "Unexpected response from GitHub",
+                         "ja": "GitHubからの応答が不正です", "zh": "GitHub 响应异常"},
+    # ---- background-error toasts ----
+    "err_config_save_failed": {"ko": "설정 저장 실패", "en": "Failed to save settings",
+                               "ja": "設定の保存に失敗", "zh": "保存设置失败"},
+    "err_audio_reinit_failed": {"ko": "오디오 장치 새로고침 실패",
+                                "en": "Audio device refresh failed",
+                                "ja": "オーディオデバイスの更新に失敗",
+                                "zh": "音频设备刷新失败"},
+    # ---- dashboard group titles ----
+    "dash_grp_mode": {"ko": "모드", "en": "Mode", "ja": "モード", "zh": "模式"},
+    "dash_grp_out": {"ko": "내 말 → 상대", "en": "My speech → others",
+                     "ja": "自分の発話 → 相手", "zh": "我的发言 → 对方"},
+    "dash_grp_in": {"ko": "상대 말 → 나 (자막)", "en": "Others → me (subtitles)",
+                    "ja": "相手の発話 → 自分 (字幕)", "zh": "对方发言 → 我（字幕）"},
+    "dash_grp_audio": {"ko": "오디오 장치", "en": "Audio devices",
+                       "ja": "オーディオデバイス", "zh": "音频设备"},
+    "dash_grp_display": {"ko": "자막 표시", "en": "Subtitle display",
+                         "ja": "字幕表示", "zh": "字幕显示"},
+    "dash_grp_app": {"ko": "앱", "en": "Application", "ja": "アプリ", "zh": "应用"},
+    # ---- first-run setup banner ----
+    "setup_title": {"ko": "처음 설정", "en": "First-time setup",
+                    "ja": "初回セットアップ", "zh": "首次设置"},
+    "setup_intro": {"ko": "번역 엔진을 고르고 API 키를 입력한 뒤 오디오 장치를 확인하세요.",
+                    "en": "Pick an engine, add its API key, then check your audio devices.",
+                    "ja": "翻訳エンジンを選び、APIキーを入力して、オーディオデバイスを確認してください。",
+                    "zh": "选择翻译引擎，填写 API 密钥，然后检查音频设备。"},
+    "setup_step_engine": {"ko": "① 번역 엔진: {provider} — 바꾸려면 설정에서 변경",
+                          "en": "① Engine: {provider} — change it in Settings if needed",
+                          "ja": "① 翻訳エンジン: {provider} — 変更は設定から",
+                          "zh": "① 翻译引擎：{provider}——如需更换请在设置中修改"},
+    "setup_step_key": {"ko": "② API 키 입력 — [API 키 받기]에서 발급 후 설정에 붙여넣기",
+                       "en": "② Add the API key — get one with [Get API key], then paste it in Settings",
+                       "ja": "② APIキー入力 — [APIキーを取得]で発行し、設定に貼り付け",
+                       "zh": "② 填写 API 密钥——点击[获取 API 密钥]申请后粘贴到设置中"},
+    "setup_step_devices": {
+        "ko": "③ 오디오 장치 확인 — 말할 때 아래 '마이크 레벨'이 움직이는지, '음성 출력'이 VB-Cable/헤드셋인지 확인",
+        "en": "③ Check audio devices — the mic level below should move when you speak; "
+              "voice output should be your VB-Cable / headset",
+        "ja": "③ オーディオデバイス確認 — 話すと下の「マイクレベル」が動くか、"
+              "「音声出力」がVB-Cable/ヘッドセットかを確認",
+        "zh": "③ 检查音频设备——说话时下方“麦克风电平”应有反应；“语音输出”应为 VB-Cable/耳机"},
+    "setup_btn_get_key": {"ko": "API 키 받기", "en": "Get API key",
+                          "ja": "APIキーを取得", "zh": "获取 API 密钥"},
+    "setup_btn_open_settings": {"ko": "설정 열기", "en": "Open Settings",
+                                "ja": "設定を開く", "zh": "打开设置"},
+    # ---- dashboard control tooltips ----
+    "tip_app_mode": {
+        "ko": "번역할 대상 앱 프로필 — VRChat(마이크→게임, OSC 챗박스) 또는 Discord(캡처 프로세스 변경).",
+        "en": "Which app profile to translate for — VRChat (mic→game, OSC chatbox) or "
+              "Discord (different capture process).",
+        "ja": "翻訳対象のアプリプロファイル — VRChat (マイク→ゲーム、OSCチャット) または "
+              "Discord (キャプチャ対象が変わります)。",
+        "zh": "要翻译的应用配置——VRChat（麦克风→游戏、OSC 聊天框）或 Discord（更改捕获进程）。"},
+    "tip_text_only": {
+        "ko": "켜면 번역 음성 대신 원음을 내보내고 번역문은 텍스트(챗박스/자막)로만 전송합니다.",
+        "en": "When on, your real voice passes through and translations are sent as "
+              "text only (chatbox/subtitles).",
+        "ja": "オンにすると原音をそのまま送出し、翻訳はテキスト（チャット/字幕）のみで送信します。",
+        "zh": "开启后直接传出原声，翻译仅以文本（聊天框/字幕）发送。"},
+    "tip_translate_toggle": {
+        "ko": "내 말 번역 ON/OFF. OFF(원음 송출)면 마이크 원음이 그대로 전달됩니다.",
+        "en": "Toggle translating your speech. In Passthrough, your raw mic audio is "
+              "forwarded unchanged.",
+        "ja": "自分の発話翻訳のON/OFF。原音送出ではマイク音声がそのまま送られます。",
+        "zh": "开关翻译我的发言。原声直传时麦克风原声将原样传出。"},
+    "tip_subtitles_toggle": {
+        "ko": "상대 말을 인식해 자막으로 표시할지 전환합니다.",
+        "en": "Toggle transcribing/translating what others say into subtitles.",
+        "ja": "相手の発話を字幕として表示するかを切り替えます。",
+        "zh": "开关将对方发言识别并显示为字幕。"},
+    "tip_out_lang": {
+        "ko": "내 말이 번역되어 나가는 언어입니다.",
+        "en": "The language your speech is translated into.",
+        "ja": "自分の発話の翻訳先言語です。",
+        "zh": "我的发言被翻译成的语言。"},
+    "tip_sub_lang": {
+        "ko": "상대 말 자막이 표시될 언어입니다.",
+        "en": "The language subtitles for others are shown in.",
+        "ja": "相手の字幕を表示する言語です。",
+        "zh": "对方字幕显示的语言。"},
+    "tip_add_out_lang": {
+        "ko": "출력 언어 드롭다운에 언어를 추가합니다 (손목 UI/핫키 순환 목록에도 반영).",
+        "en": "Add a language to the output dropdown (also used by the wrist UI / "
+              "hotkey cycle).",
+        "ja": "出力言語ドロップダウンに言語を追加します（手首UI/ホットキーの切替リストにも反映）。",
+        "zh": "向输出语言下拉框添加语言（也用于手腕 UI/热键循环）。"},
+    "tip_add_sub_lang": {
+        "ko": "자막 언어 드롭다운에 언어를 추가합니다.",
+        "en": "Add a language to the subtitle dropdown.",
+        "ja": "字幕言語ドロップダウンに言語を追加します。",
+        "zh": "向字幕语言下拉框添加语言。"},
+    "tip_tts_gain": {
+        "ko": "번역 음성의 출력 볼륨 (100% = 원본 크기).",
+        "en": "Output volume of the translated voice (100% = original level).",
+        "ja": "翻訳音声の出力音量 (100% = 元の音量)。",
+        "zh": "翻译语音的输出音量（100% = 原始音量）。"},
+    "tip_mic_device": {
+        "ko": "내 목소리를 받는 실제 마이크를 선택하세요.",
+        "en": "Select the physical microphone that captures your voice.",
+        "ja": "自分の声を拾う実際のマイクを選択します。",
+        "zh": "选择拾取你声音的实体麦克风。"},
+    "tip_voice_out_device": {
+        "ko": "번역 음성이 나갈 장치. VRChat/Discord에 들리게 하려면 VB-Cable 같은 가상 케이블의 "
+              "Input을 선택하고, 게임의 마이크를 그 케이블로 설정하세요.",
+        "en": "Where the translated voice is played. To be heard in VRChat/Discord, pick "
+              "a virtual cable input (e.g. VB-Cable) and set the game's mic to that cable.",
+        "ja": "翻訳音声の出力先。VRChat/Discordに聞かせるにはVB-Cableなどの仮想ケーブルの"
+              "Inputを選び、ゲームのマイクをそのケーブルに設定してください。",
+        "zh": "翻译语音的输出设备。要让 VRChat/Discord 听到，请选择虚拟声卡（如 VB-Cable）的 "
+              "Input，并把游戏的麦克风设为该虚拟声卡。"},
+    "tip_test_output": {
+        "ko": "선택한 출력 장치로 테스트 소리를 재생합니다.",
+        "en": "Play a test tone on the selected output device.",
+        "ja": "選択した出力デバイスでテスト音を再生します。",
+        "zh": "在所选输出设备上播放测试音。"},
+    "tip_pc_sub_size": {
+        "ko": "PC 데스크톱 자막 오버레이의 글자 크기입니다.",
+        "en": "Font size of the desktop subtitle overlay.",
+        "ja": "PCデスクトップ字幕オーバーレイの文字サイズです。",
+        "zh": "桌面字幕叠加层的字号。"},
+    "tip_overlay_move": {
+        "ko": "데스크톱 자막 오버레이를 드래그로 이동할 수 있게 전환합니다.",
+        "en": "Toggle drag-to-move for the desktop subtitle overlay.",
+        "ja": "デスクトップ字幕オーバーレイをドラッグ移動できるようにします。",
+        "zh": "开关桌面字幕叠加层的拖动移动。"},
+    "tip_close_action": {
+        "ko": "창을 닫을 때 트레이로 숨길지 완전히 종료할지 선택합니다.",
+        "en": "Choose whether closing the window hides to tray or exits.",
+        "ja": "ウィンドウを閉じたときにトレイへ隠すか終了するかを選びます。",
+        "zh": "选择关闭窗口时是隐藏到托盘还是退出。"},
+    # ---- settings field tooltips (f.<path>.tip; optional — shown when present) ----
+    "f.provider.tip": {
+        "ko": "gemini: 발화 언어 자동 감지, Google AI Studio 키 사용. "
+              "qwen: 음성 복제 지원, 발화 언어 지정 필수, DashScope 키 사용.",
+        "en": "gemini: auto-detects spoken language, uses a Google AI Studio key. "
+              "qwen: supports voice cloning, requires fixed spoken languages, uses a "
+              "DashScope key.",
+        "ja": "gemini: 発話言語を自動検出、Google AI Studioのキーを使用。"
+              "qwen: 音声クローン対応、発話言語の指定が必須、DashScopeのキーを使用。",
+        "zh": "gemini：自动检测语音语言，使用 Google AI Studio 密钥。"
+              "qwen：支持声音复刻，需指定语音语言，使用 DashScope 密钥。"},
+    "f.api_key.tip": {
+        "ko": "Google AI Studio(aistudio.google.com/apikey)에서 발급. "
+              "비워두면 GEMINI_API_KEY 환경변수를 사용합니다.",
+        "en": "Create one at Google AI Studio (aistudio.google.com/apikey). "
+              "If empty, the GEMINI_API_KEY environment variable is used.",
+        "ja": "Google AI Studio (aistudio.google.com/apikey) で発行。"
+              "空欄の場合はGEMINI_API_KEY環境変数を使用します。",
+        "zh": "在 Google AI Studio（aistudio.google.com/apikey）创建。"
+              "留空时使用 GEMINI_API_KEY 环境变量。"},
+    "f.qwen.api_key.tip": {
+        "ko": "DashScope의 sk-… 키. 서버(intl/beijing)에 따라 발급처가 다르며 서로 호환되지 "
+              "않습니다. 비우면 DASHSCOPE_API_KEY 환경변수 사용.",
+        "en": "DashScope sk-... key. Keys are region-bound (intl vs beijing) and not "
+              "interchangeable. If empty, the DASHSCOPE_API_KEY environment variable is used.",
+        "ja": "DashScopeのsk-…キー。サーバー (intl/beijing) ごとに発行が異なり互換性は"
+              "ありません。空欄の場合はDASHSCOPE_API_KEY環境変数を使用。",
+        "zh": "DashScope 的 sk-… 密钥。密钥按区域（intl/beijing）发放且不通用。"
+              "留空时使用 DASHSCOPE_API_KEY 环境变量。"},
+    "f.qwen.endpoint.tip": {
+        "ko": "intl = 국제(싱가포르, Model Studio), beijing = 중국 본토(Bailian). "
+              "API 키는 각 서버 전용입니다.",
+        "en": "intl = international (Singapore, Model Studio); beijing = mainland China "
+              "(Bailian). API keys are specific to each endpoint.",
+        "ja": "intl = 国際 (シンガポール、Model Studio)、beijing = 中国本土 (Bailian)。"
+              "APIキーはサーバーごとに専用です。",
+        "zh": "intl = 国际（新加坡，Model Studio）；beijing = 中国大陆（百炼）。"
+              "API 密钥仅限对应服务器使用。"},
+    "f.qwen.workspace_id.tip": {
+        "ko": "intl 서버 필수. Model Studio 콘솔의 워크스페이스 메뉴에서 llm-… ID를 복사하세요.",
+        "en": "Required on the intl endpoint. Copy the llm-... ID from the workspace "
+              "menu in the Model Studio console.",
+        "ja": "intlサーバーでは必須。Model Studioコンソールのワークスペースメニューから"
+              "llm-… IDをコピーしてください。",
+        "zh": "intl 服务器必填。在 Model Studio 控制台的工作空间菜单中复制 llm-… ID。"},
+    "f.qwen.voice_clone.tip": {
+        "ko": "once: 응답 시작 시 1회 복제(권장). always: 응답마다 복제해 내 목소리와 더 "
+              "비슷하지만 느림. off: 아래 음성 ID 사용.",
+        "en": "once: clone your voice once at session start (recommended). always: clone "
+              "per response — closer to your voice but slower. off: use the voice ID below.",
+        "ja": "once: セッション開始時に1回クローン (推奨)。always: 応答ごとにクローンし"
+              "声に近いが遅い。off: 下のボイスIDを使用。",
+        "zh": "once：会话开始时复刻一次（推荐）。always：每次响应都复刻，更像你的声音但更慢。"
+              "off：使用下方语音 ID。"},
+    "f.qwen.voice.tip": {
+        "ko": "복제 off일 때 사용할 Qwen 내장 음성 ID (예: Cherry). 비우면 기본 음성.",
+        "en": "Built-in Qwen voice ID used when cloning is off (e.g. Cherry). "
+              "Empty = default voice.",
+        "ja": "クローンoff時に使うQwen内蔵ボイスID (例: Cherry)。空欄 = 既定の声。",
+        "zh": "复刻关闭时使用的 Qwen 内置语音 ID（如 Cherry）。留空 = 默认语音。"},
+    "f.app.mode.tip": {
+        "ko": "시작 시 적용할 앱 프로필. 캡처 프로세스·챗박스·오버레이 동작이 프로필에 따라 바뀝니다.",
+        "en": "App profile applied at startup. Switches the capture process, chatbox, "
+              "and overlay behavior.",
+        "ja": "起動時に適用するアプリプロファイル。キャプチャ対象・チャットボックス・"
+              "オーバーレイの動作が切り替わります。",
+        "zh": "启动时应用的应用配置。会切换捕获进程、聊天框和叠加层行为。"},
+    "f.app.profiles.discord.process.tip": {
+        "ko": "Discord 모드에서 상대 음성을 캡처할 프로세스 이름 (예: Discord.exe).",
+        "en": "Process name whose audio is captured in Discord mode (e.g. Discord.exe).",
+        "ja": "Discordモードで相手音声をキャプチャするプロセス名 (例: Discord.exe)。",
+        "zh": "Discord 模式下捕获对方语音的进程名（如 Discord.exe）。"},
+    "f.outbound.source_language.tip": {
+        "ko": "Qwen 전용 — 자동 감지가 없어 내가 말하는 언어를 지정해야 합니다. "
+              "비우면 영어로 간주, Gemini는 무시.",
+        "en": "Qwen only — it cannot auto-detect, so set the language you speak. "
+              "Empty = assumes English; ignored by Gemini.",
+        "ja": "Qwen専用 — 自動検出がないため自分が話す言語を指定します。"
+              "空欄は英語扱い、Geminiでは無視。",
+        "zh": "仅 Qwen——无法自动检测，需指定你说的语言。留空视为英语；Gemini 忽略此项。"},
+    "f.inbound.source_language.tip": {
+        "ko": "Qwen 전용 — 상대가 말하는 언어를 지정합니다. 비우면 영어로 간주, Gemini는 무시.",
+        "en": "Qwen only — the language others speak. Empty = assumes English; "
+              "ignored by Gemini.",
+        "ja": "Qwen専用 — 相手が話す言語を指定します。空欄は英語扱い、Geminiでは無視。",
+        "zh": "仅 Qwen——对方说的语言。留空视为英语；Gemini 忽略此项。"},
+    "f.control.languages.tip": {
+        "ko": "출력 언어 드롭다운/손목 UI/OSC 순환에 표시될 언어 목록 "
+              "(쉼표로 구분한 언어 코드, 예: en, ja, zh-Hans).",
+        "en": "Languages offered in the output dropdown / wrist UI / OSC cycle "
+              "(comma-separated codes, e.g. en, ja, zh-Hans).",
+        "ja": "出力言語ドロップダウン/手首UI/OSC切替に表示する言語リスト "
+              "(カンマ区切りコード、例: en, ja, zh-Hans)。",
+        "zh": "输出语言下拉框/手腕 UI/OSC 循环中提供的语言列表"
+              "（逗号分隔代码，如 en, ja, zh-Hans）。"},
+    "f.inbound.languages.tip": {
+        "ko": "자막 언어 드롭다운에 표시될 언어 목록 (쉼표로 구분한 언어 코드).",
+        "en": "Languages offered in the subtitle dropdown (comma-separated codes).",
+        "ja": "字幕言語ドロップダウンに表示する言語リスト (カンマ区切りコード)。",
+        "zh": "字幕语言下拉框中提供的语言列表（逗号分隔代码）。"},
+    "f.outbound.glossary.tip": {
+        "ko": "고정 번역어 지정. 한 줄에 하나씩 원문=번역 형식 (예: 아방=avatar).",
+        "en": "Force specific translations. One source=target pair per line "
+              "(e.g. 아방=avatar).",
+        "ja": "訳語を固定します。1行に1つ 原文=訳語 形式 (例: 아방=avatar)。",
+        "zh": "强制特定译法。每行一条 原文=译文（如 아방=avatar）。"},
+    "f.outbound.mic_device.tip": {
+        "ko": "장치 이름 일부만 적어도 됩니다(부분 일치). 비우면 시스템 기본 입력 장치.",
+        "en": "Substring match on the device name. Empty = system default input device.",
+        "ja": "デバイス名の一部でも一致します。空欄 = システム既定の入力デバイス。",
+        "zh": "设备名支持部分匹配。留空 = 系统默认输入设备。"},
+    "f.outbound.tts_device.tip": {
+        "ko": "번역 음성이 재생될 장치. VRChat/Discord에 들리게 하려면 VB-Cable 같은 가상 "
+              "케이블의 Input을 선택하고, 게임의 마이크를 그 케이블(CABLE Output)로 설정하세요.",
+        "en": "Device the translated voice plays into. To be heard in-game, pick a "
+              "virtual cable input (e.g. VB-Cable 'CABLE Input') and set the game's "
+              "microphone to that cable's output.",
+        "ja": "翻訳音声の再生先。ゲームに聞かせるにはVB-Cableなどの仮想ケーブルのInputを選び、"
+              "ゲームのマイクをそのケーブル (CABLE Output) に設定してください。",
+        "zh": "翻译语音播放到的设备。要让游戏听到，请选择虚拟声卡（如 VB-Cable 的 CABLE "
+              "Input），并把游戏的麦克风设为该虚拟声卡的输出。"},
+    "f.outbound.monitor_device.tip": {
+        "ko": "번역 음성을 내 귀로도 듣고 싶을 때 헤드폰 장치를 지정합니다. 비우면 끔.",
+        "en": "Also hear the translated voice yourself — set your headphones here. "
+              "Empty = off.",
+        "ja": "翻訳音声を自分でも聞きたい場合にヘッドホンを指定します。空欄 = オフ。",
+        "zh": "想自己也听到翻译语音时，在此指定耳机。留空 = 关闭。"},
+    "f.inbound.process.tip": {
+        "ko": "상대 음성을 캡처할 앱의 프로세스 이름 (VRChat 모드: VRChat.exe). "
+              "이 앱의 소리가 자막으로 변환됩니다.",
+        "en": "Process whose audio is captured for subtitles (VRChat mode: VRChat.exe).",
+        "ja": "字幕用に音声をキャプチャするアプリのプロセス名 (VRChatモード: VRChat.exe)。",
+        "zh": "为字幕捕获音频的应用进程名（VRChat 模式：VRChat.exe）。"},
+    "f.audio.voice_rms_threshold.tip": {
+        "ko": "마이크 음성 감지 문턱값. 소음이 오인식되면 올리고, 말이 잘리면 낮추세요. "
+              "대시보드의 마이크 레벨 미터로 확인할 수 있습니다.",
+        "en": "Mic voice gate. Raise it if noise triggers translation; lower it if your "
+              "speech is missed. Watch the dashboard mic level meter.",
+        "ja": "マイク音声ゲート。ノイズで誤検出するなら上げ、発話を取り逃すなら下げてください。"
+              "ダッシュボードのマイクレベルで確認できます。",
+        "zh": "麦克风语音门限。噪音误触发就调高，漏识别就调低。可通过仪表板的麦克风电平确认。"},
+    "f.audio.voice_hangover_sec.tip": {
+        "ko": "짧은 숨 고르기에도 발화가 끊기지 않게 유지하는 시간(초).",
+        "en": "How long (s) the turn stays open through short pauses in speech.",
+        "ja": "短い間でも発話が途切れないよう保持する時間 (秒)。",
+        "zh": "说话短暂停顿时保持语音段不中断的时长（秒）。"},
+    "f.audio.turn_end_silence_sec.tip": {
+        "ko": "이만큼 침묵하면 발화가 끝난 것으로 보고 번역을 시작합니다. "
+              "짧으면 빠르지만 문장이 잘릴 수 있습니다.",
+        "en": "Silence (s) that ends your turn and triggers translation. "
+              "Shorter = faster but may chop sentences.",
+        "ja": "この無音時間で発話終了とみなし翻訳を開始します。"
+              "短いと速い反面、文が途切れることがあります。",
+        "zh": "静音达到此时长即视为说完并开始翻译。越短越快，但可能截断句子。"},
+    "f.audio.echo_guard_multiplier.tip": {
+        "ko": "게임 소리 재생 중 마이크 문턱값을 높여 스피커 소리 재입력(에코)을 막습니다. 1.0 = 끔.",
+        "en": "Raises the mic gate while game audio plays to keep speaker echo out. "
+              "1.0 = off.",
+        "ja": "ゲーム音声の再生中にマイクゲートを引き上げ、スピーカー音の回り込みを防ぎます。"
+              "1.0 = オフ。",
+        "zh": "游戏声音播放时提高麦克风门限，防止扬声器回声混入。1.0 = 关闭。"},
+    "f.inbound.vad_threshold.tip": {
+        "ko": "0–1. 높일수록 음악/효과음을 더 엄격하게 걸러 자막 오인식이 줄어듭니다.",
+        "en": "0–1. Higher rejects music/SFX more strictly, reducing false subtitles.",
+        "ja": "0–1。高いほど音楽/効果音を厳しく除外し、誤字幕が減ります。",
+        "zh": "0–1。越高对音乐/音效过滤越严格，减少误出字幕。"},
+    "f.ui.mode.tip": {
+        "ko": "auto: SteamVR 실행 중에만 VR 오버레이 표시. desktop: VR 기능 끔.",
+        "en": "auto: VR overlays only while SteamVR is running. desktop: VR features off.",
+        "ja": "auto: SteamVR実行中のみVRオーバーレイを表示。desktop: VR機能オフ。",
+        "zh": "auto：仅在 SteamVR 运行时显示 VR 叠加层。desktop：关闭 VR 功能。"},
 }
 
 
@@ -518,6 +852,11 @@ def detect(pref: str = "") -> str:
     except Exception:
         pass
     return "en"
+
+
+def has(key: str) -> bool:
+    """True when a string key exists (tr() returns the raw key otherwise)."""
+    return key in STRINGS
 
 
 def tr(lang: str, key: str) -> str:

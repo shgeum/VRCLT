@@ -93,6 +93,15 @@ EXTRA_LANGUAGE_NAMES: dict[str, str] = {
     "yue": "Cantonese",
 }
 
+# Native-script hints appended to UI labels where the English name alone is
+# ambiguous to the people who would pick it (zh users can't tell which
+# "Chinese" is theirs from Simplified/Traditional alone).
+NATIVE_LANGUAGE_HINTS: dict[str, str] = {
+    "zh-Hans": "简体中文",
+    "zh-Hant": "繁體中文",
+    "yue": "粵語",
+}
+
 SUPPORTED_LANGUAGE_CODES: tuple[str, ...] = tuple(code for code, _name in SUPPORTED_LANGUAGES)
 SUPPORTED_LANGUAGE_NAMES: dict[str, str] = dict(SUPPORTED_LANGUAGES)
 KNOWN_LANGUAGE_NAMES: dict[str, str] = {
@@ -116,6 +125,9 @@ def language_label(code: str) -> str:
     name = KNOWN_LANGUAGE_NAMES.get(code)
     if not name:
         return code
+    hint = NATIVE_LANGUAGE_HINTS.get(code)
+    if hint:
+        return f"{name} {hint} ({code})"
     return f"{name} ({code})"
 
 

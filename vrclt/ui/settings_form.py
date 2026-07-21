@@ -10,6 +10,7 @@ import logging
 from PySide6 import QtGui, QtWidgets
 
 from .. import config as config_mod
+from .. import i18n
 from .widgets import (
     HotkeyEdit,
     NoWheelComboBox,
@@ -174,7 +175,22 @@ class SettingsForm:
             widget = self._make_field(kind, config_mod.get_path(cfg, path))
             self._fields[path] = (widget, kind)
             form.addRow(self._tr(label_key), widget)
+            self._apply_tip(form, widget, label_key)
         self._layout.addWidget(group)
+
+    def _apply_tip(self, form: QtWidgets.QFormLayout, widget,
+                   label_key: str) -> None:
+        """Optional per-field help: shown when an `f.<path>.tip` i18n key
+        exists (no retranslate needed — populate() rebuilds on language
+        change). Guarded by i18n.has(): tr() would return the raw key."""
+        tip_key = label_key + ".tip"
+        if not i18n.has(tip_key):
+            return
+        tip = self._tr(tip_key)
+        widget.setToolTip(tip)
+        label = form.labelForField(widget)
+        if label is not None:
+            label.setToolTip(tip)
 
     def _add_steamvr_group(self, cfg: dict) -> None:
         group = QtWidgets.QGroupBox(self._tr("grp_steamvr"))
@@ -186,6 +202,7 @@ class SettingsForm:
             widget = self._make_field(kind, config_mod.get_path(cfg, path))
             self._fields[path] = (widget, kind)
             form.addRow(self._tr(label_key), widget)
+            self._apply_tip(form, widget, label_key)
         # Live toggle: SteamVR stores the auto-launch state, so this applies
         # immediately (no save/restart) and mirrors SteamVR's own settings.
         self._chk_autolaunch = QtWidgets.QCheckBox()

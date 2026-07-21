@@ -11,10 +11,11 @@ log = logging.getLogger(__name__)
 
 class UpdateBanner(QtWidgets.QWidget):
     """Hidden bar that appears when a newer release exists. Runs the check on
-    a worker thread and marshals back via its own signal. on_available(info,
-    message) fires once, on the Qt thread (used to notify the tray)."""
+    a worker thread and marshals back via result_ready (emitted for every
+    outcome, success or failure). on_available(info, message) fires once, on
+    the Qt thread (used to notify the tray)."""
 
-    _available = QtCore.Signal(object)
+    result_ready = QtCore.Signal(object)  # UpdateCheckResult
 
     def __init__(self, tr, *, on_available):
         super().__init__()
@@ -22,6 +23,7 @@ class UpdateBanner(QtWidgets.QWidget):
         self._on_available = on_available
         self._info = None
         self._notified = False
+        self._checked_once = False
         self._thread: threading.Thread | None = None
 
         self.setObjectName("updateBar")
@@ -35,32 +37,42 @@ class UpdateBanner(QtWidgets.QWidget):
         layout.addWidget(self._text, 1)
         layout.addWidget(self._btn_open)
         self.hide()
-        self._available.connect(self._show_info)
+        self.result_ready.connect(self._handle_result)
 
     @property
     def info(self):
         return self._info
 
-    def start_check(self, current_version: str) -> None:
-        if self._thread is not None:
-            return
+    def start_check(self, current_version: str, *, force: bool = False) -> bool:
+        """Start a check on a worker thread. Returns False when one is already
+        in flight, or when the automatic once-per-session check already ran
+        and force is not set."""
+        if self._thread is not None and self._thread.is_alive():
+            return False
+        if self._checked_once and not force:
+            return False
+        self._checked_once = True
 
         def run():
-            info = check_latest_release(current_version)
-            if info is not None:
-                self._available.emit(info)
+            result = check_latest_release(current_version)
+            self.result_ready.emit(result)
 
         self._thread = threading.Thread(
             target=run, daemon=True, name="vrclt-update-check")
         self._thread.start()
+        return True
 
-    def _show_info(self, info) -> None:
-        self._info = info
+    def _handle_result(self, result) -> None:
+        if result.status != "update":
+            # keep showing a previously found update even if a later manual
+            # re-check fails or reports up to date
+            return
+        self._info = result.info
         self._sync()
         if not self._notified:
             self._notified = True
             try:
-                self._on_available(info, self._message(info))
+                self._on_available(result.info, self._message(result.info))
             except Exception:
                 log.debug("update-available callback failed", exc_info=True)
 

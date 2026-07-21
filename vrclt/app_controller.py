@@ -203,6 +203,7 @@ class AppController:
     def __init__(self, cfg: dict):
         self._lock = threading.RLock()
         self._listeners: list[Callable[[], None]] = []
+        self._error_listeners: list[Callable[[str, str], None]] = []
         self.raw_cfg = copy.deepcopy(cfg)
         force_profile = config_mod.profile_runtime_looks_stale(self.raw_cfg)
         self.cfg = config_mod.apply_app_profile(self.raw_cfg, force=force_profile)
@@ -252,6 +253,18 @@ class AppController:
 
     def subscribe(self, fn: Callable[[], None]) -> None:
         self._listeners.append(fn)
+
+    def subscribe_errors(self, fn: Callable[[str, str], None]) -> None:
+        """fn(i18n_key, detail) for background failures that would otherwise
+        only reach the log file; called from arbitrary worker threads."""
+        self._error_listeners.append(fn)
+
+    def _report_background_error(self, key: str, detail: str) -> None:
+        for fn in list(self._error_listeners):
+            try:
+                fn(key, detail)
+            except Exception:
+                log.debug("error listener failed", exc_info=True)
 
     def _notify(self) -> None:
         for fn in list(self._listeners):
@@ -346,8 +359,10 @@ class AppController:
             try:
                 config_mod.save(cfg)
                 self._bump_config_revision()
-            except Exception:
-                log.debug("failed to persist %s", log_label, exc_info=True)
+            except Exception as e:
+                log.warning("failed to persist %s", log_label, exc_info=True)
+                self._report_background_error("err_config_save_failed",
+                                              f"{log_label}: {e}")
 
         try:
             self._persist_executor.submit(save)
@@ -788,7 +803,9 @@ class AppController:
             if reinit_audio:
                 # before the API-key check so devices refresh even when the
                 # subsequent start aborts (key missing)
-                self._reinit_portaudio(prev_thread)
+                if not self._reinit_portaudio(prev_thread):
+                    self._report_background_error(
+                        "err_audio_reinit_failed", "see log for details")
             with self._lock:
                 self.raw_cfg = base_cfg
                 self.cfg = new_cfg
