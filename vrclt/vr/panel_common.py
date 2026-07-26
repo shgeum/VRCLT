@@ -259,13 +259,16 @@ def lang_block(d, prev_box, lang_box, next_box, code: str, caption: str, *,
                fonts: tuple, arrow_font, x_inset: int,
                label_top: int, label_bottom: int,
                caption_top: int, caption_bottom: int,
-               label_pad: tuple[int, int], caption_pad: tuple[int, int]) -> None:
+               label_pad: tuple[int, int], caption_pad: tuple[int, int],
+               prev_fill=None, next_fill=None) -> None:
     """Prev/next arrow buttons + language label + dim caption (the language
     rows of the wrist menu and the dashboard panel). Offsets are relative to
     lang_box: label spans (top+label_top .. bottom-label_bottom), caption
-    spans (bottom-caption_top .. bottom-caption_bottom)."""
-    for box, glyph in ((prev_box, "◀"), (next_box, "▶")):
-        d.rounded_rectangle(box, 16, fill=COL_BTN)
+    spans (bottom-caption_top .. bottom-caption_bottom). prev/next_fill
+    override the arrow-button fill (pressed feedback)."""
+    for box, glyph, fill in ((prev_box, "◀", prev_fill),
+                             (next_box, "▶", next_fill)):
+        d.rounded_rectangle(box, 16, fill=fill or COL_BTN)
         arrow_font.draw(d, ((box[0] + box[2]) // 2, (box[1] + box[3]) // 2),
                         glyph, fill=COL_TEXT, anchor="mm")
     d.rounded_rectangle(lang_box, 16, fill=COL_INSET)

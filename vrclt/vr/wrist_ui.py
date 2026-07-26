@@ -3,16 +3,22 @@
 Interaction (no SteamVR input capture - the game keeps full control):
 - gaze gate: panel fades opaque + our own laser appears only while LOOKING
   at the watch up close
-- TRIGGER on a button: click; GRIP anywhere on the panel: grab & move
+- TRIGGER pressed AND released on the same button: click (press/release
+  matching, like the dashboard panel - sweeping through with the trigger
+  held no longer misfires); GRIP anywhere on the panel: grab & move
   (release saves; Reset button resets)
 - the laser points 'pointer_tilt_deg' below the controller's raw forward,
   matching the natural pistol-grip pointing direction
 
-Textures are persistent OpenGL textures (see vr/render.py for why).
+Textures are persistent OpenGL textures (see vr/render.py for why). The GL
+texture is updated in place (glTexSubImage2D), so re-rendering on hover /
+pressed changes cannot flicker - renders happen only when the hover target
+or pressed widget changes, never per-frame.
 """
 import logging
 import math
 import threading
+import time
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -164,7 +170,9 @@ def _build_widgets() -> tuple:
         Widget("sub_next", BTN_SUB_NEXT, radius=16, draw=_arrow_draw("▶")),
         Widget("restart", BTN_RESTART,
                enabled=lambda p: not p._restart_pending,
-               label=lambda p, lang: tr(lang, "btn_restart_runtime")),
+               label=lambda p, lang: tr(lang, "btn_restarting"
+                                        if p._restart_pending
+                                        else "btn_restart_runtime")),
         Widget("font_minus", BTN_FONT_MINUS,
                enabled=lambda p: int(p._get_font_size()) > OVERLAY_FONT_MIN,
                draw=_arrow_draw("−")),
@@ -216,7 +224,13 @@ class WristPanel:
 
         self._widgets = _build_widgets()
         self._page = "main"
+        self._hover = None
+        self._pressed_name = None
+        self._engaged = False
+        self._dragging = False
         self._restart_pending = False
+        self._restart_started = 0.0
+        self._restart_seen_transition = False
         self._click_handlers = {
             "toggle": self._toggle_translation,
             "sub_toggle": self._toggle_subtitles,
@@ -340,12 +354,14 @@ class WristPanel:
                 # held button isn't remembered across the gap
                 self._prev_trigger = self._prev_grip = True
                 self._hover = None
+                self._pressed_name = None
             # status poll shares the 1 Hz gate (the dashboard panel already
             # throttles the same call; 30 Hz was needless render-thread work)
             status = self._get_status_info()
             if status != self._last_status:
                 self._last_status = status
                 self._dirty.set()
+            self._update_restart_pending(status, now)
         status = self._last_status or (False, "status_stopped", "")
 
         new_hover = None
@@ -401,11 +417,21 @@ class WristPanel:
                             log.info("wrist panel placed (saved)")
                         new_hover = None
 
-                    if not self._dragging and new_hover is not None and \
-                            trigger and not self._prev_trigger:
-                        self._on_click(new_hover)
-                        haptic(vrsys, openvr, self._finger_idx, 3000)
-                        self._dirty.set()
+                    if not self._dragging:
+                        # press/release matching: the click fires only when
+                        # the trigger is released on the widget it went down on
+                        if trigger and not self._prev_trigger and \
+                                new_hover is not None:
+                            self._pressed_name = new_hover
+                            haptic(vrsys, openvr, self._finger_idx, 1500)
+                            self._dirty.set()
+                        elif not trigger and self._prev_trigger and \
+                                self._pressed_name is not None:
+                            if new_hover == self._pressed_name:
+                                self._on_click(self._pressed_name)
+                                haptic(vrsys, openvr, self._finger_idx, 3000)
+                            self._pressed_name = None
+                            self._dirty.set()
 
                     self._prev_trigger, self._prev_grip = trigger, grip
 
@@ -432,8 +458,10 @@ class WristPanel:
             if new_hover is not None:
                 haptic(vrsys, openvr, self._finger_idx, 600)
             self._hover = new_hover
-            # hover never re-renders the panel (texture swaps can flicker);
-            # the cursor dot + haptics are the pointer feedback
+            # renders happen only on target change (bounded by pointer
+            # travel), and the GL texture updates in place - no flicker
+            if not self._dragging:
+                self._dirty.set()
 
         if self._reset_requested and not self._dragging:
             self._reset_requested = False
@@ -478,6 +506,7 @@ class WristPanel:
             ovl.setOverlayAlpha(self._h, 0.96 if want else 0.55)
             if not want:
                 self._hover = None
+                self._pressed_name = None
                 # edges are only updated while engaged; require a fresh
                 # press after re-engaging instead of trusting stale state
                 self._prev_trigger = self._prev_grip = True
@@ -532,7 +561,28 @@ class WristPanel:
         self._on_text_only_toggle(not self._state.text_only)
 
     def _restart(self) -> None:
+        if self._restart_pending:
+            return
+        self._restart_pending = True
+        self._restart_started = time.time()
+        self._restart_seen_transition = False
         self._on_restart()
+
+    def _update_restart_pending(self, status: tuple, now: float) -> None:
+        """Clear the pending-restart state once the runtime came back up
+        (status left running, e.g. 'Starting', then returned) - the same
+        async-caption shape as the dashboard device pickers. 30 s timeout
+        so a crashed restart doesn't pin the button; the status label then
+        shows the failure."""
+        if not self._restart_pending:
+            return
+        _connected, key, _detail = status
+        if key != "status_running":
+            self._restart_seen_transition = True
+        if (self._restart_seen_transition and key == "status_running") or \
+                (now - self._restart_started) > 30.0:
+            self._restart_pending = False
+            self._dirty.set()
 
     def _bump_font(self, delta: int) -> None:
         self._on_font_size(int(self._get_font_size()) + delta)
@@ -564,7 +614,9 @@ class WristPanel:
         d.ellipse((20, 28, 44, 52), fill=dot)
         self._font_tiny.draw(d, (54, 40), "vrclt", fill=COL_TEXT, anchor="lm")
 
-        draw_page(self, d, self._widgets, lang, page=self._page)
+        draw_page(self, d, self._widgets, lang, page=self._page,
+                  hover=self._hover if self._engaged else None,
+                  pressed=self._pressed_name)
 
         if self._page == "main" and status_key != "status_running":
             draw_fit_text(d, LBL_STATUS, tr(lang, status_key),

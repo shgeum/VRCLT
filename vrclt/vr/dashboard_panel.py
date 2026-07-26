@@ -16,6 +16,7 @@ from PIL import Image, ImageDraw
 from .. import __version__
 from ..config import APPDATA_DIR, OVERLAY_FONT_MAX, OVERLAY_FONT_MIN
 from ..i18n import tr, LANGS as UI_LANGS, UI_LANG_LABELS
+from ..ui import theme
 from .button_table import Widget, widget_at
 from ..resources import bundled_font, resolve_font_path
 from ..state import AppState
@@ -195,7 +196,10 @@ class DashboardPanel:
         self._widgets = _build_widgets()
         self._widget_by_name = {w.name: w for w in self._widgets}
         self._page = "main"
+        self._pressed = None
         self._restart_pending = False
+        self._restart_started = 0.0
+        self._restart_seen_transition = False
 
         font_path = resolve_font_path(font_path, "NotoSansCJKkr-Bold.otf")
         self._font_big = load_fallback_font(font_path, 64, bold=True)
@@ -284,6 +288,16 @@ class DashboardPanel:
             if status != self._last_status:
                 self._last_status = status
                 self._dirty.set()
+            if self._restart_pending:
+                # clear once the runtime left running (Starting) and came
+                # back; 30 s timeout if the restart never completes
+                _conn, key, _det = status
+                if key != "status_running":
+                    self._restart_seen_transition = True
+                if (self._restart_seen_transition and key == "status_running") \
+                        or (now - self._restart_started) > 30.0:
+                    self._restart_pending = False
+                    self._dirty.set()
             auto = self._get_auto_launch()  # cached in the controller, cheap
             if auto != self._last_auto:
                 self._last_auto = auto
@@ -316,11 +330,14 @@ class DashboardPanel:
         elif et == openvr.VREvent_MouseButtonDown:
             if ev.data.mouse.button == openvr.VRMouseButton_Left:
                 self._pressed = self._button_at(self._mouse_px(ev))
+                if self._pressed is not None:
+                    self._dirty.set()  # render the pressed fill
         elif et == openvr.VREvent_MouseButtonUp:
             if ev.data.mouse.button == openvr.VRMouseButton_Left:
                 released_on = self._button_at(self._mouse_px(ev))
                 if released_on is not None and released_on == self._pressed:
                     self._on_click(released_on)
+                if self._pressed is not None:
                     self._dirty.set()
                 self._pressed = None
         elif et == openvr.VREvent_OverlayShown:
@@ -381,7 +398,11 @@ class DashboardPanel:
             if current is not None:
                 self._set_auto_launch(not current)
         elif button == "restart":
-            self._on_restart()
+            if not self._restart_pending:
+                self._restart_pending = True
+                self._restart_started = time.time()
+                self._restart_seen_transition = False
+                self._on_restart()
         elif button == "reset":
             st.request_position_reset()
         elif button in ("mic_prev", "mic_next"):
@@ -482,28 +503,40 @@ class DashboardPanel:
         self._dirty.set()
 
     # ---------------- rendering ----------------
+    def _fill_for(self, name: str | None, base=COL_BTN):
+        """Pressed feedback: darken the base fill while the mouse is down on
+        this widget (SteamVR delivers no hover state worth rendering)."""
+        if name is not None and self._pressed == name:
+            return theme.darken(base)
+        return base
+
     def _btn(self, d, box, text: str, *, fill=COL_BTN, fonts=None, text_fill=COL_TEXT,
-             radius: int = 16) -> None:
-        d.rounded_rectangle(box, radius, fill=fill)
+             radius: int = 16, name: str | None = None) -> None:
+        d.rounded_rectangle(box, radius, fill=self._fill_for(name, fill))
         draw_fit_text(d, box, text,
                       fonts=fonts or (self._font_small, self._font_tiny),
                       fill=text_fill, max_lines=1, pad_x=8, pad_y=4)
 
     def _lang_block(self, d, prev_box, lang_box, next_box, code: str,
-                    caption: str) -> None:
+                    caption: str, prev_name: str = None,
+                    next_name: str = None) -> None:
         lang_block(d, prev_box, lang_box, next_box, code, caption,
                    fonts=(self._font_big, self._font_mid, self._font_small,
                           self._font_tiny),
                    arrow_font=self._font_mid, x_inset=6,
                    label_top=26, label_bottom=66,
                    caption_top=62, caption_bottom=12,
-                   label_pad=(4, 2), caption_pad=(4, 2))
+                   label_pad=(4, 2), caption_pad=(4, 2),
+                   prev_fill=self._fill_for(prev_name),
+                   next_fill=self._fill_for(next_name))
 
     def _device_block(self, d, lang, prev_box, label_box, next_box,
-                      names, cfg_value, pending, caption: str) -> None:
+                      names, cfg_value, pending, caption: str,
+                      prev_name: str = None, next_name: str = None) -> None:
         arrow_fill = COL_DIM if self._devices_applying else COL_TEXT
-        for box, glyph in ((prev_box, "◀"), (next_box, "▶")):
-            d.rounded_rectangle(box, 16, fill=COL_BTN)
+        for box, glyph, name in ((prev_box, "◀", prev_name),
+                                 (next_box, "▶", next_name)):
+            d.rounded_rectangle(box, 16, fill=self._fill_for(name))
             self._font_mid.draw(d, ((box[0] + box[2]) // 2, (box[1] + box[3]) // 2),
                                 glyph, fill=arrow_fill, anchor="mm")
         d.rounded_rectangle(label_box, 16, fill=COL_INSET)
@@ -549,7 +582,7 @@ class DashboardPanel:
             draw_fit_text(d, STATUS_TEXT_BOX, tr(lang, status_key),
                           fonts=(self._font_small, self._font_tiny),
                           fill=dot, max_lines=1, pad_x=4, pad_y=2)
-        self._btn(d, BTN_UILANG, UI_LANG_LABELS.get(lang, lang))
+        self._btn(d, BTN_UILANG, UI_LANG_LABELS.get(lang, lang), name="uilang")
         auto = self._get_auto_launch()
         if auto is None:
             self._btn(d, BTN_AUTOSTART, tr(lang, "btn_autostart_off"),
@@ -557,12 +590,17 @@ class DashboardPanel:
         else:
             self._btn(d, BTN_AUTOSTART,
                       tr(lang, "btn_autostart_on" if auto else "btn_autostart_off"),
-                      fill=COL_SUB_ON if auto else COL_BTN)
-        self._btn(d, BTN_RESTART, tr(lang, "btn_restart_runtime"))
+                      fill=COL_SUB_ON if auto else COL_BTN, name="autostart")
+        self._btn(d, BTN_RESTART,
+                  tr(lang, "btn_restarting" if self._restart_pending
+                     else "btn_restart_runtime"),
+                  text_fill=COL_PENDING if self._restart_pending else COL_TEXT,
+                  name="restart")
 
         # translation row
         on = st.translation_on
-        d.rounded_rectangle(BTN_TOGGLE, 20, fill=COL_ON if on else COL_OFF)
+        d.rounded_rectangle(BTN_TOGGLE, 20,
+                            fill=self._fill_for("toggle", COL_ON if on else COL_OFF))
         cy = (BTN_TOGGLE[1] + BTN_TOGGLE[3]) // 2
         draw_fit_text(d, (BTN_TOGGLE[0] + 12, BTN_TOGGLE[1] + 34,
                           BTN_TOGGLE[2] - 12, cy + 20),
@@ -575,11 +613,14 @@ class DashboardPanel:
                       fonts=(self._font_small, self._font_tiny),
                       max_lines=1, pad_x=0, pad_y=0, line_spacing=0)
         self._lang_block(d, BTN_PREV, BTN_LANG, BTN_NEXT,
-                         st.target_language, tr(lang, "out_lang"))
+                         st.target_language, tr(lang, "out_lang"),
+                         prev_name="prev", next_name="next")
 
         # subtitles row
         sub_on = st.subtitles_on
-        d.rounded_rectangle(BTN_SUB_TOGGLE, 20, fill=COL_SUB_ON if sub_on else COL_BTN)
+        d.rounded_rectangle(BTN_SUB_TOGGLE, 20,
+                            fill=self._fill_for("sub_toggle",
+                                                COL_SUB_ON if sub_on else COL_BTN))
         cy = (BTN_SUB_TOGGLE[1] + BTN_SUB_TOGGLE[3]) // 2
         draw_fit_text(d, (BTN_SUB_TOGGLE[0] + 12, BTN_SUB_TOGGLE[1] + 34,
                           BTN_SUB_TOGGLE[2] - 12, cy + 20),
@@ -592,23 +633,27 @@ class DashboardPanel:
                       fonts=(self._font_small, self._font_tiny),
                       max_lines=1, pad_x=0, pad_y=0, line_spacing=0)
         self._lang_block(d, BTN_SUB_PREV, BTN_SUB_LANG, BTN_SUB_NEXT,
-                         st.inbound_language, tr(lang, "sub_lang"))
+                         st.inbound_language, tr(lang, "sub_lang"),
+                         prev_name="sub_prev", next_name="sub_next")
 
         # devices row
         self._device_block(d, lang, BTN_MIC_PREV, LBL_MIC_DEVICE, BTN_MIC_NEXT,
                            self._dev_inputs, self._get_mic_device(),
-                           self._pending_mic, tr(lang, "label_mic_device"))
+                           self._pending_mic, tr(lang, "label_mic_device"),
+                           prev_name="mic_prev", next_name="mic_next")
         self._device_block(d, lang, BTN_OUT_PREV, LBL_OUT_DEVICE, BTN_OUT_NEXT,
                            self._dev_outputs, self._get_tts_device(),
-                           self._pending_out, tr(lang, "label_voice_out_device"))
+                           self._pending_out, tr(lang, "label_voice_out_device"),
+                           prev_name="out_prev", next_name="out_next")
 
         # bottom row
         text_only = st.text_only
         self._btn(d, BTN_TEXT_ONLY,
                   tr(lang, "btn_text_only_on" if text_only else "btn_text_only_off"),
-                  fill=COL_SUB_ON if text_only else COL_BTN)
+                  fill=COL_SUB_ON if text_only else COL_BTN, name="text_only")
         self._btn(d, BTN_FONT_MINUS, "−", fonts=(self._font_mid,),
-                  text_fill=COL_TEXT if self._enabled("font_minus") else COL_DIM)
+                  text_fill=COL_TEXT if self._enabled("font_minus") else COL_DIM,
+                  name="font_minus")
         d.rounded_rectangle(LBL_FONT_SIZE, 16, fill=COL_INSET)
         draw_fit_text(d, (LBL_FONT_SIZE[0], LBL_FONT_SIZE[1] + 6,
                           LBL_FONT_SIZE[2], LBL_FONT_SIZE[1] + 46),
@@ -620,16 +665,19 @@ class DashboardPanel:
                       fonts=(self._font_tiny,), fill=COL_DIM, max_lines=1,
                       pad_x=2, pad_y=1, line_spacing=0)
         self._btn(d, BTN_FONT_PLUS, "+", fonts=(self._font_mid,),
-                  text_fill=COL_TEXT if self._enabled("font_plus") else COL_DIM)
+                  text_fill=COL_TEXT if self._enabled("font_plus") else COL_DIM,
+                  name="font_plus")
         self._btn(d, BTN_SUB_EDIT, tr(lang, "sub_move"),
-                  fill=COL_DRAG if st.edit_mode else COL_BTN)
+                  fill=COL_DRAG if st.edit_mode else COL_BTN, name="sub_edit")
         self._btn(d, BTN_WRIST_EDIT, tr(lang, "wrist_move"),
-                  fill=COL_DRAG if st.wrist_edit_mode else COL_BTN)
-        self._btn(d, BTN_RESET, tr(lang, "pos_reset"))
+                  fill=COL_DRAG if st.wrist_edit_mode else COL_BTN,
+                  name="wrist_edit")
+        self._btn(d, BTN_RESET, tr(lang, "pos_reset"), name="reset")
 
         # volume row (mirrors the font-size triple)
         self._btn(d, BTN_VOL_MINUS, "−", fonts=(self._font_mid,),
-                  text_fill=COL_TEXT if self._enabled("vol_minus") else COL_DIM)
+                  text_fill=COL_TEXT if self._enabled("vol_minus") else COL_DIM,
+                  name="vol_minus")
         d.rounded_rectangle(LBL_VOL_GAIN, 16, fill=COL_INSET)
         draw_fit_text(d, (LBL_VOL_GAIN[0], LBL_VOL_GAIN[1] + 6,
                           LBL_VOL_GAIN[2], LBL_VOL_GAIN[1] + 46),
@@ -641,7 +689,8 @@ class DashboardPanel:
                       fonts=(self._font_tiny,), fill=COL_DIM, max_lines=1,
                       pad_x=2, pad_y=1, line_spacing=0)
         self._btn(d, BTN_VOL_PLUS, "+", fonts=(self._font_mid,),
-                  text_fill=COL_TEXT if self._enabled("vol_plus") else COL_DIM)
+                  text_fill=COL_TEXT if self._enabled("vol_plus") else COL_DIM,
+                  name="vol_plus")
 
         # source-language row (Qwen only; Gemini auto-detects)
         if self._get_provider() == "qwen":
