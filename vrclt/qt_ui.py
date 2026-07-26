@@ -161,6 +161,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._i18n_widgets = {}
         self._i18n_groups = {}
         self._i18n_tooltips = {}
+        self._i18n_calls: list = []
         self._tab_dashboard_idx = -1
         self._tab_settings_idx = -1
         self._tab_logs_idx = -1
@@ -265,6 +266,13 @@ class MainWindow(QtWidgets.QMainWindow):
             return self._tr("err_qwen_workspace_required")
         return error
 
+    def _on_retranslate(self, fn) -> None:
+        """Apply fn now and re-apply it on every UI-language change.
+        Registering at the construction site replaces the old hasattr-guarded
+        blocks in _apply_i18n."""
+        fn()
+        self._i18n_calls.append(fn)
+
     def _apply_i18n(self) -> None:
         for key, widget in self._i18n_widgets.items():
             widget.setText(self._tr(key))
@@ -273,55 +281,8 @@ class MainWindow(QtWidgets.QMainWindow):
         for key, widgets in self._i18n_tooltips.items():
             for widget in widgets:
                 widget.setToolTip(self._tr(key))
-        if self._tab_dashboard_idx >= 0:
-            self._tabs.setTabText(self._tab_dashboard_idx, self._tr("tab_dashboard"))
-        if self._tab_settings_idx >= 0:
-            self._tabs.setTabText(self._tab_settings_idx, self._tr("tab_settings"))
-        if self._tab_logs_idx >= 0:
-            self._tabs.setTabText(self._tab_logs_idx, self._tr("tab_logs"))
-        if hasattr(self, "_btn_restart"):
-            self._btn_restart.setText(self._tr("btn_restart_runtime"))
-        if hasattr(self, "_text_only"):
-            self._text_only.setText(self._tr("btn_text_only_on"))
-        if hasattr(self, "_out_lang_add"):
-            set_language_picker_placeholder(self._out_lang_add, self._tr("ph_out_add"))
-        if hasattr(self, "_out_lang_add_btn"):
-            self._out_lang_add_btn.setText(self._tr("btn_add"))
-        if hasattr(self, "_sub_lang_add"):
-            set_language_picker_placeholder(self._sub_lang_add, self._tr("ph_sub_add"))
-        if hasattr(self, "_sub_lang_add_btn"):
-            self._sub_lang_add_btn.setText(self._tr("btn_add"))
-        if hasattr(self, "_src_lang"):
-            set_language_picker_placeholder(self._src_lang, self._tr("ph_src_auto"))
-        if hasattr(self, "_in_src_lang"):
-            set_language_picker_placeholder(self._in_src_lang, self._tr("ph_src_auto"))
-        if hasattr(self, "_btn_overlay_reset"):
-            self._btn_overlay_reset.setText(self._tr("btn_overlay_reset"))
-        if hasattr(self, "_subtitle_view"):
-            self._subtitle_view.setPlaceholderText(self._tr("subtitle_live_placeholder"))
-        if hasattr(self, "_btn_devices"):
-            self._btn_devices.setText(self._tr("btn_refresh_devices"))
-        if hasattr(self, "_btn_test_out"):
-            self._btn_test_out.setText(self._tr("btn_test_output"))
-        if hasattr(self, "_btn_reset_config"):
-            self._btn_reset_config.setText(self._tr("btn_reset_config"))
-        if hasattr(self, "_btn_save"):
-            self._btn_save.setText(self._tr("btn_save_restart"))
-        if hasattr(self, "_btn_log_refresh"):
-            self._btn_log_refresh.setText(self._tr("btn_refresh_log"))
-        if hasattr(self, "_btn_check_update"):
-            self._btn_check_update.setText(self._tr("btn_check_update"))
-            self._render_update_status()
-        if hasattr(self, "_about_text"):
-            self._about_text.setText(self._tr("about_paths").format(config=config_mod.CONFIG_PATH))
-        if hasattr(self, "_update_banner"):
-            self._update_banner.retranslate()
-        if hasattr(self, "_setup_banner"):
-            self._setup_banner.retranslate()
-        if hasattr(self, "_close_action"):
-            self._sync_close_action()
-        if hasattr(self, "_tray"):
-            self._tray.retranslate()
+        for fn in self._i18n_calls:
+            fn()
 
     def _build_dashboard(self) -> None:
         page = QtWidgets.QWidget()
@@ -338,6 +299,8 @@ class MainWindow(QtWidgets.QMainWindow):
         root.addWidget(self._build_dash_app_group())
         self._build_dash_subtitles(root)
         self._tab_dashboard_idx = self._tabs.addTab(page, self._tr("tab_dashboard"))
+        self._on_retranslate(lambda: self._tabs.setTabText(
+            self._tab_dashboard_idx, self._tr("tab_dashboard")))
 
     def _build_dash_header(self, root: QtWidgets.QVBoxLayout) -> None:
         """Status row + restart, error label, update/setup banners, toast."""
@@ -355,11 +318,14 @@ class MainWindow(QtWidgets.QMainWindow):
         top.addStretch(1)
         self._btn_restart = QtWidgets.QPushButton(self._tr("btn_restart_runtime"))
         self._btn_restart.clicked.connect(self._restart_runtime)
+        self._on_retranslate(
+            lambda: self._btn_restart.setText(self._tr("btn_restart_runtime")))
         top.addWidget(self._btn_restart)
         root.addLayout(top)
         root.addWidget(self._error_text)
 
         self._update_banner = UpdateBanner(self._tr, on_available=self._on_update_available)
+        self._on_retranslate(self._update_banner.retranslate)
         root.addWidget(self._update_banner)
 
         self._setup_banner = SetupBanner(
@@ -367,6 +333,7 @@ class MainWindow(QtWidgets.QMainWindow):
             on_open_settings=lambda: self._tabs.setCurrentIndex(
                 self._tab_settings_idx),
             on_open_url=QtGui.QDesktopServices.openUrl)
+        self._on_retranslate(self._setup_banner.retranslate)
         root.addWidget(self._setup_banner)
 
         self._toast = QtWidgets.QLabel("")
@@ -405,12 +372,20 @@ class MainWindow(QtWidgets.QMainWindow):
             self._controller.cfg.get("outbound", {}).get("tts_device", ""))
         self._out_lang_add = build_language_picker(self._tr("ph_out_add"))
         self._out_lang_add.lineEdit().returnPressed.connect(self._add_output_language_from_input)
+        self._on_retranslate(lambda: set_language_picker_placeholder(
+            self._out_lang_add, self._tr("ph_out_add")))
         self._out_lang_add_btn = QtWidgets.QPushButton(self._tr("btn_add"))
         self._out_lang_add_btn.clicked.connect(self._add_output_language_from_input)
+        self._on_retranslate(
+            lambda: self._out_lang_add_btn.setText(self._tr("btn_add")))
         self._sub_lang_add = build_language_picker(self._tr("ph_sub_add"))
         self._sub_lang_add.lineEdit().returnPressed.connect(self._add_inbound_language_from_input)
+        self._on_retranslate(lambda: set_language_picker_placeholder(
+            self._sub_lang_add, self._tr("ph_sub_add")))
         self._sub_lang_add_btn = QtWidgets.QPushButton(self._tr("btn_add"))
         self._sub_lang_add_btn.clicked.connect(self._add_inbound_language_from_input)
+        self._on_retranslate(
+            lambda: self._sub_lang_add_btn.setText(self._tr("btn_add")))
         out_lang_add_widget = self._build_language_add_control(
             self._out_lang_add, self._out_lang_add_btn)
         sub_lang_add_widget = self._build_language_add_control(
@@ -418,6 +393,8 @@ class MainWindow(QtWidgets.QMainWindow):
         app_mode_widget = self._build_app_mode_toggle()
         self._text_only = QtWidgets.QCheckBox(self._tr("btn_text_only_on"))
         self._text_only.toggled.connect(self._apply_text_only)
+        self._on_retranslate(
+            lambda: self._text_only.setText(self._tr("btn_text_only_on")))
         self._overlay_font_size = QtWidgets.QSpinBox()
         self._overlay_font_size.setRange(config_mod.OVERLAY_FONT_MIN,
                                          config_mod.OVERLAY_FONT_MAX)
@@ -426,7 +403,7 @@ class MainWindow(QtWidgets.QMainWindow):
             int(self._controller.cfg.get("overlay", {}).get("font_size", 27)))
         self._overlay_font_size.valueChanged.connect(self._set_overlay_font_size)
         self._close_action = NoWheelComboBox()
-        self._sync_close_action()
+        self._on_retranslate(self._sync_close_action)
         self._close_action.currentIndexChanged.connect(self._pick_close_action)
         self._dashboard_note = QtWidgets.QLabel("")
         self._dashboard_note.setObjectName("noteText")
@@ -435,9 +412,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self._btn_overlay_move.clicked.connect(self._toggle_overlay_move)
         self._btn_overlay_reset = QtWidgets.QPushButton(self._tr("btn_overlay_reset"))
         self._btn_overlay_reset.clicked.connect(self._reset_overlay_position)
+        self._on_retranslate(
+            lambda: self._btn_overlay_reset.setText(self._tr("btn_overlay_reset")))
         self._btn_test_out = QtWidgets.QPushButton(self._tr("btn_test_output"))
         self._btn_test_out.setFixedWidth(72)
         self._btn_test_out.clicked.connect(self._test_output_device)
+        self._on_retranslate(
+            lambda: self._btn_test_out.setText(self._tr("btn_test_output")))
         out_device_wrap = QtWidgets.QWidget()
         out_device_layout = QtWidgets.QHBoxLayout(out_device_wrap)
         out_device_layout.setContentsMargins(0, 0, 0, 0)
@@ -450,9 +431,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self._src_lang = build_language_picker(self._tr("ph_src_auto"))
         self._src_lang.activated.connect(lambda _i: self._pick_src_lang())
         self._src_lang.lineEdit().returnPressed.connect(self._pick_src_lang)
+        self._on_retranslate(lambda: set_language_picker_placeholder(
+            self._src_lang, self._tr("ph_src_auto")))
         self._in_src_lang = build_language_picker(self._tr("ph_src_auto"))
         self._in_src_lang.activated.connect(lambda _i: self._pick_in_src_lang())
         self._in_src_lang.lineEdit().returnPressed.connect(self._pick_in_src_lang)
+        self._on_retranslate(lambda: set_language_picker_placeholder(
+            self._in_src_lang, self._tr("ph_src_auto")))
         src_label = self._label("label_src_lang")
         in_src_label = self._label("label_in_src_lang")
         mic_label = self._label("label_mic_level")
@@ -570,7 +555,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._subtitle_view = QtWidgets.QTextEdit()
         self._subtitle_view.setObjectName("subtitleView")
         self._subtitle_view.setReadOnly(True)
-        self._subtitle_view.setPlaceholderText(self._tr("subtitle_live_placeholder"))
+        self._on_retranslate(lambda: self._subtitle_view.setPlaceholderText(
+            self._tr("subtitle_live_placeholder")))
         self._subtitle_snapshot = None
         root.addWidget(self._subtitle_view, 1)
 
@@ -673,11 +659,17 @@ class MainWindow(QtWidgets.QMainWindow):
         buttons = QtWidgets.QHBoxLayout()
         self._btn_devices = QtWidgets.QPushButton(self._tr("btn_refresh_devices"))
         self._btn_devices.clicked.connect(self._reload_devices)
+        self._on_retranslate(
+            lambda: self._btn_devices.setText(self._tr("btn_refresh_devices")))
         self._btn_reset_config = QtWidgets.QPushButton(self._tr("btn_reset_config"))
         self._btn_reset_config.clicked.connect(self._confirm_reset_config)
+        self._on_retranslate(
+            lambda: self._btn_reset_config.setText(self._tr("btn_reset_config")))
         self._btn_save = QtWidgets.QPushButton(self._tr("btn_save_restart"))
         self._btn_save.setObjectName("primaryButton")
         self._btn_save.clicked.connect(self._save_settings)
+        self._on_retranslate(
+            lambda: self._btn_save.setText(self._tr("btn_save_restart")))
         self._settings_note = QtWidgets.QLabel("")
         self._settings_note.setObjectName("noteText")
         buttons.addWidget(self._settings_note, 1)
@@ -693,6 +685,8 @@ class MainWindow(QtWidgets.QMainWindow):
             on_hotkey_capture_end=lambda: self._sync_hotkeys(force=True))
         self._populate_settings()
         self._tab_settings_idx = self._tabs.addTab(page, self._tr("tab_settings"))
+        self._on_retranslate(lambda: self._tabs.setTabText(
+            self._tab_settings_idx, self._tr("tab_settings")))
 
     def _build_logs(self) -> None:
         page = QtWidgets.QWidget()
@@ -703,10 +697,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self._log_text.setReadOnly(True)
         self._btn_log_refresh = QtWidgets.QPushButton(self._tr("btn_refresh_log"))
         self._btn_log_refresh.clicked.connect(self._load_log_tail)
+        self._on_retranslate(
+            lambda: self._btn_log_refresh.setText(self._tr("btn_refresh_log")))
         self._about_text = QtWidgets.QLabel(
             self._tr("about_paths").format(config=config_mod.CONFIG_PATH)
         )
         self._about_text.setWordWrap(True)
+        self._on_retranslate(lambda: self._about_text.setText(
+            self._tr("about_paths").format(config=config_mod.CONFIG_PATH)))
         update_row = QtWidgets.QHBoxLayout()
         self._btn_check_update = QtWidgets.QPushButton(self._tr("btn_check_update"))
         self._btn_check_update.clicked.connect(self._check_updates)
@@ -714,6 +712,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self._tr("update_status_idle").format(current=__version__))
         self._update_status.setObjectName("noteText")
         self._update_status.setWordWrap(True)
+        self._on_retranslate(lambda: (
+            self._btn_check_update.setText(self._tr("btn_check_update")),
+            self._render_update_status()))
         update_row.addWidget(self._btn_check_update)
         update_row.addWidget(self._update_status, 1)
         root.addWidget(self._label("label_log_file"))
@@ -723,6 +724,8 @@ class MainWindow(QtWidgets.QMainWindow):
         root.addLayout(update_row)
         root.addWidget(self._about_text)
         self._tab_logs_idx = self._tabs.addTab(page, self._tr("tab_logs"))
+        self._on_retranslate(lambda: self._tabs.setTabText(
+            self._tab_logs_idx, self._tr("tab_logs")))
         self._load_log_tail()
 
     def _build_tray(self) -> None:
@@ -735,6 +738,7 @@ class MainWindow(QtWidgets.QMainWindow):
             on_toggle_subtitles=self._toggle_subtitles,
             on_quit=self._quit,
             on_message_clicked=lambda: self._update_banner.open_release())
+        self._on_retranslate(self._tray.retranslate)
 
     def _apply_style(self) -> None:
         self.setStyleSheet(theme.build_qss())
