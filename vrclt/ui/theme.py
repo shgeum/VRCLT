@@ -92,6 +92,9 @@ def build_qss() -> str:
         "info_title": hex_rgb(QT_INFO_TITLE),
         "info_body": hex_rgb(QT_INFO_BODY),
         "sub_blue": hex_rgb(SUB_BLUE),
+        "ok": hex_rgb(ON_GREEN),
+        "err": hex_rgb(ERR_RED),
+        "trans_off": hex_rgb(OFF_AMBER),
     }
     return """
         QMainWindow, QWidget {{ background: {bg}; color: {text}; }}
@@ -141,4 +144,12 @@ def build_qss() -> str:
             background: {text}; color: {bg}; border: 2px solid {text_idle};
             font-weight: 800;
         }}
+        #statusDot {{ border-radius: 7px; background: {text_idle}; }}
+        #statusDot[state="ok"] {{ background: {ok}; }}
+        #statusDot[state="err"] {{ background: {err}; }}
+        #statusDot[state="warn"] {{ background: {warn}; }}
+        QPushButton#transToggle[on="true"] {{ background: {ok}; }}
+        QPushButton#transToggle[on="false"] {{ background: {trans_off}; }}
+        QPushButton#subToggle[on="true"] {{ background: {sub_blue}; }}
+        QPushButton#overlayMoveBtn[active="true"] {{ background: {sub_blue}; }}
     """.format(**c)

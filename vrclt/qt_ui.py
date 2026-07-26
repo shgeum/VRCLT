@@ -330,6 +330,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         top = QtWidgets.QHBoxLayout()
         self._status_dot = QtWidgets.QLabel()
+        self._status_dot.setObjectName("statusDot")
         self._status_dot.setFixedSize(14, 14)
         self._status_text = QtWidgets.QLabel(self._tr("status_stopped"))
         self._status_text.setObjectName("statusText")
@@ -365,9 +366,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._toast_timer.timeout.connect(self._toast.hide)
 
         self._btn_trans = QtWidgets.QPushButton()
+        self._btn_trans.setObjectName("transToggle")
         self._btn_trans.clicked.connect(
             lambda: self._controller.set_translation_on(not self._controller.state.translation_on))
         self._btn_sub = QtWidgets.QPushButton()
+        self._btn_sub.setObjectName("subToggle")
         self._btn_sub.clicked.connect(
             lambda: self._controller.set_subtitles_on(not self._controller.state.subtitles_on))
         self._out_lang = NoWheelComboBox()
@@ -411,6 +414,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._dashboard_note = QtWidgets.QLabel("")
         self._dashboard_note.setObjectName("noteText")
         self._btn_overlay_move = QtWidgets.QPushButton()
+        self._btn_overlay_move.setObjectName("overlayMoveBtn")
         self._btn_overlay_move.clicked.connect(self._toggle_overlay_move)
         self._btn_overlay_reset = QtWidgets.QPushButton(self._tr("btn_overlay_reset"))
         self._btn_overlay_reset.clicked.connect(self._reset_overlay_position)
@@ -1218,16 +1222,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sync_hotkeys()
         connected, status_key, detail = self._controller.get_status_info()
         if connected:
-            color = theme.hex_rgb(theme.ON_GREEN)
+            dot_state = "ok"
         elif status_key in ("status_api_key_invalid", "status_api_key_required",
                             "status_failed"):
-            color = theme.hex_rgb(theme.ERR_RED)
+            dot_state = "err"
         elif status_key in ("status_running", "status_degraded",
                             "status_reconnecting", "status_quota_exceeded"):
-            color = theme.hex_rgb(theme.QT_WARN)
+            dot_state = "warn"
         else:
-            color = theme.hex_rgb(theme.QT_TEXT_IDLE)
-        self._set_style_if_changed(self._status_dot, f"background:{color}; border-radius:7px;")
+            dot_state = "idle"
+        self._set_state_prop(self._status_dot, "state", dot_state)
         conn_key = "conn_on" if connected else "conn_off"
         self._status_text.setText(
             f"{i18n.tr(st.ui_lang, status_key)} | {i18n.tr(st.ui_lang, conn_key)}")
@@ -1240,19 +1244,15 @@ class MainWindow(QtWidgets.QMainWindow):
             str(cfg.get("qwen", {}).get("endpoint", "intl") or "intl").strip())
 
         self._btn_trans.setText(i18n.tr(st.ui_lang, "btn_trans_on" if st.translation_on else "btn_trans_off"))
-        self._set_style_if_changed(
-            self._btn_trans,
-            f"background:{theme.hex_rgb(theme.ON_GREEN)};" if st.translation_on
-            else f"background:{theme.hex_rgb(theme.OFF_AMBER)};")
+        self._set_state_prop(self._btn_trans, "on",
+                             "true" if st.translation_on else "false")
         self._btn_sub.setText(i18n.tr(st.ui_lang, "btn_sub_on" if st.subtitles_on else "btn_sub_off"))
-        self._set_style_if_changed(
-            self._btn_sub,
-            f"background:{theme.hex_rgb(theme.SUB_BLUE)};" if st.subtitles_on else "")
+        self._set_state_prop(self._btn_sub, "on",
+                             "true" if st.subtitles_on else "false")
         self._btn_overlay_move.setText(
             i18n.tr(st.ui_lang, "btn_overlay_done" if st.edit_mode else "btn_overlay_move"))
-        self._set_style_if_changed(
-            self._btn_overlay_move,
-            f"background:{theme.hex_rgb(theme.SUB_BLUE)};" if st.edit_mode else "")
+        self._set_state_prop(self._btn_overlay_move, "active",
+                             "true" if st.edit_mode else "false")
 
         if not self._app_mode_applying:
             self._set_app_mode_checked(self._controller.cfg.get("app", {}).get("mode", "vrchat"))
@@ -1313,16 +1313,14 @@ class MainWindow(QtWidgets.QMainWindow):
         if self._subtitle_view.toPlainText() != text:
             self._subtitle_view.setPlainText(text)
 
-    def _set_style_if_changed(self, widget: QtWidgets.QWidget, css: str) -> None:
-        # setStyleSheet forces a re-polish/repaint even when unchanged; the
+    @staticmethod
+    def _set_state_prop(widget: QtWidgets.QWidget, name: str, value: str) -> None:
+        # dynamic QSS properties need an explicit re-polish to restyle; the
         # 250 ms refresh timer calls this constantly, so diff first
-        cache = getattr(self, "_style_cache", None)
-        if cache is None:
-            cache = self._style_cache = {}
-        key = id(widget)
-        if cache.get(key) != css:
-            cache[key] = css
-            widget.setStyleSheet(css)
+        if widget.property(name) != value:
+            widget.setProperty(name, value)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
 
     @staticmethod
     def _sync_combo(combo: QtWidgets.QComboBox, items: list[str], current: str) -> None:
