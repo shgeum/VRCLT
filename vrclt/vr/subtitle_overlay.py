@@ -11,6 +11,7 @@
 import logging
 import math
 import threading
+import time
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -28,6 +29,7 @@ from ..state import AppState
 from ..subtitles import SubtitleStore
 from .font_fallback import load_fallback_font
 from .panel_common import (
+    COL_SUB_ON,
     coerce_transform, create_overlay_set, haptic, laser_base,
     load_saved_transform, np_to_hmd34, pointer_matrix, pose_to_np,
     ray_plane_hit, save_transform, setup_pointer_overlays, translate,
@@ -43,9 +45,19 @@ MAX_TEX_H = 720
 HANDLE_PX = 46
 HANDLE_M = 0.07
 RESIZE_HANDLE_M = 0.12
+# fraction of the half-extent that counts as resize-grab area near a bottom
+# corner (was inline magic ratios); floors keep the handle usable when small
+HANDLE_GRAB_FRAC_W = 0.25
+HANDLE_GRAB_FRAC_H = 0.55
+HANDLE_GRAB_MIN_H_M = 0.055
 
 GAZE_ON_DEG = 25.0
 GAZE_OFF_DEG = 40.0
+
+# armed-but-silent pill: bright -> dim -> dot-only so "is it on?" stays
+# answerable without cluttering the view during long silences
+ARMED_BRIGHT_SEC = 6.0
+ARMED_DIM_SEC = 12.0
 
 TRANSFORM_PATH = APPDATA_DIR / "subtitle_transform.json"
 
@@ -98,6 +110,8 @@ class SubtitlePanel:
         self._reset_requested = False
         self._resize_dirty = False
         self._texture_dirty = False
+        self._armed_since: float | None = None
+        self._hover_corner = None
         store.subscribe(self._dirty.set)
         state.subscribe(self._on_state)
 
@@ -260,6 +274,11 @@ class SubtitlePanel:
                     h4 = pose_to_np(hp)
                     f4 = pose_to_np(fp)
                     hit = self._ray_hit(h4, f4)
+                    hover_corner = (hit[1] if hit is not None
+                                    and hit[0] == "resize" else None)
+                    if hover_corner != self._hover_corner:
+                        self._hover_corner = hover_corner
+                        self._dirty.set()  # brighten the hovered bracket
                     if hit is not None:
                         _mode, _corner, hit_xy = hit
                         cur = self._overlay_mat @ translate(hit_xy[0], hit_xy[1], 0.004)
@@ -321,6 +340,10 @@ class SubtitlePanel:
                                      if resized else "subtitle panel placed (saved)")
                     self._prev_trigger, self._prev_grip = trigger, grip
 
+        if not (self._visible and self._state.edit_mode) and \
+                self._hover_corner is not None:
+            self._hover_corner = None
+            self._dirty.set()
         want_laser = self._visible and self._state.edit_mode and self._pointer_idx != self._invalid
         if want_laser != self._laser_visible:
             self._laser_visible = want_laser
@@ -350,11 +373,13 @@ class SubtitlePanel:
         if self._dirty.is_set() or (now - self._last_check) > 1.0:
             self._dirty.clear()
             self._last_check = now
-            has_content, sig, finals, partial, edit = self._render_state()
+            has_content, sig, finals, partial, edit, armed_phase = \
+                self._render_state()
             if sig != self._last_sig:
                 self._last_sig = sig
                 if has_content:
-                    self._tex.update(self._render(finals, partial, edit))
+                    self._tex.update(
+                        self._render(finals, partial, edit, armed_phase))
                     ovl.setOverlayTexture(self._h, self._tex.vr_texture(openvr))
                     if not self._visible:
                         ovl.showOverlay(self._h)
@@ -371,9 +396,10 @@ class SubtitlePanel:
         try:
             if self._tex is None:
                 self._tex = GlTexture(TEX_W, MAX_TEX_H)
-            has_content, sig, finals, partial, edit = self._render_state()
+            has_content, sig, finals, partial, edit, armed_phase = \
+                self._render_state()
             if has_content:
-                self._tex.update(self._render(finals, partial, edit))
+                self._tex.update(self._render(finals, partial, edit, armed_phase))
                 ovl.setOverlayTextureBounds(self._h, flip_bounds(openvr))
                 ovl.setOverlayTexture(self._h, self._tex.vr_texture(openvr))
                 self._last_sig = sig
@@ -394,11 +420,27 @@ class SubtitlePanel:
         finals, partial = ([], ("", ""))
         if self._state.subtitles_on:
             finals, partial = self._store.snapshot()
+        text_content = bool(finals or partial[0] or partial[1])
+        # armed-but-silent: subtitles are ON but nothing is being said -
+        # show a small pill instead of hiding entirely (zero feedback)
+        armed_phase = None
+        if self._state.subtitles_on and not text_content and not edit:
+            if self._armed_since is None:
+                self._armed_since = time.time()
+            elapsed = time.time() - self._armed_since
+            armed_phase = (0 if elapsed < ARMED_BRIGHT_SEC
+                           else 1 if elapsed < ARMED_DIM_SEC else 2)
+        else:
+            self._armed_since = None
         # In edit mode the panel stays visible (placeholder) so it can be
         # positioned even while nobody is speaking.
-        has_content = bool(finals or partial[0] or partial[1]) or edit
-        sig = (tuple(finals), partial, edit, self._tex_h) if has_content else None
-        return has_content, sig, finals, partial, edit
+        has_content = text_content or edit or armed_phase is not None
+        # the phase int + hovered resize corner are part of the signature so
+        # the existing 1 Hz recheck drives their (rare) re-renders
+        sig = ((tuple(finals), partial, edit, self._tex_h, armed_phase,
+                self._hover_corner if edit else None)
+               if has_content else None)
+        return has_content, sig, finals, partial, edit, armed_phase
 
     @property
     def width_m(self) -> float:
@@ -472,10 +514,16 @@ class SubtitlePanel:
         margin = max(0.04, RESIZE_HANDLE_M * 0.55)
         if abs(x) > half_w + margin or abs(y) > half_h + margin:
             return None
-        handle_x = min(max(RESIZE_HANDLE_M, half_w * 0.25), half_w + margin)
-        handle_y = min(max(0.055, half_h * 0.55), half_h + margin)
-        if x >= half_w - handle_x and y <= -half_h + handle_y:
-            return "resize", (1, -1), (x, y)
+        handle_x = min(max(RESIZE_HANDLE_M, half_w * HANDLE_GRAB_FRAC_W),
+                       half_w + margin)
+        handle_y = min(max(HANDLE_GRAB_MIN_H_M, half_h * HANDLE_GRAB_FRAC_H),
+                       half_h + margin)
+        if y <= -half_h + handle_y:
+            # both bottom corners resize; cx picks the anchoring side
+            if x >= half_w - handle_x:
+                return "resize", (1, -1), (x, y)
+            if x <= -half_w + handle_x:
+                return "resize", (-1, -1), (x, y)
         return "move", None, (x, y)
 
     def _start_resize(self, corner: tuple[int, int]) -> None:
@@ -483,7 +531,10 @@ class SubtitlePanel:
         self._resize_basis = self._overlay_mat[:3, :3].copy()
         self._resize_center = self._overlay_mat[:3, 3].copy()
         half_w, half_h = self._width_m / 2, self._height_m / 2
-        anchor_local = np.array([-half_w, half_h, 0.0, 1.0])
+        # anchor = the TOP corner opposite the grabbed one; cx=+1 reproduces
+        # the original bottom-right behavior exactly
+        cx = corner[0]
+        anchor_local = np.array([-cx * half_w, half_h, 0.0, 1.0])
         self._resize_anchor = self._overlay_mat @ anchor_local
         self._resize_base_width = self._width_m
         self._resize_base_height = self._height_m
@@ -504,11 +555,12 @@ class SubtitlePanel:
             return False
         hit_h = origin_h + direction_h * t
         local_from_anchor = self._resize_basis.T @ (hit_h - self._resize_anchor[:3])
-        width_m = float(local_from_anchor[0])
+        cx = self._resize_corner[0]
+        width_m = cx * float(local_from_anchor[0])
         height_m = -float(local_from_anchor[1])
         old_width, old_height, old_tex_h = self._width_m, self._height_m, self._tex_h
         width_m, height_m = self.set_size_m(width_m, height_m)
-        center_delta = np.array([width_m / 2, -height_m / 2, 0.0])
+        center_delta = np.array([cx * width_m / 2, -height_m / 2, 0.0])
         center_h = self._resize_anchor[:3] + self._resize_basis @ center_delta
         self._overlay_mat[:3, :3] = self._resize_basis
         self._overlay_mat[:3, 3] = center_h
@@ -517,15 +569,22 @@ class SubtitlePanel:
                 or old_tex_h != self._tex_h)
 
     def _draw_resize_handle(self, d: ImageDraw.ImageDraw) -> None:
+        """Corner brackets on BOTH bottom corners; the one under the pointer
+        (or being dragged) brightens so the grab area is discoverable."""
         active_h = self._tex_h
         top = (MAX_TEX_H - active_h) // 2
         inset = max(10, min(18, active_h // 6))
         length = min(HANDLE_PX * 2, max(24, active_h // 3))
-        width = 6
-        color = (120, 180, 255, 230)
-        x, y = TEX_W - inset, top + active_h - inset
-        d.line([(x - length, y), (x, y)], fill=color, width=width)
-        d.line([(x, y - length), (x, y)], fill=color, width=width)
+        y = top + active_h - inset
+        active = (self._resize_corner if self._dragging and
+                  self._drag_mode == "resize" else self._hover_corner)
+        for cx in (1, -1):
+            hot = active is not None and active[0] == cx
+            color = (225, 240, 255, 255) if hot else (120, 180, 255, 230)
+            width = 8 if hot else 6
+            x = TEX_W - inset if cx == 1 else inset
+            d.line([(x - cx * length, y), (x, y)], fill=color, width=width)
+            d.line([(x, y - length), (x, y)], fill=color, width=width)
 
     # ---------------- rendering ----------------
     def _wrap_chars(self, draw, text: str, font, max_width: int) -> list[str]:
@@ -547,7 +606,41 @@ class SubtitlePanel:
             lines.append(line)
         return lines
 
-    def _render(self, finals, partial, edit: bool = False) -> Image.Image:
+    def _render_armed_pill(self, phase: int) -> Image.Image:
+        """Small bottom-center pill while subtitles are ON but silent:
+        phase 0 bright, 1 dim, 2 a faint dot only."""
+        img = Image.new("RGBA", (TEX_W, MAX_TEX_H), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        tex_h = self._tex_h
+        bottom = (MAX_TEX_H - tex_h) // 2 + tex_h
+        cx = TEX_W // 2
+        dot_r = 9
+        if phase >= 2:
+            d.ellipse((cx - dot_r, bottom - 30 - dot_r,
+                       cx + dot_r, bottom - 30 + dot_r),
+                      fill=(*COL_SUB_ON[:3], 120))
+            return img
+        alpha = 220 if phase == 0 else 110
+        text = tr(self._state.ui_lang, "sub_armed")
+        text_w = self._font_small.textlength(d, text)
+        pill_h = 52
+        pill_w = int(text_w) + 64
+        x0 = cx - pill_w // 2
+        y1 = bottom - 10
+        y0 = y1 - pill_h
+        d.rounded_rectangle((x0, y0, x0 + pill_w, y1), pill_h // 2,
+                            fill=(10, 10, 12, min(185, alpha)))
+        dcy = (y0 + y1) // 2
+        d.ellipse((x0 + 18, dcy - dot_r, x0 + 18 + 2 * dot_r, dcy + dot_r),
+                  fill=(*COL_SUB_ON[:3], alpha))
+        self._font_small.draw(d, (x0 + 28 + 2 * dot_r, dcy), text,
+                              fill=(190, 190, 190, alpha), anchor="lm")
+        return img
+
+    def _render(self, finals, partial, edit: bool = False,
+                armed_phase: int | None = None) -> Image.Image:
+        if armed_phase is not None and not edit:
+            return self._render_armed_pill(armed_phase)
         tex_h = self._tex_h
         top = (MAX_TEX_H - tex_h) // 2
         bottom = top + tex_h

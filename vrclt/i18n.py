@@ -130,6 +130,8 @@ STRINGS = {
                       "ja": "字幕リセット", "zh": "重置字幕"},
     "btn_restarting": {"ko": "재시작 중...", "en": "Restarting...",
                        "ja": "再起動中...", "zh": "正在重启..."},
+    "sub_armed": {"ko": "자막 대기 중", "en": "Subtitles on — listening",
+                  "ja": "字幕 待機中", "zh": "字幕待命中"},
     "sub_move": {"ko": "자막", "en": "Subs", "ja": "字幕", "zh": "字幕"},
     "ui_lang": {"ko": "UI 언어", "en": "UI lang", "ja": "UI言語", "zh": "界面语言"},
     "sub_placeholder": {"ko": "⠿ 자막 위치 (드래그)", "en": "⠿ subtitle area (drag)",
