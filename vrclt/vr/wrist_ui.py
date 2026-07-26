@@ -17,17 +17,19 @@ import threading
 import numpy as np
 from PIL import Image, ImageDraw
 
-from ..config import APPDATA_DIR
+from ..config import APPDATA_DIR, OVERLAY_FONT_MAX, OVERLAY_FONT_MIN
 from ..resources import bundled_font, resolve_font_path
 from ..state import AppState
 from ..i18n import tr, LANGS as UI_LANGS, UI_LANG_LABELS
+from .button_table import Widget, draw_page, is_enabled, widget_at
 from .font_fallback import load_fallback_font
 from .panel_common import (
-    COL_BG, COL_BTN, COL_DIM, COL_DRAG, COL_OFF, COL_ON, COL_SUB_ON, COL_TEXT,
+    COL_BG, COL_BTN, COL_DIM, COL_DRAG, COL_INSET, COL_OFF, COL_ON,
+    COL_SUB_ON, COL_TEXT,
     coerce_transform, create_overlay_set, cycle, draw_fit_text, haptic,
-    lang_block, laser_base, load_saved_transform, np_to_hmd34, pointer_matrix,
-    pose_to_np, ray_plane_hit, save_transform, setup_pointer_overlays,
-    status_dot_color, translate,
+    language_label, laser_base, load_saved_transform, np_to_hmd34,
+    pointer_matrix, pose_to_np, ray_plane_hit, save_transform,
+    setup_pointer_overlays, status_dot_color, translate,
 )
 from .render import GlTexture, flip_bounds
 
@@ -62,15 +64,116 @@ LBL_FONT_SIZE = (304, 554, 404, 630)   # label only
 BTN_FONT_PLUS = (412, 554, 492, 630)
 LBL_STATUS = (508, 554, 624, 630)      # label only: non-nominal status text
 
-BUTTONS = (("toggle", BTN_TOGGLE), ("prev", BTN_PREV), ("next", BTN_NEXT),
-           ("sub_toggle", BTN_SUB_TOGGLE), ("sub_prev", BTN_SUB_PREV),
-           ("sub_next", BTN_SUB_NEXT), ("edit", BTN_EDIT), ("sub_edit", BTN_SUB_EDIT),
-           ("reset", BTN_RESET),
-           ("uilang", BTN_UILANG), ("text_only", BTN_TEXT_ONLY),
-           ("restart", BTN_RESTART), ("font_minus", BTN_FONT_MINUS),
-           ("font_plus", BTN_FONT_PLUS))
-
 CURSOR_SIZE_M = 0.016
+
+
+def _center(rect) -> tuple[int, int]:
+    return (rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2
+
+
+def _arrow_draw(glyph: str):
+    def draw(panel, d, w, lang):
+        col = COL_TEXT if is_enabled(w, panel) else COL_DIM
+        panel._font_mid.draw(d, _center(w.rect), glyph, fill=col, anchor="mm")
+    return draw
+
+
+def _toggle_draw(on_key: str, off_key: str, caption_key: str, is_on):
+    """The two big toggles: state line on top, pipeline caption below."""
+    def draw(panel, d, w, lang):
+        x0, y0, x1, y1 = w.rect
+        cy = (y0 + y1) // 2
+        draw_fit_text(d, (x0 + 10, y0 + 36, x1 - 10, cy + 16),
+                      tr(lang, on_key if is_on(panel) else off_key),
+                      fonts=(panel._font_mid, panel._font_small, panel._font_tiny),
+                      max_lines=1, pad_x=0, pad_y=0)
+        draw_fit_text(d, (x0 + 10, cy + 18, x1 - 10, y1 - 22),
+                      tr(lang, caption_key),
+                      fonts=(panel._font_small, panel._font_tiny),
+                      max_lines=1, pad_x=0, pad_y=0, line_spacing=0)
+    return draw
+
+
+def _lang_label_draw(code_of, caption_key: str):
+    """Inset language name + dim caption (arrows are separate widgets)."""
+    def draw(panel, d, w, lang):
+        box = w.rect
+        draw_fit_text(d, (box[0] + 4, box[1] + 20, box[2] - 4, box[3] - 54),
+                      language_label(code_of(panel)),
+                      fonts=(panel._font_big, panel._font_mid,
+                             panel._font_small, panel._font_tiny),
+                      max_lines=1, pad_x=2, pad_y=2)
+        draw_fit_text(d, (box[0] + 4, box[3] - 54, box[2] - 4, box[3] - 8),
+                      tr(lang, caption_key),
+                      fonts=(panel._font_tiny,), fill=COL_DIM, max_lines=1,
+                      pad_x=2, pad_y=1, line_spacing=0)
+    return draw
+
+
+def _font_size_draw(panel, d, w, lang):
+    box = w.rect
+    draw_fit_text(d, (box[0], box[1] + 6, box[2], box[1] + 44),
+                  str(int(panel._get_font_size())),
+                  fonts=(panel._font_small,), max_lines=1, pad_x=4, pad_y=2)
+    draw_fit_text(d, (box[0], box[3] - 30, box[2], box[3] - 6),
+                  tr(lang, "dash_font_size"),
+                  fonts=(panel._font_tiny,), fill=COL_DIM, max_lines=1,
+                  pad_x=2, pad_y=1, line_spacing=0)
+
+
+def _build_widgets() -> tuple:
+    """Main-page widget table: single source for draw AND hit-test rects."""
+    return (
+        Widget("uilang", BTN_UILANG,
+               label=lambda p, lang: UI_LANG_LABELS.get(lang, lang)),
+        Widget("text_only", BTN_TEXT_ONLY,
+               fill=lambda p: COL_SUB_ON if p._state.text_only else COL_BTN,
+               label=lambda p, lang: tr(lang, "btn_text_only_on"
+                                        if p._state.text_only else "btn_text_only_off")),
+        Widget("edit", BTN_EDIT,
+               fill=lambda p: COL_DRAG if p._state.wrist_edit_mode else COL_BTN,
+               label=lambda p, lang: tr(lang, "wrist_move")),
+        Widget("sub_edit", BTN_SUB_EDIT,
+               fill=lambda p: COL_DRAG if p._state.edit_mode else COL_BTN,
+               label=lambda p, lang: tr(lang, "sub_move")),
+        # dual-purpose by design: resets whichever placement is being edited;
+        # the dynamic label + tint make the active target visible
+        Widget("reset", BTN_RESET,
+               fill=lambda p: COL_DRAG if p._state.edit_mode else COL_BTN,
+               label=lambda p, lang: tr(lang, "reset_sub_pos"
+                                        if p._state.edit_mode else "reset_watch_pos")),
+        Widget("toggle", BTN_TOGGLE, radius=18,
+               fill=lambda p: COL_ON if p._state.translation_on else COL_OFF,
+               draw=_toggle_draw("btn_trans_on", "btn_trans_off", "my_to_other",
+                                 lambda p: p._state.translation_on)),
+        Widget("prev", BTN_PREV, radius=16, draw=_arrow_draw("◀")),
+        Widget("lang", BTN_LANG, kind="label", radius=16,
+               fill=lambda p: COL_INSET,
+               draw=_lang_label_draw(lambda p: p._state.target_language,
+                                     "out_lang")),
+        Widget("next", BTN_NEXT, radius=16, draw=_arrow_draw("▶")),
+        Widget("sub_toggle", BTN_SUB_TOGGLE, radius=18,
+               fill=lambda p: COL_SUB_ON if p._state.subtitles_on else COL_BTN,
+               draw=_toggle_draw("btn_sub_on", "btn_sub_off", "other_to_sub",
+                                 lambda p: p._state.subtitles_on)),
+        Widget("sub_prev", BTN_SUB_PREV, radius=16, draw=_arrow_draw("◀")),
+        Widget("sub_lang", BTN_SUB_LANG, kind="label", radius=16,
+               fill=lambda p: COL_INSET,
+               draw=_lang_label_draw(lambda p: p._state.inbound_language,
+                                     "sub_lang")),
+        Widget("sub_next", BTN_SUB_NEXT, radius=16, draw=_arrow_draw("▶")),
+        Widget("restart", BTN_RESTART,
+               enabled=lambda p: not p._restart_pending,
+               label=lambda p, lang: tr(lang, "btn_restart_runtime")),
+        Widget("font_minus", BTN_FONT_MINUS,
+               enabled=lambda p: int(p._get_font_size()) > OVERLAY_FONT_MIN,
+               draw=_arrow_draw("−")),
+        Widget("font_size", LBL_FONT_SIZE, kind="label",
+               fill=lambda p: COL_INSET, draw=_font_size_draw),
+        Widget("font_plus", BTN_FONT_PLUS,
+               enabled=lambda p: int(p._get_font_size()) < OVERLAY_FONT_MAX,
+               draw=_arrow_draw("+")),
+    )
 
 
 class WristPanel:
@@ -110,6 +213,26 @@ class WristPanel:
         self._font_mid = load_fallback_font(font_path, 36, bold=True)
         self._font_small = load_fallback_font(font_path, 24, bold=True)
         self._font_tiny = load_fallback_font(font_path, 18, bold=True)
+
+        self._widgets = _build_widgets()
+        self._page = "main"
+        self._restart_pending = False
+        self._click_handlers = {
+            "toggle": self._toggle_translation,
+            "sub_toggle": self._toggle_subtitles,
+            "prev": lambda: self._cycle_out_lang(-1),
+            "next": lambda: self._cycle_out_lang(1),
+            "sub_prev": lambda: self._cycle_in_lang(-1),
+            "sub_next": lambda: self._cycle_in_lang(1),
+            "edit": self._toggle_wrist_edit,
+            "sub_edit": self._toggle_sub_edit,
+            "uilang": self._cycle_ui_lang,
+            "text_only": self._toggle_text_only,
+            "restart": self._restart,
+            "font_minus": lambda: self._bump_font(-2),
+            "font_plus": lambda: self._bump_font(2),
+            "reset": self._reset,
+        }
 
         self._dirty = threading.Event()
         self._dirty.set()
@@ -212,11 +335,18 @@ class WristPanel:
                     self._h_laser, self._finger_idx,
                     np_to_hmd34(openvr, self._pointer_mat @ laser_base()))
                 self._laser_attached_to = self._finger_idx
-
-        status = self._get_status_info()
-        if status != self._last_status:
-            self._last_status = status
-            self._dirty.set()
+            if self._finger_idx == self._invalid:
+                # pointer controller gone: drop stale edge/hover state so a
+                # held button isn't remembered across the gap
+                self._prev_trigger = self._prev_grip = True
+                self._hover = None
+            # status poll shares the 1 Hz gate (the dashboard panel already
+            # throttles the same call; 30 Hz was needless render-thread work)
+            status = self._get_status_info()
+            if status != self._last_status:
+                self._last_status = status
+                self._dirty.set()
+        status = self._last_status or (False, "status_stopped", "")
 
         new_hover = None
         if self._wrist_idx != self._invalid:
@@ -348,6 +478,9 @@ class WristPanel:
             ovl.setOverlayAlpha(self._h, 0.96 if want else 0.55)
             if not want:
                 self._hover = None
+                # edges are only updated while engaged; require a fresh
+                # press after re-engaging instead of trusting stale state
+                self._prev_trigger = self._prev_grip = True
 
     # ---------------- interaction ----------------
     def _ray_hit(self, w4: np.ndarray, f4: np.ndarray):
@@ -362,53 +495,59 @@ class WristPanel:
         u = (x + half_w) / self._width_m
         v = 1.0 - (y + half_h) / self._height_m
         px, py = u * TEX_W, v * TEX_H
-        for name, (x0, y0, x1, y1) in BUTTONS:
-            if x0 <= px <= x1 and y0 <= py <= y1:
-                return name, True, (x, y)
-        return None, True, (x, y)
+        return widget_at(self._widgets, self, px, py, self._page), True, (x, y)
 
     def _on_click(self, button: str) -> None:
         log.info("wrist panel click: %s", button)
+        handler = self._click_handlers.get(button)
+        if handler is not None:
+            handler()
+
+    # ---------------- click handlers ----------------
+    def _toggle_translation(self) -> None:
+        self._state.translation_on = not self._state.translation_on
+
+    def _toggle_subtitles(self) -> None:
+        self._state.subtitles_on = not self._state.subtitles_on
+
+    def _cycle_out_lang(self, step: int) -> None:
         st = self._state
-        if button == "toggle":
-            st.translation_on = not st.translation_on
-        elif button == "sub_toggle":
-            st.subtitles_on = not st.subtitles_on
-        elif button in ("prev", "next"):
-            st.target_language = cycle(self._languages, st.target_language,
-                                             1 if button == "next" else -1)
-        elif button in ("sub_prev", "sub_next"):
-            st.inbound_language = cycle(self._inbound_languages, st.inbound_language,
-                                              1 if button == "sub_next" else -1)
-        elif button == "edit":
-            st.wrist_edit_mode = not st.wrist_edit_mode
-        elif button == "sub_edit":
-            st.edit_mode = not st.edit_mode
-        elif button == "uilang":
-            st.ui_lang = cycle(UI_LANGS, st.ui_lang, 1)
-        elif button == "text_only":
-            self._on_text_only_toggle(not st.text_only)
-        elif button == "restart":
-            self._on_restart()
-        elif button == "font_minus":
-            self._on_font_size(int(self._get_font_size()) - 2)
-        elif button == "font_plus":
-            self._on_font_size(int(self._get_font_size()) + 2)
-        elif button == "reset":
-            if st.edit_mode:
-                st.request_position_reset()
-            else:
-                self._reset_requested = True
+        st.target_language = cycle(self._languages, st.target_language, step)
+
+    def _cycle_in_lang(self, step: int) -> None:
+        st = self._state
+        st.inbound_language = cycle(self._inbound_languages,
+                                    st.inbound_language, step)
+
+    def _toggle_wrist_edit(self) -> None:
+        self._state.wrist_edit_mode = not self._state.wrist_edit_mode
+
+    def _toggle_sub_edit(self) -> None:
+        self._state.edit_mode = not self._state.edit_mode
+
+    def _cycle_ui_lang(self) -> None:
+        self._state.ui_lang = cycle(UI_LANGS, self._state.ui_lang, 1)
+
+    def _toggle_text_only(self) -> None:
+        self._on_text_only_toggle(not self._state.text_only)
+
+    def _restart(self) -> None:
+        self._on_restart()
+
+    def _bump_font(self, delta: int) -> None:
+        self._on_font_size(int(self._get_font_size()) + delta)
+
+    def _reset(self) -> None:
+        # resets whichever placement is being edited (label shows which)
+        if self._state.edit_mode:
+            self._state.request_position_reset()
+        else:
+            self._reset_requested = True
 
     # ---------------- rendering ----------------
-    def _lang_block(self, d, prev_box, lang_box, next_box, code: str, caption: str) -> None:
-        lang_block(d, prev_box, lang_box, next_box, code, caption,
-                   fonts=(self._font_big, self._font_mid, self._font_small,
-                          self._font_tiny),
-                   arrow_font=self._font_mid, x_inset=4,
-                   label_top=20, label_bottom=54,
-                   caption_top=54, caption_bottom=8,
-                   label_pad=(2, 2), caption_pad=(2, 1))
+    def label_fonts(self) -> tuple:
+        """Default font ladder for table widgets drawn via `label`."""
+        return (self._font_small, self._font_tiny)
 
     def _render(self, info: tuple, dragging: bool) -> Image.Image:
         connected, status_key, _detail = info
@@ -424,86 +563,10 @@ class WristPanel:
         dot = status_dot_color(connected, status_key)
         d.ellipse((20, 28, 44, 52), fill=dot)
         self._font_tiny.draw(d, (54, 40), "vrclt", fill=COL_TEXT, anchor="lm")
-        # UI display-language cycle
-        d.rounded_rectangle(BTN_UILANG, 12, fill=COL_BTN)
-        ui_label = UI_LANG_LABELS.get(lang, lang)
-        draw_fit_text(d, BTN_UILANG, ui_label,
-                            fonts=(self._font_small, self._font_tiny), max_lines=1,
-                            pad_x=5, pad_y=2, line_spacing=0)
-        text_only = self._state.text_only
-        d.rounded_rectangle(BTN_TEXT_ONLY, 12, fill=COL_SUB_ON if text_only else COL_BTN)
-        text_label = tr(lang, "btn_text_only_on" if text_only else "btn_text_only_off")
-        draw_fit_text(d, BTN_TEXT_ONLY, text_label,
-                            fonts=(self._font_small, self._font_tiny), max_lines=1,
-                            pad_x=6, pad_y=2, line_spacing=0)
-        d.rounded_rectangle(BTN_EDIT, 12, fill=COL_DRAG if wrist_edit else COL_BTN)
-        edit_label = tr(lang, "wrist_move")
-        draw_fit_text(d, BTN_EDIT, edit_label,
-                            fonts=(self._font_small, self._font_tiny), max_lines=1,
-                            pad_x=5, pad_y=2, line_spacing=0)
-        d.rounded_rectangle(BTN_SUB_EDIT, 12, fill=COL_DRAG if sub_edit else COL_BTN)
-        draw_fit_text(d, BTN_SUB_EDIT, tr(lang, "sub_move"),
-                            fonts=(self._font_small, self._font_tiny), max_lines=1,
-                            pad_x=5, pad_y=2, line_spacing=0)
-        d.rounded_rectangle(BTN_RESET, 12, fill=COL_BTN)
-        draw_fit_text(d, BTN_RESET, tr(lang, "pos_reset"),
-                            fonts=(self._font_small, self._font_tiny), max_lines=1,
-                            pad_x=5, pad_y=2, line_spacing=0)
 
-        on = self._state.translation_on
-        d.rounded_rectangle(BTN_TOGGLE, 18, fill=COL_ON if on else COL_OFF)
-        cx = (BTN_TOGGLE[0] + BTN_TOGGLE[2]) // 2
-        cy = (BTN_TOGGLE[1] + BTN_TOGGLE[3]) // 2
-        draw_fit_text(d, (BTN_TOGGLE[0] + 10, BTN_TOGGLE[1] + 36,
-                               BTN_TOGGLE[2] - 10, cy + 16),
-                            tr(lang, "btn_trans_on" if on else "btn_trans_off"),
-                            fonts=(self._font_mid, self._font_small, self._font_tiny),
-                            max_lines=1, pad_x=0, pad_y=0)
-        draw_fit_text(d, (BTN_TOGGLE[0] + 10, cy + 18,
-                               BTN_TOGGLE[2] - 10, BTN_TOGGLE[3] - 22),
-                            tr(lang, "my_to_other"),
-                            fonts=(self._font_small, self._font_tiny),
-                            max_lines=1, pad_x=0, pad_y=0, line_spacing=0)
-        self._lang_block(d, BTN_PREV, BTN_LANG, BTN_NEXT,
-                         self._state.target_language, tr(lang, "out_lang"))
+        draw_page(self, d, self._widgets, lang, page=self._page)
 
-        sub_on = self._state.subtitles_on
-        d.rounded_rectangle(BTN_SUB_TOGGLE, 18, fill=COL_SUB_ON if sub_on else COL_BTN)
-        cx = (BTN_SUB_TOGGLE[0] + BTN_SUB_TOGGLE[2]) // 2
-        cy = (BTN_SUB_TOGGLE[1] + BTN_SUB_TOGGLE[3]) // 2
-        draw_fit_text(d, (BTN_SUB_TOGGLE[0] + 10, BTN_SUB_TOGGLE[1] + 36,
-                               BTN_SUB_TOGGLE[2] - 10, cy + 16),
-                            tr(lang, "btn_sub_on" if sub_on else "btn_sub_off"),
-                            fonts=(self._font_mid, self._font_small, self._font_tiny),
-                            max_lines=1, pad_x=0, pad_y=0)
-        draw_fit_text(d, (BTN_SUB_TOGGLE[0] + 10, cy + 18,
-                               BTN_SUB_TOGGLE[2] - 10, BTN_SUB_TOGGLE[3] - 22),
-                            tr(lang, "other_to_sub"),
-                            fonts=(self._font_small, self._font_tiny),
-                            max_lines=1, pad_x=0, pad_y=0, line_spacing=0)
-        self._lang_block(d, BTN_SUB_PREV, BTN_SUB_LANG, BTN_SUB_NEXT,
-                         self._state.inbound_language, tr(lang, "sub_lang"))
-
-        # bottom row: restart + subtitle font size + status text
-        d.rounded_rectangle(BTN_RESTART, 12, fill=COL_BTN)
-        draw_fit_text(d, BTN_RESTART, tr(lang, "btn_restart_runtime"),
-                      fonts=(self._font_small, self._font_tiny), max_lines=1,
-                      pad_x=6, pad_y=2, line_spacing=0)
-        for box, glyph in ((BTN_FONT_MINUS, "−"), (BTN_FONT_PLUS, "+")):
-            d.rounded_rectangle(box, 12, fill=COL_BTN)
-            self._font_mid.draw(d, ((box[0] + box[2]) // 2, (box[1] + box[3]) // 2),
-                                glyph, fill=COL_TEXT, anchor="mm")
-        d.rounded_rectangle(LBL_FONT_SIZE, 12, fill=COL_INSET)
-        draw_fit_text(d, (LBL_FONT_SIZE[0], LBL_FONT_SIZE[1] + 6,
-                          LBL_FONT_SIZE[2], LBL_FONT_SIZE[1] + 44),
-                      str(int(self._get_font_size())),
-                      fonts=(self._font_small,), max_lines=1, pad_x=4, pad_y=2)
-        draw_fit_text(d, (LBL_FONT_SIZE[0], LBL_FONT_SIZE[3] - 30,
-                          LBL_FONT_SIZE[2], LBL_FONT_SIZE[3] - 6),
-                      tr(lang, "dash_font_size"),
-                      fonts=(self._font_tiny,), fill=COL_DIM, max_lines=1,
-                      pad_x=2, pad_y=1, line_spacing=0)
-        if status_key != "status_running":
+        if self._page == "main" and status_key != "status_running":
             draw_fit_text(d, LBL_STATUS, tr(lang, status_key),
                           fonts=(self._font_tiny,), fill=dot, max_lines=2,
                           pad_x=2, pad_y=2)

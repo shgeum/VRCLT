@@ -123,6 +123,11 @@ STRINGS = {
                      "ja": "相手→字幕", "zh": "对方→字幕"},
     "wrist_move": {"ko": "손목", "en": "Wrist", "ja": "手首", "zh": "手腕"},
     "pos_reset": {"ko": "리셋", "en": "Reset", "ja": "リセット", "zh": "重置"},
+    # wrist reset button: dual-purpose, labeled by what it will reset
+    "reset_watch_pos": {"ko": "시계 리셋", "en": "Reset watch",
+                        "ja": "時計リセット", "zh": "重置手表"},
+    "reset_sub_pos": {"ko": "자막 리셋", "en": "Reset subs",
+                      "ja": "字幕リセット", "zh": "重置字幕"},
     "sub_move": {"ko": "자막", "en": "Subs", "ja": "字幕", "zh": "字幕"},
     "ui_lang": {"ko": "UI 언어", "en": "UI lang", "ja": "UI言語", "zh": "界面语言"},
     "sub_placeholder": {"ko": "⠿ 자막 위치 (드래그)", "en": "⠿ subtitle area (drag)",

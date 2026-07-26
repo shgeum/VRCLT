@@ -14,8 +14,9 @@ import time
 from PIL import Image, ImageDraw
 
 from .. import __version__
-from ..config import APPDATA_DIR
+from ..config import APPDATA_DIR, OVERLAY_FONT_MAX, OVERLAY_FONT_MIN
 from ..i18n import tr, LANGS as UI_LANGS, UI_LANG_LABELS
+from .button_table import Widget, widget_at
 from ..resources import bundled_font, resolve_font_path
 from ..state import AppState
 from .font_fallback import load_fallback_font
@@ -88,18 +89,44 @@ LBL_INSRC_LANG = (600, 858, 936, 936)  # label only
 BTN_INSRC_NEXT = (944, 858, 1008, 936)
 SRC_ROW_BOX = (16, 858, 1008, 936)     # gemini-mode note area
 
-BUTTONS = (("toggle", BTN_TOGGLE), ("prev", BTN_PREV), ("next", BTN_NEXT),
-           ("sub_toggle", BTN_SUB_TOGGLE), ("sub_prev", BTN_SUB_PREV),
-           ("sub_next", BTN_SUB_NEXT), ("text_only", BTN_TEXT_ONLY),
-           ("font_minus", BTN_FONT_MINUS), ("font_plus", BTN_FONT_PLUS),
-           ("sub_edit", BTN_SUB_EDIT), ("wrist_edit", BTN_WRIST_EDIT),
-           ("reset", BTN_RESET), ("uilang", BTN_UILANG),
-           ("autostart", BTN_AUTOSTART), ("restart", BTN_RESTART),
-           ("mic_prev", BTN_MIC_PREV), ("mic_next", BTN_MIC_NEXT),
-           ("out_prev", BTN_OUT_PREV), ("out_next", BTN_OUT_NEXT),
-           ("vol_minus", BTN_VOL_MINUS), ("vol_plus", BTN_VOL_PLUS),
-           ("src_prev", BTN_SRC_PREV), ("src_next", BTN_SRC_NEXT),
-           ("insrc_prev", BTN_INSRC_PREV), ("insrc_next", BTN_INSRC_NEXT))
+# TTS gain clamp (mirrors app_controller.set_tts_gain)
+GAIN_MIN, GAIN_MAX = 0.0, 2.0
+
+
+def _build_widgets() -> tuple:
+    """Hit-test + enabled table. Rendering stays in _render (SteamVR mouse
+    events, no hover), but disabled widgets are dead to clicks here and
+    rendered dim there via the same `enabled` functions."""
+    _qwen = lambda p: p._get_provider() == "qwen"
+    _devices_free = lambda p: not p._devices_applying
+    return (
+        Widget("toggle", BTN_TOGGLE), Widget("prev", BTN_PREV),
+        Widget("next", BTN_NEXT),
+        Widget("sub_toggle", BTN_SUB_TOGGLE), Widget("sub_prev", BTN_SUB_PREV),
+        Widget("sub_next", BTN_SUB_NEXT), Widget("text_only", BTN_TEXT_ONLY),
+        Widget("font_minus", BTN_FONT_MINUS,
+               enabled=lambda p: int(p._get_font_size()) > OVERLAY_FONT_MIN),
+        Widget("font_plus", BTN_FONT_PLUS,
+               enabled=lambda p: int(p._get_font_size()) < OVERLAY_FONT_MAX),
+        Widget("sub_edit", BTN_SUB_EDIT), Widget("wrist_edit", BTN_WRIST_EDIT),
+        Widget("reset", BTN_RESET), Widget("uilang", BTN_UILANG),
+        Widget("autostart", BTN_AUTOSTART,
+               enabled=lambda p: p._get_auto_launch() is not None),
+        Widget("restart", BTN_RESTART,
+               enabled=lambda p: not p._restart_pending),
+        Widget("mic_prev", BTN_MIC_PREV, enabled=_devices_free),
+        Widget("mic_next", BTN_MIC_NEXT, enabled=_devices_free),
+        Widget("out_prev", BTN_OUT_PREV, enabled=_devices_free),
+        Widget("out_next", BTN_OUT_NEXT, enabled=_devices_free),
+        Widget("vol_minus", BTN_VOL_MINUS,
+               enabled=lambda p: float(p._get_tts_gain()) > GAIN_MIN),
+        Widget("vol_plus", BTN_VOL_PLUS,
+               enabled=lambda p: float(p._get_tts_gain()) < GAIN_MAX),
+        Widget("src_prev", BTN_SRC_PREV, enabled=_qwen),
+        Widget("src_next", BTN_SRC_NEXT, enabled=_qwen),
+        Widget("insrc_prev", BTN_INSRC_PREV, enabled=_qwen),
+        Widget("insrc_next", BTN_INSRC_NEXT, enabled=_qwen),
+    )
 
 
 def _ensure_icon() -> bool:
@@ -165,6 +192,10 @@ class DashboardPanel:
         self._devices_apply_at = 0.0
         self._devices_applying = False
         self._devices_error_until = 0.0
+        self._widgets = _build_widgets()
+        self._widget_by_name = {w.name: w for w in self._widgets}
+        self._page = "main"
+        self._restart_pending = False
 
         font_path = resolve_font_path(font_path, "NotoSansCJKkr-Bold.otf")
         self._font_big = load_fallback_font(font_path, 64, bold=True)
@@ -312,13 +343,13 @@ class DashboardPanel:
             y = TEX_H - y
         return x, y
 
-    @staticmethod
-    def _button_at(px: tuple[float, float]) -> str | None:
+    def _button_at(self, px: tuple[float, float]) -> str | None:
         x, y = px
-        for name, (x0, y0, x1, y1) in BUTTONS:
-            if x0 <= x <= x1 and y0 <= y <= y1:
-                return name
-        return None
+        return widget_at(self._widgets, self, x, y, self._page)
+
+    def _enabled(self, name: str) -> bool:
+        w = self._widget_by_name.get(name)
+        return w is None or w.enabled is None or bool(w.enabled(self))
 
     def _on_click(self, button: str) -> None:
         log.info("dashboard panel click: %s", button)
@@ -576,7 +607,8 @@ class DashboardPanel:
         self._btn(d, BTN_TEXT_ONLY,
                   tr(lang, "btn_text_only_on" if text_only else "btn_text_only_off"),
                   fill=COL_SUB_ON if text_only else COL_BTN)
-        self._btn(d, BTN_FONT_MINUS, "−", fonts=(self._font_mid,))
+        self._btn(d, BTN_FONT_MINUS, "−", fonts=(self._font_mid,),
+                  text_fill=COL_TEXT if self._enabled("font_minus") else COL_DIM)
         d.rounded_rectangle(LBL_FONT_SIZE, 16, fill=COL_INSET)
         draw_fit_text(d, (LBL_FONT_SIZE[0], LBL_FONT_SIZE[1] + 6,
                           LBL_FONT_SIZE[2], LBL_FONT_SIZE[1] + 46),
@@ -587,7 +619,8 @@ class DashboardPanel:
                       tr(lang, "dash_font_size"),
                       fonts=(self._font_tiny,), fill=COL_DIM, max_lines=1,
                       pad_x=2, pad_y=1, line_spacing=0)
-        self._btn(d, BTN_FONT_PLUS, "+", fonts=(self._font_mid,))
+        self._btn(d, BTN_FONT_PLUS, "+", fonts=(self._font_mid,),
+                  text_fill=COL_TEXT if self._enabled("font_plus") else COL_DIM)
         self._btn(d, BTN_SUB_EDIT, tr(lang, "sub_move"),
                   fill=COL_DRAG if st.edit_mode else COL_BTN)
         self._btn(d, BTN_WRIST_EDIT, tr(lang, "wrist_move"),
@@ -595,7 +628,8 @@ class DashboardPanel:
         self._btn(d, BTN_RESET, tr(lang, "pos_reset"))
 
         # volume row (mirrors the font-size triple)
-        self._btn(d, BTN_VOL_MINUS, "−", fonts=(self._font_mid,))
+        self._btn(d, BTN_VOL_MINUS, "−", fonts=(self._font_mid,),
+                  text_fill=COL_TEXT if self._enabled("vol_minus") else COL_DIM)
         d.rounded_rectangle(LBL_VOL_GAIN, 16, fill=COL_INSET)
         draw_fit_text(d, (LBL_VOL_GAIN[0], LBL_VOL_GAIN[1] + 6,
                           LBL_VOL_GAIN[2], LBL_VOL_GAIN[1] + 46),
@@ -606,7 +640,8 @@ class DashboardPanel:
                       tr(lang, "dash_voice_volume"),
                       fonts=(self._font_tiny,), fill=COL_DIM, max_lines=1,
                       pad_x=2, pad_y=1, line_spacing=0)
-        self._btn(d, BTN_VOL_PLUS, "+", fonts=(self._font_mid,))
+        self._btn(d, BTN_VOL_PLUS, "+", fonts=(self._font_mid,),
+                  text_fill=COL_TEXT if self._enabled("vol_plus") else COL_DIM)
 
         # source-language row (Qwen only; Gemini auto-detects)
         if self._get_provider() == "qwen":
