@@ -8,11 +8,12 @@ scattered through a hand-written render method.
 
 All callables receive the owning panel, so the table itself is built once.
 """
+import math
 from dataclasses import dataclass
 from typing import Callable, Optional
 
 from ..ui import theme
-from .panel_common import COL_BTN, COL_DIM, COL_TEXT, draw_fit_text
+from .panel_common import COL_BTN, COL_DIM, COL_TEXT, draw_fit_text, language_label
 
 
 @dataclass(frozen=True)
@@ -72,3 +73,47 @@ def draw_page(panel, d, widgets, lang: str, page: str = "main", *,
     for w in widgets:
         if w.page == page:
             draw_widget(panel, d, w, lang, hover=hover, pressed=pressed)
+
+
+def glyph_draw(glyph: str):
+    """Centered single-glyph body (arrows, +/-, close) in the panel's mid
+    font; dims with the widget's enabled state."""
+    def draw(panel, d, w, lang):
+        col = COL_TEXT if is_enabled(w, panel) else COL_DIM
+        panel._font_mid.draw(d, ((w.rect[0] + w.rect[2]) // 2,
+                                 (w.rect[1] + w.rect[3]) // 2),
+                             glyph, fill=col, anchor="mm")
+    return draw
+
+
+def lang_page_count(languages, cols: int, rows: int) -> int:
+    return max(1, math.ceil(len(languages) / (cols * rows)))
+
+
+def lang_grid_widgets(*, page: str, languages, page_idx: int, area,
+                      cols: int, rows: int, name_prefix: str,
+                      current_of: Callable, accent, gap: int = 8) -> list:
+    """One page of a language grid picker: a Widget per language code,
+    named f'{name_prefix}:{code}'. The cell for the currently selected
+    language fills with `accent`. Header chrome (caption/close/pager) is
+    the caller's, so both panels can lay it out to their own texture."""
+    per_page = cols * rows
+    n_pages = lang_page_count(languages, cols, rows)
+    page_idx = max(0, min(page_idx, n_pages - 1))
+    chunk = languages[page_idx * per_page:(page_idx + 1) * per_page]
+    x0, y0, x1, y1 = area
+    cell_w = (x1 - x0 - (cols - 1) * gap) / cols
+    cell_h = (y1 - y0 - (rows - 1) * gap) / rows
+    widgets = []
+    for i, code in enumerate(chunk):
+        row, col = divmod(i, cols)
+        cx = x0 + col * (cell_w + gap)
+        cy = y0 + row * (cell_h + gap)
+        widgets.append(Widget(
+            f"{name_prefix}:{code}", (round(cx), round(cy),
+                                      round(cx + cell_w), round(cy + cell_h)),
+            page=page, radius=16,
+            fill=(lambda p, code=code:
+                  accent if current_of(p) == code else COL_BTN),
+            label=(lambda p, lang, code=code: language_label(code))))
+    return widgets

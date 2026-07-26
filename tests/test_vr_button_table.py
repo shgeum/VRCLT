@@ -12,10 +12,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from vrclt.vr import dashboard_panel, wrist_ui
 from vrclt.vr.button_table import widget_at
 
-# pre-refactor BUTTONS snapshot (wrist panel)
+# pre-refactor BUTTONS snapshot (wrist panel) + the two language labels
+# that were intentionally promoted to picker-opening buttons
 WRIST_BUTTONS = {
     "toggle": (16, 86, 306, 302),
     "prev": (322, 86, 388, 302),
+    "lang": (388, 86, 556, 302),
+    "sub_lang": (388, 322, 556, 538),
     "next": (556, 86, 624, 302),
     "sub_toggle": (16, 322, 306, 538),
     "sub_prev": (322, 322, 388, 538),
@@ -30,10 +33,12 @@ WRIST_BUTTONS = {
     "font_plus": (412, 554, 492, 630),
 }
 
-# pre-refactor BUTTONS snapshot (dashboard panel)
+# pre-refactor BUTTONS snapshot (dashboard panel) + promoted language labels
 DASH_BUTTONS = {
     "toggle": (16, 94, 500, 300),
     "prev": (516, 94, 596, 300),
+    "lang": (604, 94, 924, 300),
+    "sub_lang": (604, 320, 924, 526),
     "next": (932, 94, 1008, 300),
     "sub_toggle": (16, 320, 500, 526),
     "sub_prev": (516, 320, 596, 526),
@@ -116,9 +121,57 @@ def test_disabled_widgets_are_dead_to_hits():
     assert widget_at(widgets, panel, (x0 + x1) / 2, (y0 + y1) / 2) is None
 
 
+def test_lang_grid_widgets():
+    from vrclt.vr.button_table import lang_grid_widgets, lang_page_count
+
+    langs = ["ja", "en", "ko", "zh-Hans", "zh-Hant", "yue", "es", "ru",
+             "fr", "de", "it", "pt", "tr"]  # 13 -> 2 pages at 3x4
+    assert lang_page_count(langs, 3, 4) == 2
+    page0 = lang_grid_widgets(page="lang_out", languages=langs, page_idx=0,
+                              area=(16, 86, 624, 630), cols=3, rows=4,
+                              name_prefix="pick_out",
+                              current_of=lambda p: "ko",
+                              accent=(46, 160, 67, 255))
+    assert len(page0) == 12
+    assert page0[0].name == "pick_out:ja"
+    page1 = lang_grid_widgets(page="lang_out", languages=langs, page_idx=1,
+                              area=(16, 86, 624, 630), cols=3, rows=4,
+                              name_prefix="pick_out",
+                              current_of=lambda p: "ko",
+                              accent=(46, 160, 67, 255))
+    assert [w.name for w in page1] == ["pick_out:tr"]
+    # cells stay inside the area and don't overlap row/col neighbours
+    for w in page0:
+        x0, y0, x1, y1 = w.rect
+        assert 16 <= x0 < x1 <= 624 and 86 <= y0 < y1 <= 630
+    # current language cell uses the accent fill
+    ko = next(w for w in page0 if w.name == "pick_out:ko")
+    assert ko.fill(None) == (46, 160, 67, 255)
+    assert page0[0].fill(None) != (46, 160, 67, 255)
+
+
+def test_wrist_picker_flow():
+    from vrclt.state import AppState
+    from vrclt.vr.wrist_ui import WristPanel
+
+    st = AppState()
+    p = WristPanel(st, ["ja", "en", "ko"], inbound_languages=["ko", "en"])
+    p._open_picker("out")
+    assert p._page == "lang_out"
+    names = {w.name for w in p._active_widgets()}
+    assert "pick_out:ko" in names and "picker_close" in names
+    p._on_click("pick_out:ko")
+    assert st.target_language == "ko" and p._page == "main"
+    p._open_picker("in")
+    p._on_click("picker_close")
+    assert p._page == "main"
+
+
 if __name__ == "__main__":
     test_wrist_table_matches_snapshot()
     test_dashboard_table_matches_snapshot()
     test_hit_test_centers()
     test_disabled_widgets_are_dead_to_hits()
+    test_lang_grid_widgets()
+    test_wrist_picker_flow()
     print("test_vr_button_table: OK")

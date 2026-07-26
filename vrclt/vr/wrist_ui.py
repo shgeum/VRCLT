@@ -27,7 +27,10 @@ from ..config import APPDATA_DIR, OVERLAY_FONT_MAX, OVERLAY_FONT_MIN
 from ..resources import bundled_font, resolve_font_path
 from ..state import AppState
 from ..i18n import tr, LANGS as UI_LANGS, UI_LANG_LABELS
-from .button_table import Widget, draw_page, is_enabled, widget_at
+from .button_table import (
+    Widget, draw_page, glyph_draw, is_enabled, lang_grid_widgets,
+    lang_page_count, widget_at,
+)
 from .font_fallback import load_fallback_font
 from .panel_common import (
     COL_BG, COL_BTN, COL_DIM, COL_DRAG, COL_INSET, COL_OFF, COL_ON,
@@ -73,15 +76,15 @@ LBL_STATUS = (508, 554, 624, 630)      # label only: non-nominal status text
 CURSOR_SIZE_M = 0.016
 
 
-def _center(rect) -> tuple[int, int]:
-    return (rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2
+_arrow_draw = glyph_draw
 
-
-def _arrow_draw(glyph: str):
-    def draw(panel, d, w, lang):
-        col = COL_TEXT if is_enabled(w, panel) else COL_DIM
-        panel._font_mid.draw(d, _center(w.rect), glyph, fill=col, anchor="mm")
-    return draw
+# language grid picker pages ("lang_out"/"lang_in"): header strip + 3x4 grid
+PICKER_CAPTION = (16, 14, 336, 66)
+PICKER_PGPREV = (352, 14, 432, 66)
+PICKER_PGNEXT = (440, 14, 520, 66)
+PICKER_CLOSE = (536, 14, 624, 66)
+PICKER_GRID = (16, 86, 624, 630)
+PICKER_COLS, PICKER_ROWS = 3, 4
 
 
 def _toggle_draw(on_key: str, off_key: str, caption_key: str, is_on):
@@ -153,7 +156,8 @@ def _build_widgets() -> tuple:
                draw=_toggle_draw("btn_trans_on", "btn_trans_off", "my_to_other",
                                  lambda p: p._state.translation_on)),
         Widget("prev", BTN_PREV, radius=16, draw=_arrow_draw("◀")),
-        Widget("lang", BTN_LANG, kind="label", radius=16,
+        # tapping the language name opens the grid picker page
+        Widget("lang", BTN_LANG, radius=16,
                fill=lambda p: COL_INSET,
                draw=_lang_label_draw(lambda p: p._state.target_language,
                                      "out_lang")),
@@ -163,7 +167,7 @@ def _build_widgets() -> tuple:
                draw=_toggle_draw("btn_sub_on", "btn_sub_off", "other_to_sub",
                                  lambda p: p._state.subtitles_on)),
         Widget("sub_prev", BTN_SUB_PREV, radius=16, draw=_arrow_draw("◀")),
-        Widget("sub_lang", BTN_SUB_LANG, kind="label", radius=16,
+        Widget("sub_lang", BTN_SUB_LANG, radius=16,
                fill=lambda p: COL_INSET,
                draw=_lang_label_draw(lambda p: p._state.inbound_language,
                                      "sub_lang")),
@@ -246,7 +250,14 @@ class WristPanel:
             "font_minus": lambda: self._bump_font(-2),
             "font_plus": lambda: self._bump_font(2),
             "reset": self._reset,
+            "lang": lambda: self._open_picker("out"),
+            "sub_lang": lambda: self._open_picker("in"),
+            "picker_close": self._close_picker,
+            "picker_pgprev": lambda: self._flip_picker_page(-1),
+            "picker_pgnext": lambda: self._flip_picker_page(1),
         }
+        self._picker_idx = 0
+        self._picker_cache: dict = {}
 
         self._dirty = threading.Event()
         self._dirty.set()
@@ -259,6 +270,7 @@ class WristPanel:
     def _on_state(self, field: str, _value) -> None:
         if field == "reset_positions":
             self._reset_requested = True
+            self._page = "main"
         self._dirty.set()
 
     def detach(self) -> None:
@@ -314,6 +326,7 @@ class WristPanel:
         self._prev_grip = True
         self._input_ok_logged = False
         self._last_status = None
+        self._page = "main"
         self._dirty.set()
         return True
 
@@ -510,6 +523,8 @@ class WristPanel:
                 # edges are only updated while engaged; require a fresh
                 # press after re-engaging instead of trusting stale state
                 self._prev_trigger = self._prev_grip = True
+                # don't strand an open picker on an unwatched wrist
+                self._close_picker()
 
     # ---------------- interaction ----------------
     def _ray_hit(self, w4: np.ndarray, f4: np.ndarray):
@@ -524,13 +539,83 @@ class WristPanel:
         u = (x + half_w) / self._width_m
         v = 1.0 - (y + half_h) / self._height_m
         px, py = u * TEX_W, v * TEX_H
-        return widget_at(self._widgets, self, px, py, self._page), True, (x, y)
+        return (widget_at(self._active_widgets(), self, px, py, self._page),
+                True, (x, y))
 
     def _on_click(self, button: str) -> None:
         log.info("wrist panel click: %s", button)
+        if button.startswith("pick_out:"):
+            self._state.target_language = button.split(":", 1)[1]
+            self._close_picker()
+            return
+        if button.startswith("pick_in:"):
+            self._state.inbound_language = button.split(":", 1)[1]
+            self._close_picker()
+            return
         handler = self._click_handlers.get(button)
         if handler is not None:
             handler()
+
+    # ---------------- language grid picker ----------------
+    def _open_picker(self, kind: str) -> None:
+        langs = self._languages if kind == "out" else self._inbound_languages
+        current = (self._state.target_language if kind == "out"
+                   else self._state.inbound_language)
+        per_page = PICKER_COLS * PICKER_ROWS
+        self._picker_idx = (langs.index(current) // per_page
+                            if current in langs else 0)
+        self._page = "lang_out" if kind == "out" else "lang_in"
+        self._hover = None
+        self._dirty.set()
+
+    def _close_picker(self) -> None:
+        if self._page != "main":
+            self._page = "main"
+            self._hover = None
+            self._dirty.set()
+
+    def _flip_picker_page(self, step: int) -> None:
+        langs = (self._languages if self._page == "lang_out"
+                 else self._inbound_languages)
+        n_pages = lang_page_count(langs, PICKER_COLS, PICKER_ROWS)
+        self._picker_idx = max(0, min(self._picker_idx + step, n_pages - 1))
+        self._dirty.set()
+
+    def _active_widgets(self) -> tuple:
+        if self._page == "main":
+            return self._widgets
+        key = (self._page, self._picker_idx)
+        cached = self._picker_cache.get(key)
+        if cached is None:
+            cached = self._picker_cache[key] = self._build_picker_page(*key)
+        return cached
+
+    def _build_picker_page(self, page: str, page_idx: int) -> tuple:
+        out = page == "lang_out"
+        langs = self._languages if out else self._inbound_languages
+        n_pages = lang_page_count(langs, PICKER_COLS, PICKER_ROWS)
+        widgets = [
+            Widget("picker_caption", PICKER_CAPTION, kind="label", page=page,
+                   fill=lambda p: (0, 0, 0, 0),
+                   label=lambda p, lang, k=("out_lang" if out else "sub_lang"):
+                       tr(lang, k)),
+            Widget("picker_close", PICKER_CLOSE, page=page, draw=glyph_draw("×")),
+        ]
+        if n_pages > 1:
+            widgets.append(Widget("picker_pgprev", PICKER_PGPREV, page=page,
+                                  enabled=lambda p: p._picker_idx > 0,
+                                  draw=glyph_draw("◀")))
+            widgets.append(Widget("picker_pgnext", PICKER_PGNEXT, page=page,
+                                  enabled=lambda p, n=n_pages: p._picker_idx < n - 1,
+                                  draw=glyph_draw("▶")))
+        widgets += lang_grid_widgets(
+            page=page, languages=langs, page_idx=page_idx, area=PICKER_GRID,
+            cols=PICKER_COLS, rows=PICKER_ROWS,
+            name_prefix="pick_out" if out else "pick_in",
+            current_of=(lambda p: p._state.target_language) if out
+                       else (lambda p: p._state.inbound_language),
+            accent=COL_ON if out else COL_SUB_ON)
+        return tuple(widgets)
 
     # ---------------- click handlers ----------------
     def _toggle_translation(self) -> None:
@@ -611,10 +696,11 @@ class WristPanel:
                             width=4)
 
         dot = status_dot_color(connected, status_key)
-        d.ellipse((20, 28, 44, 52), fill=dot)
-        self._font_tiny.draw(d, (54, 40), "vrclt", fill=COL_TEXT, anchor="lm")
+        if self._page == "main":
+            d.ellipse((20, 28, 44, 52), fill=dot)
+            self._font_tiny.draw(d, (54, 40), "vrclt", fill=COL_TEXT, anchor="lm")
 
-        draw_page(self, d, self._widgets, lang, page=self._page,
+        draw_page(self, d, self._active_widgets(), lang, page=self._page,
                   hover=self._hover if self._engaged else None,
                   pressed=self._pressed_name)
 

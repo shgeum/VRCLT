@@ -17,7 +17,10 @@ from .. import __version__
 from ..config import APPDATA_DIR, OVERLAY_FONT_MAX, OVERLAY_FONT_MIN
 from ..i18n import tr, LANGS as UI_LANGS, UI_LANG_LABELS
 from ..ui import theme
-from .button_table import Widget, widget_at
+from .button_table import (
+    Widget, draw_page, glyph_draw, lang_grid_widgets, lang_page_count,
+    widget_at,
+)
 from ..resources import bundled_font, resolve_font_path
 from ..state import AppState
 from .font_fallback import load_fallback_font
@@ -93,6 +96,14 @@ SRC_ROW_BOX = (16, 858, 1008, 936)     # gemini-mode note area
 # TTS gain clamp (mirrors app_controller.set_tts_gain)
 GAIN_MIN, GAIN_MAX = 0.0, 2.0
 
+# language grid picker pages ("lang_out"/"lang_in"): header strip + 4x5 grid
+PICKER_CAPTION = (24, 18, 640, 74)
+PICKER_PGPREV = (656, 18, 736, 74)
+PICKER_PGNEXT = (752, 18, 832, 74)
+PICKER_CLOSE = (924, 18, 1008, 74)
+PICKER_GRID = (16, 94, 1008, 936)
+PICKER_COLS, PICKER_ROWS = 4, 5
+
 
 def _build_widgets() -> tuple:
     """Hit-test + enabled table. Rendering stays in _render (SteamVR mouse
@@ -102,8 +113,10 @@ def _build_widgets() -> tuple:
     _devices_free = lambda p: not p._devices_applying
     return (
         Widget("toggle", BTN_TOGGLE), Widget("prev", BTN_PREV),
+        Widget("lang", BTN_LANG),          # opens the grid picker
         Widget("next", BTN_NEXT),
         Widget("sub_toggle", BTN_SUB_TOGGLE), Widget("sub_prev", BTN_SUB_PREV),
+        Widget("sub_lang", BTN_SUB_LANG),  # opens the grid picker
         Widget("sub_next", BTN_SUB_NEXT), Widget("text_only", BTN_TEXT_ONLY),
         Widget("font_minus", BTN_FONT_MINUS,
                enabled=lambda p: int(p._get_font_size()) > OVERLAY_FONT_MIN),
@@ -197,6 +210,8 @@ class DashboardPanel:
         self._widget_by_name = {w.name: w for w in self._widgets}
         self._page = "main"
         self._pressed = None
+        self._picker_idx = 0
+        self._picker_cache: dict = {}
         self._restart_pending = False
         self._restart_started = 0.0
         self._restart_seen_transition = False
@@ -351,6 +366,7 @@ class DashboardPanel:
         elif et == openvr.VREvent_OverlayHidden:
             self._visible = False
             self._pressed = None
+            self._close_picker()  # reopen on the main page
 
     @staticmethod
     def _mouse_px(ev) -> tuple[float, float]:
@@ -362,7 +378,69 @@ class DashboardPanel:
 
     def _button_at(self, px: tuple[float, float]) -> str | None:
         x, y = px
-        return widget_at(self._widgets, self, x, y, self._page)
+        return widget_at(self._active_widgets(), self, x, y, self._page)
+
+    # ---------------- language grid picker ----------------
+    def label_fonts(self) -> tuple:
+        return (self._font_small, self._font_tiny)
+
+    def _open_picker(self, kind: str) -> None:
+        langs = self._languages if kind == "out" else self._inbound_languages
+        current = (self._state.target_language if kind == "out"
+                   else self._state.inbound_language)
+        per_page = PICKER_COLS * PICKER_ROWS
+        self._picker_idx = (langs.index(current) // per_page
+                            if current in langs else 0)
+        self._page = "lang_out" if kind == "out" else "lang_in"
+        self._dirty.set()
+
+    def _close_picker(self) -> None:
+        if self._page != "main":
+            self._page = "main"
+            self._dirty.set()
+
+    def _flip_picker_page(self, step: int) -> None:
+        langs = (self._languages if self._page == "lang_out"
+                 else self._inbound_languages)
+        n_pages = lang_page_count(langs, PICKER_COLS, PICKER_ROWS)
+        self._picker_idx = max(0, min(self._picker_idx + step, n_pages - 1))
+        self._dirty.set()
+
+    def _active_widgets(self) -> tuple:
+        if self._page == "main":
+            return self._widgets
+        key = (self._page, self._picker_idx)
+        cached = self._picker_cache.get(key)
+        if cached is None:
+            cached = self._picker_cache[key] = self._build_picker_page(*key)
+        return cached
+
+    def _build_picker_page(self, page: str, page_idx: int) -> tuple:
+        out = page == "lang_out"
+        langs = self._languages if out else self._inbound_languages
+        n_pages = lang_page_count(langs, PICKER_COLS, PICKER_ROWS)
+        widgets = [
+            Widget("picker_caption", PICKER_CAPTION, kind="label", page=page,
+                   fill=lambda p: (0, 0, 0, 0),
+                   label=lambda p, lang, k=("out_lang" if out else "sub_lang"):
+                       tr(lang, k)),
+            Widget("picker_close", PICKER_CLOSE, page=page, draw=glyph_draw("×")),
+        ]
+        if n_pages > 1:
+            widgets.append(Widget("picker_pgprev", PICKER_PGPREV, page=page,
+                                  enabled=lambda p: p._picker_idx > 0,
+                                  draw=glyph_draw("◀")))
+            widgets.append(Widget("picker_pgnext", PICKER_PGNEXT, page=page,
+                                  enabled=lambda p, n=n_pages: p._picker_idx < n - 1,
+                                  draw=glyph_draw("▶")))
+        widgets += lang_grid_widgets(
+            page=page, languages=langs, page_idx=page_idx, area=PICKER_GRID,
+            cols=PICKER_COLS, rows=PICKER_ROWS,
+            name_prefix="pick_out" if out else "pick_in",
+            current_of=(lambda p: p._state.target_language) if out
+                       else (lambda p: p._state.inbound_language),
+            accent=COL_ON if out else COL_SUB_ON)
+        return tuple(widgets)
 
     def _enabled(self, name: str) -> bool:
         w = self._widget_by_name.get(name)
@@ -371,7 +449,25 @@ class DashboardPanel:
     def _on_click(self, button: str) -> None:
         log.info("dashboard panel click: %s", button)
         st = self._state
-        if button == "toggle":
+        if button.startswith("pick_out:"):
+            st.target_language = button.split(":", 1)[1]
+            self._close_picker()
+            return
+        if button.startswith("pick_in:"):
+            st.inbound_language = button.split(":", 1)[1]
+            self._close_picker()
+            return
+        if button == "lang":
+            self._open_picker("out")
+        elif button == "sub_lang":
+            self._open_picker("in")
+        elif button == "picker_close":
+            self._close_picker()
+        elif button == "picker_pgprev":
+            self._flip_picker_page(-1)
+        elif button == "picker_pgnext":
+            self._flip_picker_page(1)
+        elif button == "toggle":
             st.translation_on = not st.translation_on
         elif button == "sub_toggle":
             st.subtitles_on = not st.subtitles_on
@@ -572,6 +668,11 @@ class DashboardPanel:
         img = Image.new("RGBA", (TEX_W, TEX_H), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
         d.rounded_rectangle((0, 0, TEX_W - 1, TEX_H - 1), 28, fill=COL_BG)
+
+        if self._page != "main":  # language grid picker page
+            draw_page(self, d, self._active_widgets(), lang,
+                      page=self._page, pressed=self._pressed)
+            return img
 
         # header: status dot + version + (only when non-nominal) status text
         dot = status_dot_color(connected, status_key)
