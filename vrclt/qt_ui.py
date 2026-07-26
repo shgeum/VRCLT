@@ -20,6 +20,7 @@ from .languages import language_code_from_text, language_label
 from .hotkeys import HotkeyRegistration, WindowsGlobalHotkeys
 from .resources import bundled_font, resolve_font_path
 from .ui import theme
+from .ui.log_view import LogPanel
 from .ui.settings_form import SettingsForm
 from .ui.setup_banner import SetupBanner
 from .ui.tray import TrayIcon
@@ -691,18 +692,19 @@ class MainWindow(QtWidgets.QMainWindow):
     def _build_logs(self) -> None:
         page = QtWidgets.QWidget()
         root = QtWidgets.QVBoxLayout(page)
-        root.setContentsMargins(18, 18, 18, 18)
-        self._log_path = QtWidgets.QLabel(str(self._log_file))
-        self._log_text = QtWidgets.QPlainTextEdit()
-        self._log_text.setReadOnly(True)
-        self._btn_log_refresh = QtWidgets.QPushButton(self._tr("btn_refresh_log"))
-        self._btn_log_refresh.clicked.connect(self._load_log_tail)
-        self._on_retranslate(
-            lambda: self._btn_log_refresh.setText(self._tr("btn_refresh_log")))
+        root.setContentsMargins(0, 0, 0, 0)
+        self._log_panel = LogPanel(self._log_file, self._tr)
+        self._on_retranslate(self._log_panel.retranslate)
+        root.addWidget(self._log_panel, 1)
+
+        bottom = QtWidgets.QVBoxLayout()
+        bottom.setContentsMargins(18, 0, 18, 18)
         self._about_text = QtWidgets.QLabel(
             self._tr("about_paths").format(config=config_mod.CONFIG_PATH)
         )
         self._about_text.setWordWrap(True)
+        self._about_text.setTextInteractionFlags(
+            QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
         self._on_retranslate(lambda: self._about_text.setText(
             self._tr("about_paths").format(config=config_mod.CONFIG_PATH)))
         update_row = QtWidgets.QHBoxLayout()
@@ -717,16 +719,12 @@ class MainWindow(QtWidgets.QMainWindow):
             self._render_update_status()))
         update_row.addWidget(self._btn_check_update)
         update_row.addWidget(self._update_status, 1)
-        root.addWidget(self._label("label_log_file"))
-        root.addWidget(self._log_path)
-        root.addWidget(self._btn_log_refresh)
-        root.addWidget(self._log_text, 1)
-        root.addLayout(update_row)
-        root.addWidget(self._about_text)
+        bottom.addLayout(update_row)
+        bottom.addWidget(self._about_text)
+        root.addLayout(bottom)
         self._tab_logs_idx = self._tabs.addTab(page, self._tr("tab_logs"))
         self._on_retranslate(lambda: self._tabs.setTabText(
             self._tab_logs_idx, self._tr("tab_logs")))
-        self._load_log_tail()
 
     def _build_tray(self) -> None:
         self._tray = TrayIcon(
@@ -1317,6 +1315,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._tabs.currentIndex() == self._tab_dashboard_idx
         if want_meter != self._meter_timer.isActive():
             (self._meter_timer.start if want_meter else self._meter_timer.stop)()
+        self._log_panel.set_active(
+            self.isVisible() and self._tabs.currentIndex() == self._tab_logs_idx)
 
         self._sync_combo(self._out_lang, [
             language_label(c) for c in self._controller.cfg.get("control", {}).get("languages", ["en"])
@@ -1418,16 +1418,6 @@ class MainWindow(QtWidgets.QMainWindow):
             combo.setCurrentText(current)
         finally:
             combo.blockSignals(blocked)
-
-    def _load_log_tail(self) -> None:
-        try:
-            text = self._log_file.read_text(encoding="utf-8", errors="replace")
-            lines = text.splitlines()[-300:]
-            self._log_text.setPlainText("\n".join(lines))
-        except FileNotFoundError:
-            self._log_text.setPlainText(self._tr("msg_log_missing"))
-        except Exception as e:
-            self._log_text.setPlainText(f"{self._tr('msg_log_failed')}: {e}")
 
     # ---------------- window/tray lifecycle ----------------
     def _show_main(self) -> None:
