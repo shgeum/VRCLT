@@ -10,6 +10,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from . import config as config_mod
 from . import i18n
 from .app_controller import resolve_ui_mode
+from .ui import theme
 
 log = logging.getLogger(__name__)
 
@@ -149,7 +150,8 @@ class DesktopSubtitleOverlay(QtWidgets.QWidget):
         )
         font.setHintingPreference(QtGui.QFont.HintingPreference.PreferNoHinting)
         self._label.setFont(font)
-        border = "2px solid #58a6ff" if edit else "1px solid rgba(255,255,255,60)"
+        border = (f"2px solid {theme.hex_rgb(theme.QT_EDIT_BLUE)}" if edit
+                  else "1px solid rgba(255,255,255,60)")
         background = "rgba(12,14,18,210)" if edit else "rgba(12,14,18,175)"
         self._label.setStyleSheet(
             f"QLabel {{"

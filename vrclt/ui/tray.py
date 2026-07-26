@@ -1,6 +1,8 @@
 """System tray icon + menu for the main window."""
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from . import theme
+
 
 def make_tray_icon() -> QtGui.QIcon:
     """Blue rounded rect + white V (matches the VR dashboard thumbnail)."""
@@ -8,7 +10,7 @@ def make_tray_icon() -> QtGui.QIcon:
     pix.fill(QtCore.Qt.GlobalColor.transparent)
     painter = QtGui.QPainter(pix)
     painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-    painter.setBrush(QtGui.QColor("#4a6eb4"))
+    painter.setBrush(QtGui.QColor(theme.hex_rgb(theme.QT_TRAY_BLUE)))
     painter.setPen(QtCore.Qt.PenStyle.NoPen)
     painter.drawRoundedRect(6, 6, 52, 52, 14, 14)
     painter.setPen(QtGui.QColor("#ffffff"))

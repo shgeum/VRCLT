@@ -20,7 +20,8 @@ from ..resources import bundled_font, resolve_font_path
 from ..state import AppState
 from .font_fallback import load_fallback_font
 from .panel_common import (
-    COL_BG, COL_BTN, COL_DIM, COL_DRAG, COL_ON, COL_OFF, COL_SUB_ON, COL_TEXT,
+    COL_BG, COL_BTN, COL_DIM, COL_DRAG, COL_INSET, COL_ON, COL_OFF,
+    COL_PENDING, COL_SUB_ON, COL_TEXT,
     COL_ERR_RED as COL_ERR, COL_WARN_AMBER as COL_WARN,
     cycle, draw_fit_text, lang_block, status_dot_color,
 )
@@ -37,7 +38,6 @@ ICON_PATH = APPDATA_DIR / "dashboard_icon.png"
 # apply this long after the last click
 DEVICE_APPLY_DELAY_SEC = 1.8
 
-COL_PENDING = (130, 175, 255, 255)  # selected but not applied yet
 STATUS_TEXT_BOX = (280, 18, 548, 70)  # header band between version and buttons
 
 # OpenVR overlay mouse coords use a bottom-left origin; our button rects are
@@ -475,7 +475,7 @@ class DashboardPanel:
             d.rounded_rectangle(box, 16, fill=COL_BTN)
             self._font_mid.draw(d, ((box[0] + box[2]) // 2, (box[1] + box[3]) // 2),
                                 glyph, fill=arrow_fill, anchor="mm")
-        d.rounded_rectangle(label_box, 16, fill=(28, 30, 38, 255))
+        d.rounded_rectangle(label_box, 16, fill=COL_INSET)
         value = pending if pending is not None else cfg_value
         idx = self._resolve_device(names, value)
         if idx == 0:
@@ -577,7 +577,7 @@ class DashboardPanel:
                   tr(lang, "btn_text_only_on" if text_only else "btn_text_only_off"),
                   fill=COL_SUB_ON if text_only else COL_BTN)
         self._btn(d, BTN_FONT_MINUS, "−", fonts=(self._font_mid,))
-        d.rounded_rectangle(LBL_FONT_SIZE, 16, fill=(28, 30, 38, 255))
+        d.rounded_rectangle(LBL_FONT_SIZE, 16, fill=COL_INSET)
         draw_fit_text(d, (LBL_FONT_SIZE[0], LBL_FONT_SIZE[1] + 6,
                           LBL_FONT_SIZE[2], LBL_FONT_SIZE[1] + 46),
                       str(int(self._get_font_size())),
@@ -596,7 +596,7 @@ class DashboardPanel:
 
         # volume row (mirrors the font-size triple)
         self._btn(d, BTN_VOL_MINUS, "−", fonts=(self._font_mid,))
-        d.rounded_rectangle(LBL_VOL_GAIN, 16, fill=(28, 30, 38, 255))
+        d.rounded_rectangle(LBL_VOL_GAIN, 16, fill=COL_INSET)
         draw_fit_text(d, (LBL_VOL_GAIN[0], LBL_VOL_GAIN[1] + 6,
                           LBL_VOL_GAIN[2], LBL_VOL_GAIN[1] + 46),
                       f"{round(float(self._get_tts_gain()) * 100)}%",
@@ -616,7 +616,7 @@ class DashboardPanel:
                                st.inbound_source_language,
                                tr(lang, "dash_src_in"))
         else:
-            d.rounded_rectangle(SRC_ROW_BOX, 16, fill=(28, 30, 38, 255))
+            d.rounded_rectangle(SRC_ROW_BOX, 16, fill=COL_INSET)
             draw_fit_text(d, (SRC_ROW_BOX[0] + 12, SRC_ROW_BOX[1] + 8,
                               SRC_ROW_BOX[2] - 12, SRC_ROW_BOX[3] - 8),
                           tr(lang, "dash_src_auto"),

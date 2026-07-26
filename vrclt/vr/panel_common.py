@@ -14,6 +14,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from ..languages import KNOWN_LANGUAGE_NAMES, canonical_language_code
+from ..ui import theme
 
 log = logging.getLogger(__name__)
 
@@ -21,17 +22,21 @@ LASER_TEX_W, LASER_TEX_H = 4, 512
 LASER_WIDTH_M = 0.004
 LASER_LEN_M = LASER_WIDTH_M * LASER_TEX_H / LASER_TEX_W  # 0.512 m
 
-COL_BG = (16, 18, 24, 235)
-COL_BTN = (38, 42, 54, 255)
-COL_ON = (46, 160, 67, 255)
-COL_OFF = (120, 84, 30, 255)
-COL_SUB_ON = (40, 110, 170, 255)
-COL_TEXT = (240, 240, 240, 255)
-COL_DIM = (150, 150, 150, 255)
-COL_DRAG = (70, 110, 180, 255)
-COL_WARN_AMBER = (230, 168, 70, 255)
-COL_ERR_RED = (224, 100, 80, 255)
-COL_DOT_IDLE = (110, 110, 110, 255)
+# canonical values live in ui/theme.py (shared with the Qt palette);
+# the COL_* names stay for the panels' existing imports
+COL_BG = theme.VR_BG
+COL_BTN = theme.VR_BTN
+COL_INSET = theme.VR_INSET
+COL_ON = theme.ON_GREEN
+COL_OFF = theme.OFF_AMBER
+COL_SUB_ON = theme.SUB_BLUE
+COL_TEXT = theme.TEXT
+COL_DIM = theme.VR_DIM
+COL_DRAG = theme.VR_DRAG
+COL_WARN_AMBER = theme.VR_WARN_AMBER
+COL_ERR_RED = theme.ERR_RED
+COL_DOT_IDLE = theme.VR_DOT_IDLE
+COL_PENDING = theme.PENDING
 
 _STATUS_ERROR_KEYS = ("status_api_key_invalid", "status_api_key_required",
                       "status_failed")
@@ -263,7 +268,7 @@ def lang_block(d, prev_box, lang_box, next_box, code: str, caption: str, *,
         d.rounded_rectangle(box, 16, fill=COL_BTN)
         arrow_font.draw(d, ((box[0] + box[2]) // 2, (box[1] + box[3]) // 2),
                         glyph, fill=COL_TEXT, anchor="mm")
-    d.rounded_rectangle(lang_box, 16, fill=(28, 30, 38, 255))
+    d.rounded_rectangle(lang_box, 16, fill=COL_INSET)
     draw_fit_text(
         d, (lang_box[0] + x_inset, lang_box[1] + label_top,
             lang_box[2] - x_inset, lang_box[3] - label_bottom),

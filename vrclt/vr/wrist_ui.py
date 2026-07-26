@@ -493,7 +493,7 @@ class WristPanel:
             d.rounded_rectangle(box, 12, fill=COL_BTN)
             self._font_mid.draw(d, ((box[0] + box[2]) // 2, (box[1] + box[3]) // 2),
                                 glyph, fill=COL_TEXT, anchor="mm")
-        d.rounded_rectangle(LBL_FONT_SIZE, 12, fill=(28, 30, 38, 255))
+        d.rounded_rectangle(LBL_FONT_SIZE, 12, fill=COL_INSET)
         draw_fit_text(d, (LBL_FONT_SIZE[0], LBL_FONT_SIZE[1] + 6,
                           LBL_FONT_SIZE[2], LBL_FONT_SIZE[1] + 44),
                       str(int(self._get_font_size())),

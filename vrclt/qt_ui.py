@@ -18,6 +18,7 @@ from .desktop_overlay import DesktopSubtitleOverlay
 from .languages import language_code_from_text, language_label
 from .hotkeys import HotkeyRegistration, WindowsGlobalHotkeys
 from .resources import bundled_font, resolve_font_path
+from .ui import theme
 from .ui.settings_form import SettingsForm
 from .ui.setup_banner import SetupBanner
 from .ui.tray import TrayIcon
@@ -115,8 +116,8 @@ class _MicLevelMeter(QtWidgets.QWidget):
         p = QtGui.QPainter(self)
         p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
         r = self.rect().adjusted(0, 2, -1, -2)
-        p.setPen(QtGui.QColor("#303542"))
-        p.setBrush(QtGui.QColor("#1c1f29"))
+        p.setPen(QtGui.QColor(theme.hex_rgb(theme.QT_BORDER)))
+        p.setBrush(QtGui.QColor(theme.hex_rgb(theme.QT_SURFACE)))
         p.drawRoundedRect(r, 4, 4)
         if self._rms is not None and self._threshold is not None:
             frac = self._frac(self._rms)
@@ -126,10 +127,11 @@ class _MicLevelMeter(QtWidgets.QWidget):
                                     max(2.0, (r.width() - 2) * frac),
                                     r.height() - 2)
                 p.setPen(QtCore.Qt.PenStyle.NoPen)
-                p.setBrush(QtGui.QColor("#2ea043" if gate_open else "#8b949e"))
+                p.setBrush(QtGui.QColor(theme.hex_rgb(
+                    theme.ON_GREEN if gate_open else theme.QT_TEXT_IDLE)))
                 p.drawRoundedRect(bar, 3, 3)
             tx = r.x() + 1 + (r.width() - 2) * self._frac(self._threshold)
-            p.setPen(QtGui.QPen(QtGui.QColor("#d29922"), 2))
+            p.setPen(QtGui.QPen(QtGui.QColor(theme.hex_rgb(theme.QT_WARN)), 2))
             p.drawLine(QtCore.QPointF(tx, r.y() + 1),
                        QtCore.QPointF(tx, r.bottom() - 1))
         p.end()
@@ -696,55 +698,7 @@ class MainWindow(QtWidgets.QMainWindow):
             on_message_clicked=lambda: self._update_banner.open_release())
 
     def _apply_style(self) -> None:
-        self.setStyleSheet("""
-            QMainWindow, QWidget { background: #12141a; color: #f0f0f0; }
-            QTabWidget::pane { border: 1px solid #303542; }
-            QTabBar::tab { padding: 10px 18px; background: #1c1f29; }
-            QTabBar::tab:selected { background: #2a3040; }
-            QGroupBox { border: 1px solid #303542; border-radius: 6px; margin-top: 10px; }
-            QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; }
-            QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit {
-                background: #1c1f29; color: #f0f0f0; border: 1px solid #303542;
-                border-radius: 4px; padding: 6px 8px; min-height: 28px;
-            }
-            QPushButton {
-                background: #2a3040; color: #f0f0f0; border: 0; border-radius: 4px;
-                padding: 8px 14px; min-height: 30px;
-            }
-            QPushButton:hover { background: #384259; }
-            QPushButton#primaryButton {
-                background: #1f8f4d; color: #ffffff; font-weight: 800;
-                padding: 9px 18px;
-            }
-            QPushButton#primaryButton:hover { background: #26a85d; }
-            QPushButton#primaryButton:disabled {
-                background: #32513d; color: #9aa0ad;
-            }
-            #statusText { font-weight: 700; }
-            #errorText { color: #ffb4a8; }
-            #noteText { color: #9aa0ad; }
-            #updateBar {
-                background: #1c1f29; border: 1px solid #d29922; border-radius: 6px;
-            }
-            #updateText { color: #ffd580; font-weight: 600; }
-            #setupBar {
-                background: #1c1f29; border: 1px solid #2870aa; border-radius: 6px;
-            }
-            #setupTitle { color: #7db8e8; font-weight: 700; }
-            #setupText { color: #c9d4e3; }
-            QToolTip {
-                background: #1c1f29; color: #f0f0f0;
-                border: 1px solid #303542; padding: 4px 6px;
-            }
-            QPushButton[modeButton="true"] {
-                background: #1c1f29; border: 1px solid #303542; border-radius: 8px;
-                padding: 10px 14px; font-weight: 600;
-            }
-            QPushButton[modeButton="true"]:checked {
-                background: #f0f0f0; color: #12141a; border: 2px solid #8b949e;
-                font-weight: 800;
-            }
-        """)
+        self.setStyleSheet(theme.build_qss())
 
     # ---------------- settings form (thin delegates; see ui/settings_form) ----
     def _populate_settings(self) -> None:
@@ -1264,15 +1218,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sync_hotkeys()
         connected, status_key, detail = self._controller.get_status_info()
         if connected:
-            color = "#2ea043"
+            color = theme.hex_rgb(theme.ON_GREEN)
         elif status_key in ("status_api_key_invalid", "status_api_key_required",
                             "status_failed"):
-            color = "#e06450"
+            color = theme.hex_rgb(theme.ERR_RED)
         elif status_key in ("status_running", "status_degraded",
                             "status_reconnecting", "status_quota_exceeded"):
-            color = "#d29922"
+            color = theme.hex_rgb(theme.QT_WARN)
         else:
-            color = "#8b949e"
+            color = theme.hex_rgb(theme.QT_TEXT_IDLE)
         self._set_style_if_changed(self._status_dot, f"background:{color}; border-radius:7px;")
         conn_key = "conn_on" if connected else "conn_off"
         self._status_text.setText(
@@ -1288,14 +1242,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self._btn_trans.setText(i18n.tr(st.ui_lang, "btn_trans_on" if st.translation_on else "btn_trans_off"))
         self._set_style_if_changed(
             self._btn_trans,
-            "background:#2ea043;" if st.translation_on else "background:#78541e;")
+            f"background:{theme.hex_rgb(theme.ON_GREEN)};" if st.translation_on
+            else f"background:{theme.hex_rgb(theme.OFF_AMBER)};")
         self._btn_sub.setText(i18n.tr(st.ui_lang, "btn_sub_on" if st.subtitles_on else "btn_sub_off"))
         self._set_style_if_changed(
-            self._btn_sub, "background:#2870aa;" if st.subtitles_on else "")
+            self._btn_sub,
+            f"background:{theme.hex_rgb(theme.SUB_BLUE)};" if st.subtitles_on else "")
         self._btn_overlay_move.setText(
             i18n.tr(st.ui_lang, "btn_overlay_done" if st.edit_mode else "btn_overlay_move"))
         self._set_style_if_changed(
-            self._btn_overlay_move, "background:#2870aa;" if st.edit_mode else "")
+            self._btn_overlay_move,
+            f"background:{theme.hex_rgb(theme.SUB_BLUE)};" if st.edit_mode else "")
 
         if not self._app_mode_applying:
             self._set_app_mode_checked(self._controller.cfg.get("app", {}).get("mode", "vrchat"))
