@@ -5,6 +5,7 @@ import copy
 import logging
 import math
 import threading
+from html import escape as html_escape
 from pathlib import Path
 
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -328,6 +329,18 @@ class MainWindow(QtWidgets.QMainWindow):
         root.setContentsMargins(18, 18, 18, 18)
         root.setSpacing(12)
 
+        self._build_dash_header(root)
+        c = self._build_dash_controls()
+        root.addWidget(self._build_dash_mode_group(c))
+        root.addLayout(self._build_dash_pipe_groups(c))
+        root.addWidget(self._build_dash_audio_group(c))
+        root.addWidget(self._build_dash_display_group())
+        root.addWidget(self._build_dash_app_group())
+        self._build_dash_subtitles(root)
+        self._tab_dashboard_idx = self._tabs.addTab(page, self._tr("tab_dashboard"))
+
+    def _build_dash_header(self, root: QtWidgets.QVBoxLayout) -> None:
+        """Status row + restart, error label, update/setup banners, toast."""
         top = QtWidgets.QHBoxLayout()
         self._status_dot = QtWidgets.QLabel()
         self._status_dot.setObjectName("statusDot")
@@ -365,6 +378,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._toast_timer.setSingleShot(True)
         self._toast_timer.timeout.connect(self._toast.hide)
 
+    def _build_dash_controls(self) -> dict:
+        """Create every dashboard control widget (order preserved from the
+        original monolithic builder); returns the container widgets the
+        group builders lay out."""
         self._btn_trans = QtWidgets.QPushButton()
         self._btn_trans.setObjectName("transToggle")
         self._btn_trans.clicked.connect(
@@ -462,12 +479,27 @@ class MainWindow(QtWidgets.QMainWindow):
         self._tip(self._btn_overlay_move, "tip_overlay_move")
         self._tip(self._close_action, "tip_close_action")
 
+        return {
+            "app_mode": app_mode_widget,
+            "out_add": out_lang_add_widget,
+            "sub_add": sub_lang_add_widget,
+            "out_device": out_device_wrap,
+            "tts_gain": tts_gain_widget,
+            "src_label": src_label,
+            "in_src_label": in_src_label,
+            "mic_label": mic_label,
+        }
+
+    def _build_dash_mode_group(self, c: dict) -> QtWidgets.QGroupBox:
         grp_mode = self._group("dash_grp_mode")
         mode_lay = QtWidgets.QHBoxLayout(grp_mode)
         mode_lay.addWidget(self._label("label_app_mode"))
-        mode_lay.addWidget(app_mode_widget, 1)
+        mode_lay.addWidget(c["app_mode"], 1)
         mode_lay.addWidget(self._text_only)
+        return grp_mode
 
+    def _build_dash_pipe_groups(self, c: dict) -> QtWidgets.QHBoxLayout:
+        """My speech -> others / others -> me group boxes, side by side."""
         grp_out = self._group("dash_grp_out")
         out_lay = QtWidgets.QGridLayout(grp_out)
         out_lay.addWidget(self._label("ctl_my_translate"), 0, 0)
@@ -475,8 +507,8 @@ class MainWindow(QtWidgets.QMainWindow):
         out_lay.addWidget(self._label("label_out_lang"), 1, 0)
         out_lay.addWidget(self._out_lang, 1, 1)
         out_lay.addWidget(self._label("label_add_out_lang"), 2, 0)
-        out_lay.addWidget(out_lang_add_widget, 2, 1)
-        out_lay.addWidget(src_label, 3, 0)
+        out_lay.addWidget(c["out_add"], 2, 1)
+        out_lay.addWidget(c["src_label"], 3, 0)
         out_lay.addWidget(self._src_lang, 3, 1)
         out_lay.setColumnStretch(1, 1)
 
@@ -487,28 +519,32 @@ class MainWindow(QtWidgets.QMainWindow):
         in_lay.addWidget(self._label("label_sub_lang"), 1, 0)
         in_lay.addWidget(self._sub_lang, 1, 1)
         in_lay.addWidget(self._label("label_add_sub_lang"), 2, 0)
-        in_lay.addWidget(sub_lang_add_widget, 2, 1)
-        in_lay.addWidget(in_src_label, 3, 0)
+        in_lay.addWidget(c["sub_add"], 2, 1)
+        in_lay.addWidget(c["in_src_label"], 3, 0)
         in_lay.addWidget(self._in_src_lang, 3, 1)
         in_lay.setColumnStretch(1, 1)
 
         pipes = QtWidgets.QHBoxLayout()
         pipes.addWidget(grp_out, 1)
         pipes.addWidget(grp_in, 1)
+        return pipes
 
+    def _build_dash_audio_group(self, c: dict) -> QtWidgets.QGroupBox:
         grp_audio = self._group("dash_grp_audio")
         audio_lay = QtWidgets.QGridLayout(grp_audio)
         audio_lay.addWidget(self._label("label_mic_device"), 0, 0)
         audio_lay.addWidget(self._mic_device, 0, 1)
         audio_lay.addWidget(self._label("label_voice_out_device"), 0, 2)
-        audio_lay.addWidget(out_device_wrap, 0, 3)
-        audio_lay.addWidget(mic_label, 1, 0)
+        audio_lay.addWidget(c["out_device"], 0, 3)
+        audio_lay.addWidget(c["mic_label"], 1, 0)
         audio_lay.addWidget(self._mic_meter, 1, 1)
         audio_lay.addWidget(self._label("label_tts_gain"), 1, 2)
-        audio_lay.addWidget(tts_gain_widget, 1, 3)
+        audio_lay.addWidget(c["tts_gain"], 1, 3)
         audio_lay.setColumnStretch(1, 1)
         audio_lay.setColumnStretch(3, 1)
+        return grp_audio
 
+    def _build_dash_display_group(self) -> QtWidgets.QGroupBox:
         grp_display = self._group("dash_grp_display")
         disp_lay = QtWidgets.QHBoxLayout(grp_display)
         disp_lay.addWidget(self._label("label_pc_sub_size"))
@@ -516,7 +552,9 @@ class MainWindow(QtWidgets.QMainWindow):
         disp_lay.addStretch(1)
         disp_lay.addWidget(self._btn_overlay_move)
         disp_lay.addWidget(self._btn_overlay_reset)
+        return grp_display
 
+    def _build_dash_app_group(self) -> QtWidgets.QGroupBox:
         grp_app = self._group("dash_grp_app")
         app_lay = QtWidgets.QHBoxLayout(grp_app)
         app_lay.addWidget(self._label("ui_lang"))
@@ -525,19 +563,16 @@ class MainWindow(QtWidgets.QMainWindow):
         app_lay.addWidget(self._label("label_close_action"))
         app_lay.addWidget(self._close_action)
         app_lay.addStretch(1)
+        return grp_app
 
-        root.addWidget(grp_mode)
-        root.addLayout(pipes)
-        root.addWidget(grp_audio)
-        root.addWidget(grp_display)
-        root.addWidget(grp_app)
+    def _build_dash_subtitles(self, root: QtWidgets.QVBoxLayout) -> None:
         root.addWidget(self._dashboard_note)
-
-        self._subtitle_view = QtWidgets.QPlainTextEdit()
+        self._subtitle_view = QtWidgets.QTextEdit()
+        self._subtitle_view.setObjectName("subtitleView")
         self._subtitle_view.setReadOnly(True)
         self._subtitle_view.setPlaceholderText(self._tr("subtitle_live_placeholder"))
+        self._subtitle_snapshot = None
         root.addWidget(self._subtitle_view, 1)
-        self._tab_dashboard_idx = self._tabs.addTab(page, self._tr("tab_dashboard"))
 
     def _build_tts_gain_control(self) -> QtWidgets.QWidget:
         self._tts_gain_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
@@ -1303,15 +1338,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sync_steamvr_autolaunch()
 
         finals, partial = self._controller.subtitles_snapshot()
-        rows = []
-        for src, dst, _lang in finals:
-            rows.append(dst or src)
-        p_src, p_dst = partial
-        if p_dst or p_src:
-            rows.append(p_dst or p_src)
-        text = "\n".join(rows)
-        if self._subtitle_view.toPlainText() != text:
-            self._subtitle_view.setPlainText(text)
+        snapshot = (tuple(finals), tuple(partial))
+        if snapshot != self._subtitle_snapshot:
+            self._subtitle_snapshot = snapshot
+            dim = theme.hex_rgb(theme.QT_TEXT_DIM)
+            rows = [f"<div>{html_escape(dst or src)}</div>"
+                    for src, dst, _lang in finals]
+            p_src, p_dst = partial
+            if p_dst or p_src:
+                rows.append(f'<div style="color:{dim}; font-style:italic;">'
+                            f"{html_escape(p_dst or p_src)}</div>")
+            if rows:
+                self._subtitle_view.setHtml("".join(rows))
+                bar = self._subtitle_view.verticalScrollBar()
+                bar.setValue(bar.maximum())
+            else:
+                self._subtitle_view.clear()  # keeps the placeholder visible
 
     @staticmethod
     def _set_state_prop(widget: QtWidgets.QWidget, name: str, value: str) -> None:

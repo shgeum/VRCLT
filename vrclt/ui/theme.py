@@ -152,4 +152,8 @@ def build_qss() -> str:
         QPushButton#transToggle[on="false"] {{ background: {trans_off}; }}
         QPushButton#subToggle[on="true"] {{ background: {sub_blue}; }}
         QPushButton#overlayMoveBtn[active="true"] {{ background: {sub_blue}; }}
+        QTextEdit#subtitleView {{
+            background: {surface}; color: {text}; border: 1px solid {border};
+            border-radius: 4px; padding: 6px 10px; font-size: 13pt;
+        }}
     """.format(**c)
