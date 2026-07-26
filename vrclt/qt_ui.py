@@ -648,6 +648,14 @@ class MainWindow(QtWidgets.QMainWindow):
         page = QtWidgets.QWidget()
         outer = QtWidgets.QVBoxLayout(page)
         outer.setContentsMargins(0, 0, 0, 0)
+        search_row = QtWidgets.QHBoxLayout()
+        search_row.setContentsMargins(18, 12, 18, 0)
+        self._settings_search = QtWidgets.QLineEdit()
+        self._settings_search.setClearButtonEnabled(True)
+        self._on_retranslate(lambda: self._settings_search.setPlaceholderText(
+            self._tr("settings_search_ph")))
+        search_row.addWidget(self._settings_search)
+        outer.addLayout(search_row)
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
         self._settings_scroll = scroll
@@ -685,6 +693,7 @@ class MainWindow(QtWidgets.QMainWindow):
             get_devices=lambda: (self._inputs, self._outputs),
             on_hotkey_capture_start=self._hotkeys.stop,
             on_hotkey_capture_end=lambda: self._sync_hotkeys(force=True))
+        self._settings_search.textChanged.connect(self._settings_form.apply_filter)
         self._populate_settings()
         self._tab_settings_idx = self._tabs.addTab(page, self._tr("tab_settings"))
         self._on_retranslate(lambda: self._tabs.setTabText(
@@ -744,7 +753,24 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # ---------------- settings form (thin delegates; see ui/settings_form) ----
     def _populate_settings(self) -> None:
+        """Rebuild the settings form, restoring scroll position and focus
+        (populate() destroys every widget, which used to reset both on each
+        save/reset/device-reload/language change)."""
+        scroll = getattr(self, "_settings_scroll", None)
+        if scroll is None:
+            self._settings_form.populate()
+            return
+        pos = scroll.verticalScrollBar().value()
+        focus_path = self._settings_form.focused_field_path()
+
         self._settings_form.populate()
+
+        def restore():
+            scroll.verticalScrollBar().setValue(pos)
+            self._settings_form.focus_field(focus_path)
+
+        # let the new layout settle before restoring
+        QtCore.QTimer.singleShot(0, restore)
 
     def _sync_settings_from_config(self) -> None:
         self._settings_form.sync_from_config()

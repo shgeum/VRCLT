@@ -102,6 +102,7 @@ class SettingsForm:
         self._inputs: list[str] = [""]
         self._outputs: list[str] = [""]
         self._chk_autolaunch: QtWidgets.QCheckBox | None = None
+        self._filter_text = ""
 
     # ---------------- construction ----------------
     def populate(self) -> None:
@@ -117,6 +118,8 @@ class SettingsForm:
             if title_key == "grp_steamvr":
                 self._add_steamvr_autolaunch(form)
         self._layout.addStretch(1)
+        if self._filter_text:  # rebuilds (save/language change) keep the filter
+            self.apply_filter(self._filter_text)
 
     def _add_group(self, title_key: str, specs, cfg: dict):
         group = QtWidgets.QGroupBox(self._tr(title_key))
@@ -433,6 +436,37 @@ class SettingsForm:
             if first is None:
                 first = widget
         return first
+
+    # ---------------- search filter / focus helpers ----------------
+    def apply_filter(self, text: str) -> None:
+        """Show only rows whose translated label or config path contains the
+        needle; groups with no visible rows hide entirely."""
+        self._filter_text = text
+        needle = text.strip().lower()
+        visible_paths = set()
+        for path, (spec, form, _label, widget) in self._rows.items():
+            visible = (not needle
+                       or needle in path.lower()
+                       or needle in self._tr(spec.label_key).lower())
+            form.setRowVisible(widget, visible)
+            if visible:
+                visible_paths.add(path)
+        for group, paths in self._groups:
+            group.setVisible(not needle or any(p in visible_paths for p in paths))
+
+    def focused_field_path(self) -> str | None:
+        focus = QtWidgets.QApplication.focusWidget()
+        if focus is None:
+            return None
+        for path, (widget, _spec) in self._fields.items():
+            if focus is widget or widget.isAncestorOf(focus):
+                return path
+        return None
+
+    def focus_field(self, path: str | None) -> None:
+        row = self._rows.get(path) if path else None
+        if row is not None:
+            row[3].setFocus()
 
     def first_invalid_widget(self):
         return self._invalid_widgets[0] if self._invalid_widgets else None
