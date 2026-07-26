@@ -839,6 +839,183 @@ STRINGS = {
         "en": "auto: VR overlays only while SteamVR is running. desktop: VR features off.",
         "ja": "auto: SteamVR実行中のみVRオーバーレイを表示。desktop: VR機能オフ。",
         "zh": "auto：仅在 SteamVR 运行时显示 VR 叠加层。desktop：关闭 VR 功能。"},
+    # ---- settings form chrome ----
+    "val_auto": {"ko": "자동", "en": "auto", "ja": "自動", "zh": "自动"},
+    "default_prefix": {"ko": "기본값: {value}", "en": "Default: {value}",
+                       "ja": "既定値: {value}", "zh": "默认值: {value}"},
+    "reset_field": {"ko": "기본값으로 재설정", "en": "Reset to default",
+                    "ja": "既定値に戻す", "zh": "重置为默认值"},
+    "msg_invalid_field": {
+        "ko": "잘못된 값이 있습니다: {fields}",
+        "en": "Invalid value in: {fields}",
+        "ja": "不正な値があります: {fields}",
+        "zh": "存在无效值：{fields}"},
+    "settings_search_ph": {
+        "ko": "설정 검색...", "en": "Search settings...",
+        "ja": "設定を検索...", "zh": "搜索设置..."},
+    # ---- additional field tooltips ----
+    "f.outbound.tts_gain.tip": {
+        "ko": "번역 음성 볼륨 (0.0–2.0). 대시보드 슬라이더와 같은 값입니다.",
+        "en": "Translated-voice volume (0.0–2.0). Same value as the dashboard slider.",
+        "ja": "翻訳音声の音量 (0.0–2.0)。ダッシュボードのスライダーと同じ値です。",
+        "zh": "翻译语音音量（0.0–2.0）。与仪表板滑块相同。"},
+    "f.outbound.text_only.tip": {
+        "ko": "켜면 원본 마이크를 그대로 내보내고 번역은 챗박스 텍스트로만 표시합니다.",
+        "en": "Pass the raw mic through and show translations as chatbox text only.",
+        "ja": "元のマイク音声をそのまま送り、翻訳はチャットボックスのテキストのみで表示。",
+        "zh": "直通原始麦克风，翻译仅以聊天框文字显示。"},
+    "f.outbound.echo_target_language.tip": {
+        "ko": "출력 언어로 말했을 때도 번역 결과를 그대로 되풀이합니다.",
+        "en": "Repeat the translation even when you already spoke the target language.",
+        "ja": "出力言語で話した場合でも翻訳結果をそのまま出力します。",
+        "zh": "即使你已用目标语言说话，也会照样输出翻译。"},
+    "f.audio.send_interval_ms.tip": {
+        "ko": "마이크 오디오를 API로 보내는 주기(ms). 낮을수록 빠르지만 트래픽이 늘어납니다.",
+        "en": "How often (ms) mic audio is flushed to the API. Lower = faster, more traffic.",
+        "ja": "マイク音声をAPIへ送る間隔 (ms)。短いほど速いが通信量が増えます。",
+        "zh": "麦克风音频发送到 API 的间隔（毫秒）。越低越快，但流量更多。"},
+    "f.audio.finalize_silence_sec.tip": {
+        "ko": "전사(음성 인식)가 이만큼 조용하면 세그먼트를 마무리합니다.",
+        "en": "Finalize a segment after this much transcription silence (s).",
+        "ja": "文字起こしがこの時間無音なら区切りを確定します (秒)。",
+        "zh": "转写静音达到该时长后结束当前语段（秒）。"},
+    "f.audio.mic_idle_disconnect_sec.tip": {
+        "ko": "이만큼 무음이면 API 세션을 닫아 비용을 아낍니다. 0 = 항상 유지.",
+        "en": "Close the API session after this much mic silence to save cost. 0 = keep open.",
+        "ja": "この時間無音ならAPIセッションを閉じて課金を抑えます。0 = 維持。",
+        "zh": "麦克风静音达到该时长后关闭 API 会话以省费用。0 = 一直保持。"},
+    "f.audio.inbound_turn_end_silence_sec.tip": {
+        "ko": "자막(수신) 세션의 발화 종료 무음 시간. 짧을수록 자막이 빨리 확정됩니다.",
+        "en": "Turn-end silence for inbound subtitle sessions. Shorter finalizes subtitles sooner.",
+        "ja": "字幕（受信）セッションの発話終了無音時間。短いほど字幕が早く確定します。",
+        "zh": "字幕（接收）会话的话轮结束静音时长。越短字幕定稿越快。"},
+    "f.audio.subtitle_partial_interval_sec.tip": {
+        "ko": "라이브 자막(회색 진행 줄)의 갱신 주기(초).",
+        "en": "Refresh cadence (s) of the live partial subtitle line.",
+        "ja": "ライブ字幕（進行中の行）の更新間隔 (秒)。",
+        "zh": "实时字幕（进行中行）的刷新间隔（秒）。"},
+    "f.audio.subtitle_finalize_silence_sec.tip": {
+        "ko": "이만큼 조용하면 자막 줄을 확정해 흰색으로 고정합니다.",
+        "en": "Silence (s) after which a subtitle line is finalized.",
+        "ja": "この無音時間で字幕行を確定します (秒)。",
+        "zh": "静音达到该时长后将字幕行定稿（秒）。"},
+    "f.audio.echo_guard_hold_sec.tip": {
+        "ko": "게임에서 말소리가 들리는 동안 + 이 시간만큼 내 마이크 게이트를 높게 유지합니다.",
+        "en": "Keep the raised mic gate this long after inbound game speech stops.",
+        "ja": "ゲーム内の発話が止まった後もこの時間マイクゲートを高く維持します。",
+        "zh": "游戏语音停止后，仍将麦克风门限保持提高该时长。"},
+    "f.audio.echo_guard_barge_in_multiplier.tip": {
+        "ko": "에코 가드 중에도 이 배수보다 큰 내 목소리는 통과시킵니다.",
+        "en": "During echo guard, your own louder speech above this multiplier still passes.",
+        "ja": "エコーガード中でも、この倍率を超える自分の声は通します。",
+        "zh": "回声防护期间，超过此倍数的你的语音仍可通过。"},
+    "f.inbound.vad_enabled.tip": {
+        "ko": "Silero VAD로 말소리만 API에 보냅니다(음악/효과음 차단). 끄면 모든 소리를 보냅니다.",
+        "en": "Send only detected speech to the API (filters music/SFX). Off = send everything.",
+        "ja": "Silero VADで音声のみAPIへ送信（音楽/効果音を遮断）。オフで全音声を送信。",
+        "zh": "仅将检测到的语音发送到 API（过滤音乐/音效）。关闭则发送全部声音。"},
+    "f.inbound.vad_hangover_sec.tip": {
+        "ko": "말이 멈춘 뒤에도 이만큼 더 캡처해 문장 끝이 잘리지 않게 합니다.",
+        "en": "Keep capturing this long after speech stops so sentence ends aren't cut.",
+        "ja": "発話停止後もこの時間キャプチャを続け、文末の欠落を防ぎます。",
+        "zh": "语音停止后继续捕获该时长，避免句尾被截断。"},
+    "f.inbound.play_audio.tip": {
+        "ko": "상대 음성의 번역을 내 헤드폰으로도 재생합니다(자막과 별개).",
+        "en": "Also play translated inbound speech to your headphones (besides subtitles).",
+        "ja": "相手の音声の翻訳をヘッドホンでも再生します（字幕とは別）。",
+        "zh": "将对方语音的翻译也播放到你的耳机（独立于字幕）。"},
+    "f.inbound.audio_device.tip": {
+        "ko": "번역 음성 재생 장치. 비우면 기본 출력 장치를 사용합니다.",
+        "en": "Playback device for translated inbound speech. Empty = default output.",
+        "ja": "翻訳音声の再生デバイス。空欄なら既定の出力デバイス。",
+        "zh": "翻译语音的播放设备。留空使用默认输出。"},
+    "f.osc.throttle_sec.tip": {
+        "ko": "VRChat 챗박스 전송 최소 간격(초). VRChat의 스팸 제한을 피합니다.",
+        "en": "Minimum interval (s) between chatbox sends, avoiding VRChat's spam limit.",
+        "ja": "チャットボックス送信の最小間隔 (秒)。VRChatのスパム制限を回避します。",
+        "zh": "聊天框发送的最小间隔（秒），避免 VRChat 的刷屏限制。"},
+    "f.osc.chunk_display_sec.tip": {
+        "ko": "긴 문장을 나눠 보낼 때 각 조각의 표시 시간(초).",
+        "en": "Display time (s) of each part when a long message is split.",
+        "ja": "長文を分割送信するときの各パートの表示時間 (秒)。",
+        "zh": "长消息拆分发送时每段的显示时长（秒）。"},
+    "f.osc.stream_sentences.tip": {
+        "ko": "문장이 끝날 때마다 즉시 챗박스에 표시합니다(굴러가는 말풍선). "
+              "끄면 세그먼트 완료 후 나눠서 재생합니다.",
+        "en": "Flush each finished sentence to the chatbox immediately (rolling bubble). "
+              "Off = replay long segments in delayed parts.",
+        "ja": "文が完成するたびに即チャットボックスへ表示（ローリング表示）。"
+              "オフでは完了後に分割表示します。",
+        "zh": "每完成一句立即显示到聊天框（滚动气泡）。关闭则在语段完成后分段显示。"},
+    "f.osc.show_source.tip": {
+        "ko": "챗박스에 원문을 위, 번역을 아래로 함께 표시합니다.",
+        "en": "Chatbox shows the source text on top with the translation below.",
+        "ja": "チャットボックスに原文を上、翻訳を下に表示します。",
+        "zh": "聊天框上方显示原文，下方显示译文。"},
+    "f.overlay.distance_m.tip": {
+        "ko": "VR 자막 패널까지의 거리(미터). VR에서 편집 모드로 잡아 옮길 수도 있습니다.",
+        "en": "Distance (m) to the VR subtitle panel. You can also grab-move it in VR edit mode.",
+        "ja": "VR字幕パネルまでの距離 (m)。VR内の編集モードで掴んで移動もできます。",
+        "zh": "到 VR 字幕面板的距离（米）。也可在 VR 编辑模式中抓取移动。"},
+    "f.overlay.below_m.tip": {
+        "ko": "시선 기준 아래쪽 오프셋(미터). 클수록 자막이 낮게 보입니다.",
+        "en": "Downward offset (m) from your gaze. Larger = subtitles sit lower.",
+        "ja": "視線からの下方向オフセット (m)。大きいほど字幕が下に表示されます。",
+        "zh": "相对视线的向下偏移（米）。越大字幕越低。"},
+    "f.overlay.display_sec.tip": {
+        "ko": "확정된 자막 줄이 화면에 남는 시간(초).",
+        "en": "How long (s) a finalized subtitle line stays visible.",
+        "ja": "確定した字幕行が表示され続ける時間 (秒)。",
+        "zh": "定稿字幕行的停留时长（秒）。"},
+    "f.overlay.lines.tip": {
+        "ko": "동시에 표시할 최근 자막 줄 수.",
+        "en": "Number of recent finalized lines kept on screen.",
+        "ja": "同時に表示する直近の字幕行数。",
+        "zh": "同时保留在屏幕上的最近字幕行数。"},
+    "f.overlay.show_source.tip": {
+        "ko": "자막 아래에 원문도 작게 표시합니다.",
+        "en": "Also show the original text (smaller) under the subtitles.",
+        "ja": "字幕の下に原文も小さく表示します。",
+        "zh": "在字幕下方以小字显示原文。"},
+    "f.wrist_ui.offset.tip": {
+        "ko": "컨트롤러 기준 손목 시계 위치(미터). VR에서 '시계 이동' 모드로 잡아 "
+              "옮기면 자동 저장되므로 직접 수정할 일은 거의 없습니다.",
+        "en": "Watch position in controller space (m). Grab-moving it in VR (wrist edit "
+              "mode) saves automatically, so hand-editing is rarely needed.",
+        "ja": "コントローラー基準の腕時計位置 (m)。VR内の移動モードで掴んで動かすと"
+              "自動保存されるため、手入力はほぼ不要です。",
+        "zh": "控制器坐标系中的手表位置（米）。在 VR 中用移动模式抓取调整会自动保存，"
+              "一般无需手动修改。"},
+    "f.wrist_ui.tilt_deg.tip": {
+        "ko": "손목 시계를 얼굴 쪽으로 기울이는 각도(도).",
+        "en": "Extra tilt (°) of the watch toward your face.",
+        "ja": "腕時計を顔側へ傾ける角度 (°)。",
+        "zh": "手表朝面部倾斜的角度（°）。"},
+    "f.wrist_ui.roll_deg.tip": {
+        "ko": "시계의 면내 회전(도). 비우면 자동(왼손 +90 / 오른손 -90).",
+        "en": "In-plane rotation (°). Empty = auto (+90 left hand / -90 right hand).",
+        "ja": "面内回転 (°)。空欄で自動 (左手 +90 / 右手 -90)。",
+        "zh": "面内旋转（°）。留空为自动（左手 +90 / 右手 -90）。"},
+    "f.wrist_ui.pointer_tilt_deg.tip": {
+        "ko": "레이저가 컨트롤러 정면에서 아래로 기우는 각도. 레이저가 손목을 못 "
+              "가리키면 조정하세요(컨트롤러 기종마다 다름).",
+        "en": "How far the laser tilts down from the raw controller forward. Adjust if "
+              "the laser doesn't line up with your wrist (varies per controller model).",
+        "ja": "レーザーがコントローラー正面から下に傾く角度。手首に合わないときに"
+              "調整してください（機種により異なります）。",
+        "zh": "激光相对控制器正前方向下倾斜的角度。若激光对不准手腕请调整"
+              "（因控制器型号而异）。"},
+    "f.wrist_ui.hand.tip": {
+        "ko": "손목 시계를 착용할 손.",
+        "en": "Which wrist wears the watch menu.",
+        "ja": "腕時計メニューを着ける手。",
+        "zh": "佩戴手表菜单的手。"},
+    "f.ui.lang.tip": {
+        "ko": "UI 표시 언어. 비우면 시스템 언어를 따릅니다. Qt 창과 VR 손목 메뉴에 적용됩니다.",
+        "en": "UI display language. Empty = follow the system locale. Applies to the Qt "
+              "window and the VR wrist menu.",
+        "ja": "UI表示言語。空欄でシステム言語に従います。Qtウィンドウと VR 腕時計メニューに適用。",
+        "zh": "界面显示语言。留空跟随系统语言。应用于 Qt 窗口和 VR 腕表菜单。"},
 }
 
 

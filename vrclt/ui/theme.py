@@ -156,4 +156,8 @@ def build_qss() -> str:
             background: {surface}; color: {text}; border: 1px solid {border};
             border-radius: 4px; padding: 6px 10px; font-size: 13pt;
         }}
+        QLineEdit[invalid="true"], QPlainTextEdit[invalid="true"],
+        QComboBox[invalid="true"], QAbstractSpinBox[invalid="true"] {{
+            border: 1px solid {err};
+        }}
     """.format(**c)

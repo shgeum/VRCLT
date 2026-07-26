@@ -19,6 +19,83 @@ class NoWheelComboBox(QtWidgets.QComboBox):
             event.ignore()
 
 
+class NoWheelSpinBox(QtWidgets.QSpinBox):
+    """Ignores wheel events unless focused (spinboxes inside scroll areas
+    must not hijack scrolling)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
+        self.setLocale(QtCore.QLocale.c())
+        self.setGroupSeparatorShown(False)
+
+    def wheelEvent(self, event: QtGui.QWheelEvent) -> None:
+        if self.hasFocus():
+            super().wheelEvent(event)
+        else:
+            event.ignore()
+
+
+class NoWheelDoubleSpinBox(QtWidgets.QDoubleSpinBox):
+    """See NoWheelSpinBox. C locale so text round-trips as '1.5'."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
+        self.setLocale(QtCore.QLocale.c())
+        self.setGroupSeparatorShown(False)
+
+    def wheelEvent(self, event: QtGui.QWheelEvent) -> None:
+        if self.hasFocus():
+            super().wheelEvent(event)
+        else:
+            event.ignore()
+
+
+class AxesField(QtWidgets.QWidget):
+    """N labeled double-spinboxes in a row (e.g. X/Y/Z for wrist_ui.offset).
+    Registered as the form-row widget, so the settings form's focused-widget
+    skip (isAncestorOf) covers the child spinboxes unchanged."""
+
+    def __init__(self, axes: tuple, minimum: float, maximum: float,
+                 step: float, decimals: int, suffix: str = "", parent=None):
+        super().__init__(parent)
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        self._spins: list[NoWheelDoubleSpinBox] = []
+        for name in axes:
+            layout.addWidget(QtWidgets.QLabel(name))
+            spin = NoWheelDoubleSpinBox()
+            spin.setRange(minimum, maximum)
+            spin.setSingleStep(step)
+            spin.setDecimals(decimals)
+            if suffix:
+                spin.setSuffix(suffix)
+            layout.addWidget(spin, 1)
+            self._spins.append(spin)
+
+    def values(self) -> list[float]:
+        return [spin.value() for spin in self._spins]
+
+    def set_values(self, values) -> None:
+        values = list(values or [])
+        for spin, value in zip(self._spins, values):
+            blocked = spin.blockSignals(True)
+            try:
+                self._widen_range_if_needed(spin, float(value))
+                spin.setValue(float(value))
+            finally:
+                spin.blockSignals(blocked)
+
+    @staticmethod
+    def _widen_range_if_needed(spin, value: float) -> None:
+        if value < spin.minimum():
+            spin.setMinimum(value)
+        elif value > spin.maximum():
+            spin.setMaximum(value)
+
+
 class HotkeyEdit(QtWidgets.QKeySequenceEdit):
     """Key-sequence editor that reports focus so global hotkeys can be
     suspended while the user is capturing a new one."""

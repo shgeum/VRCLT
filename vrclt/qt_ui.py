@@ -21,7 +21,7 @@ from .hotkeys import HotkeyRegistration, WindowsGlobalHotkeys
 from .resources import bundled_font, resolve_font_path
 from .ui import theme
 from .ui.log_view import LogPanel
-from .ui.settings_form import SettingsForm
+from .ui.settings_form import SettingsForm, SettingsValidationError
 from .ui.setup_banner import SetupBanner
 from .ui.tray import TrayIcon
 from .ui.update_banner import UpdateBanner
@@ -650,6 +650,7 @@ class MainWindow(QtWidgets.QMainWindow):
         outer.setContentsMargins(0, 0, 0, 0)
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
+        self._settings_scroll = scroll
         body = QtWidgets.QWidget()
         self._settings_layout = QtWidgets.QVBoxLayout(body)
         self._settings_layout.setContentsMargins(18, 18, 18, 18)
@@ -889,7 +890,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _save_settings(self) -> None:
         def build():
-            cfg = self._settings_from_fields()
+            try:
+                cfg = self._settings_from_fields()
+            except SettingsValidationError as e:
+                first = self._settings_form.first_invalid_widget()
+                if first is not None:
+                    self._settings_scroll.ensureWidgetVisible(first)
+                fields = ", ".join(self._tr(err.label_key) for err in e.errors)
+                raise ValueError(
+                    self._tr("msg_invalid_field").format(fields=fields))
             key_error = config_mod.api_key_validation_error(cfg.get("api_key", ""))
             if key_error:
                 raise ValueError(self._tr("err_api_key_url"))

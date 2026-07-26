@@ -3,17 +3,28 @@
 Collaborators (controller, tr, target layout, device lists, hotkey-capture
 hooks) arrive by constructor injection - this module never reaches back into
 the main window.
+
+Field layout and widget metadata (ranges, steps, units) live in
+settings_schema.GROUPS; numeric fields render as spinboxes, so most invalid
+input is impossible. What can still fail at readback (partial text in the
+nullable roll field, a future free-text kind) is collected per field into
+SettingsValidationError instead of aborting on the first bad value.
 """
 import copy
 import logging
 
-from PySide6 import QtGui, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from .. import config as config_mod
 from .. import i18n
+from . import settings_schema
+from .settings_schema import FieldSpec
 from .widgets import (
+    AxesField,
     HotkeyEdit,
     NoWheelComboBox,
+    NoWheelDoubleSpinBox,
+    NoWheelSpinBox,
     build_language_picker,
     code_from_language_combo,
     set_language_combo_value,
@@ -47,6 +58,31 @@ def from_float_list(value: str) -> list[float]:
     return [float(v.strip()) for v in value.split(",") if v.strip()]
 
 
+def _widen_range(spin, value: float) -> None:
+    """Never let a spinbox clamp (and later save back) an out-of-range value
+    the user put in the config file by hand."""
+    if value < spin.minimum():
+        log.warning("config value %s below widget range, widening", value)
+        spin.setMinimum(value)
+    elif value > spin.maximum():
+        log.warning("config value %s above widget range, widening", value)
+        spin.setMaximum(value)
+
+
+class FieldValueError(ValueError):
+    def __init__(self, path: str, label_key: str, detail: str):
+        super().__init__(f"{path}: {detail}")
+        self.path = path
+        self.label_key = label_key
+        self.detail = detail
+
+
+class SettingsValidationError(ValueError):
+    def __init__(self, errors: list[FieldValueError]):
+        super().__init__("; ".join(str(e) for e in errors))
+        self.errors = errors
+
+
 class SettingsForm:
     """Owns the settings scroll body: field registry, construction, config
     sync, and readback into a config dict."""
@@ -59,7 +95,10 @@ class SettingsForm:
         self._get_devices = get_devices
         self._on_hotkey_capture_start = on_hotkey_capture_start
         self._on_hotkey_capture_end = on_hotkey_capture_end
-        self._fields: dict[str, tuple] = {}
+        self._fields: dict[str, tuple] = {}          # path -> (widget, spec)
+        self._rows: dict[str, tuple] = {}            # path -> (spec, form, label, widget)
+        self._groups: list[tuple] = []               # (group_box, [paths])
+        self._invalid_widgets: list = []
         self._inputs: list[str] = [""]
         self._outputs: list[str] = [""]
         self._chk_autolaunch: QtWidgets.QCheckBox | None = None
@@ -68,156 +107,126 @@ class SettingsForm:
     def populate(self) -> None:
         clear_layout(self._layout)
         self._fields.clear()
+        self._rows.clear()
+        self._groups = []
+        self._invalid_widgets = []
         self._inputs, self._outputs = self._get_devices()
         cfg = self._controller.raw_cfg
-        self._add_group("grp_api", [
-            ("provider", "f.provider", "provider"),
-            ("api_key", "f.api_key", "password"),
-            ("model", "f.model", "text"),
-            ("qwen.api_key", "f.qwen.api_key", "password"),
-            ("qwen.model", "f.qwen.model", "text"),
-            ("qwen.endpoint", "f.qwen.endpoint", "qwen_endpoint"),
-            ("qwen.workspace_id", "f.qwen.workspace_id", "text"),
-            ("qwen.voice_clone", "f.qwen.voice_clone", "qwen_voice_clone"),
-            ("qwen.voice", "f.qwen.voice", "text"),
-            ("app.mode", "f.app.mode", "appmode"),
-            ("app.profiles.discord.process", "f.app.profiles.discord.process", "text"),
-        ], cfg)
-        self._add_group("grp_lang", [
-            ("outbound.target_language", "f.outbound.target_language", "language"),
-            ("outbound.source_language", "f.outbound.source_language", "language"),
-            ("control.languages", "f.control.languages", "csv"),
-            ("inbound.target_language", "f.inbound.target_language", "language"),
-            ("inbound.source_language", "f.inbound.source_language", "language"),
-            ("inbound.languages", "f.inbound.languages", "csv"),
-            ("outbound.glossary", "f.outbound.glossary", "multiline"),
-        ], cfg)
-        self._add_group("grp_ui", [
-            ("ui.mode", "f.ui.mode", "uimode"),
-            ("ui.lang", "f.ui.lang", "text"),
-        ], cfg)
-        self._add_group("grp_hotkeys", [
-            ("hotkeys.enabled", "f.hotkeys.enabled", "bool"),
-            ("hotkeys.enabled_in_vr", "f.hotkeys.enabled_in_vr", "bool"),
-            ("hotkeys.translation_toggle", "f.hotkeys.translation_toggle", "hotkey"),
-            ("hotkeys.subtitles_toggle", "f.hotkeys.subtitles_toggle", "hotkey"),
-            ("hotkeys.translation_hold", "f.hotkeys.translation_hold", "hotkey"),
-        ], cfg)
-        self._add_group("grp_dev", [
-            ("outbound.mic_device", "f.outbound.mic_device", "input_device"),
-            ("outbound.text_only", "f.outbound.text_only", "bool"),
-            ("outbound.tts_device", "f.outbound.tts_device", "output_device"),
-            ("outbound.monitor_device", "f.outbound.monitor_device", "output_device"),
-            ("inbound.audio_device", "f.inbound.audio_device", "output_device"),
-            ("inbound.process", "f.inbound.process", "text"),
-        ], cfg)
-        self._add_group("grp_audio", [
-            ("outbound.tts_gain", "f.outbound.tts_gain", "float"),
-            ("audio.voice_rms_threshold", "f.audio.voice_rms_threshold", "float"),
-            ("audio.voice_hangover_sec", "f.audio.voice_hangover_sec", "float"),
-            ("audio.turn_end_silence_sec", "f.audio.turn_end_silence_sec", "float"),
-            ("audio.inbound_turn_end_silence_sec", "f.audio.inbound_turn_end_silence_sec", "float"),
-            ("audio.subtitle_partial_interval_sec", "f.audio.subtitle_partial_interval_sec", "float"),
-            ("audio.subtitle_finalize_silence_sec", "f.audio.subtitle_finalize_silence_sec", "float"),
-            ("audio.echo_guard_multiplier", "f.audio.echo_guard_multiplier", "float"),
-            ("audio.echo_guard_hold_sec", "f.audio.echo_guard_hold_sec", "float"),
-            ("audio.echo_guard_barge_in_multiplier", "f.audio.echo_guard_barge_in_multiplier", "float"),
-            ("audio.send_interval_ms", "f.audio.send_interval_ms", "int"),
-            ("audio.finalize_silence_sec", "f.audio.finalize_silence_sec", "float"),
-            ("audio.mic_idle_disconnect_sec", "f.audio.mic_idle_disconnect_sec", "float"),
-            ("outbound.echo_target_language", "f.outbound.echo_target_language", "bool"),
-            ("inbound.vad_enabled", "f.inbound.vad_enabled", "bool"),
-            ("inbound.vad_threshold", "f.inbound.vad_threshold", "float"),
-            ("inbound.vad_hangover_sec", "f.inbound.vad_hangover_sec", "float"),
-            ("inbound.play_audio", "f.inbound.play_audio", "bool"),
-        ], cfg)
-        self._add_group("grp_osc_vr", [
-            ("outbound.chatbox", "f.outbound.chatbox", "bool"),
-            ("osc.ip", "f.osc.ip", "text"),
-            ("osc.port", "f.osc.port", "int"),
-            ("osc.throttle_sec", "f.osc.throttle_sec", "float"),
-            ("osc.notification_sfx", "f.osc.notification_sfx", "bool"),
-            ("osc.show_source", "f.osc.show_source", "bool"),
-            ("osc.stream_sentences", "f.osc.stream_sentences", "bool"),
-            ("osc.chunk_display_sec", "f.osc.chunk_display_sec", "float"),
-            ("control.enabled", "f.control.enabled", "bool"),
-            ("control.osc_listen_port", "f.control.osc_listen_port", "int"),
-            ("control.feedback_chatbox", "f.control.feedback_chatbox", "bool"),
-        ], cfg)
-        self._add_group("grp_overlay_wrist", [
-            ("overlay.enabled", "f.overlay.enabled", "bool"),
-            ("overlay.width_m", "f.overlay.width_m", "float"),
-            ("overlay.height_m", "f.overlay.height_m", "float"),
-            ("overlay.distance_m", "f.overlay.distance_m", "float"),
-            ("overlay.below_m", "f.overlay.below_m", "float"),
-            ("overlay.tilt_deg", "f.overlay.tilt_deg", "float"),
-            ("overlay.font_size", "f.overlay.font_size", "int"),
-            ("overlay.display_sec", "f.overlay.display_sec", "float"),
-            ("overlay.lines", "f.overlay.lines", "int"),
-            ("overlay.show_source", "f.overlay.show_source", "bool"),
-            ("wrist_ui.enabled", "f.wrist_ui.enabled", "bool"),
-            ("wrist_ui.hand", "f.wrist_ui.hand", "hand"),
-            ("wrist_ui.width_m", "f.wrist_ui.width_m", "float"),
-            ("wrist_ui.offset", "f.wrist_ui.offset", "float_csv"),
-            ("wrist_ui.tilt_deg", "f.wrist_ui.tilt_deg", "float"),
-            ("wrist_ui.roll_deg", "f.wrist_ui.roll_deg", "nullable_float"),
-            ("wrist_ui.pointer_tilt_deg", "f.wrist_ui.pointer_tilt_deg", "float"),
-        ], cfg)
-        self._add_steamvr_group(cfg)
+        for title_key, specs in settings_schema.GROUPS:
+            group, form = self._add_group(title_key, specs, cfg)
+            if title_key == "grp_steamvr":
+                self._add_steamvr_autolaunch(form)
         self._layout.addStretch(1)
 
-    def _add_group(self, title_key: str, fields: list[tuple[str, str, str]],
-                   cfg: dict) -> None:
+    def _add_group(self, title_key: str, specs, cfg: dict):
         group = QtWidgets.QGroupBox(self._tr(title_key))
         form = QtWidgets.QFormLayout(group)
         form.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-        for path, label_key, kind in fields:
-            widget = self._make_field(kind, config_mod.get_path(cfg, path))
-            self._fields[path] = (widget, kind)
-            form.addRow(self._tr(label_key), widget)
-            self._apply_tip(form, widget, label_key)
+        paths = []
+        for spec in specs:
+            widget = self._make_field(spec, config_mod.get_path(cfg, spec.path))
+            self._fields[spec.path] = (widget, spec)
+            form.addRow(self._tr(spec.label_key), widget)
+            label = form.labelForField(widget)
+            self._rows[spec.path] = (spec, form, label, widget)
+            paths.append(spec.path)
+            self._apply_tip(label, widget, spec)
+            self._install_reset_menu(label, widget, spec)
         self._layout.addWidget(group)
+        self._groups.append((group, paths))
+        return group, form
 
-    def _apply_tip(self, form: QtWidgets.QFormLayout, widget,
-                   label_key: str) -> None:
-        """Optional per-field help: shown when an `f.<path>.tip` i18n key
-        exists (no retranslate needed — populate() rebuilds on language
-        change). Guarded by i18n.has(): tr() would return the raw key."""
-        tip_key = label_key + ".tip"
-        if not i18n.has(tip_key):
+    def _apply_tip(self, label, widget, spec: FieldSpec) -> None:
+        """Tooltip = optional f.<path>.tip help + the field's default value
+        (skipped for empty-string defaults - passwords, device names)."""
+        parts = []
+        tip_key = spec.label_key + ".tip"
+        if i18n.has(tip_key):
+            parts.append(self._tr(tip_key))
+        default_text = self._format_default(spec)
+        if default_text is not None:
+            parts.append(self._tr("default_prefix").format(value=default_text))
+        if not parts:
             return
-        tip = self._tr(tip_key)
+        tip = "\n".join(parts)
         widget.setToolTip(tip)
-        label = form.labelForField(widget)
         if label is not None:
             label.setToolTip(tip)
 
-    def _add_steamvr_group(self, cfg: dict) -> None:
-        group = QtWidgets.QGroupBox(self._tr("grp_steamvr"))
-        form = QtWidgets.QFormLayout(group)
-        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-        for path, label_key, kind in (
-                ("steamvr.register", "f.steamvr.register", "bool"),
-                ("steamvr.dashboard_panel", "f.steamvr.dashboard_panel", "bool")):
-            widget = self._make_field(kind, config_mod.get_path(cfg, path))
-            self._fields[path] = (widget, kind)
-            form.addRow(self._tr(label_key), widget)
-            self._apply_tip(form, widget, label_key)
+    def _format_default(self, spec: FieldSpec) -> str | None:
+        value = settings_schema.default_for(spec.path)
+        if value is None:
+            return self._tr("val_auto") if spec.kind == "nullable_float" else None
+        if isinstance(value, bool):
+            return "ON" if value else "OFF"
+        if isinstance(value, list):
+            text = as_csv(value)
+            return text or None
+        text = str(value)
+        return text if text.strip() else None
+
+    def _install_reset_menu(self, label, widget, spec: FieldSpec) -> None:
+        """Right-click on the row label -> reset this field to its default.
+        The menu lives on the label so the field widgets keep their native
+        context menus (copy/paste on line edits)."""
+        if label is None:
+            return
+        label.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+
+        def show_menu(pos, label=label, widget=widget, spec=spec):
+            menu = QtWidgets.QMenu(label)
+            action = menu.addAction(self._tr("reset_field"))
+            action.triggered.connect(
+                lambda: self._set_field_widget_value(
+                    widget, spec, settings_schema.default_for(spec.path)))
+            menu.exec(label.mapToGlobal(pos))
+
+        label.customContextMenuRequested.connect(show_menu)
+
+    def _add_steamvr_autolaunch(self, form: QtWidgets.QFormLayout) -> None:
         # Live toggle: SteamVR stores the auto-launch state, so this applies
         # immediately (no save/restart) and mirrors SteamVR's own settings.
         self._chk_autolaunch = QtWidgets.QCheckBox()
         self._chk_autolaunch.clicked.connect(self._controller.set_steamvr_auto_launch)
         form.addRow(self._tr("f.steamvr.auto_launch"), self._chk_autolaunch)
-        self._layout.addWidget(group)
         self.sync_steamvr_autolaunch()
 
-    def _make_field(self, kind: str, value):
+    def _make_field(self, spec: FieldSpec, value):
+        kind = spec.kind
         if kind == "bool":
             w = QtWidgets.QCheckBox()
             w.setChecked(bool(value))
             return w
-        if kind in ("int", "float", "nullable_float"):
+        if kind == "int":
+            w = NoWheelSpinBox()
+            w.setRange(int(spec.min), int(spec.max))
+            if spec.step:
+                w.setSingleStep(int(spec.step))
+            if spec.suffix:
+                w.setSuffix(spec.suffix)
+            self._set_spin_value(w, spec, value, int)
+            return w
+        if kind == "float":
+            w = NoWheelDoubleSpinBox()
+            w.setDecimals(spec.decimals)
+            w.setRange(spec.min, spec.max)
+            if spec.step:
+                w.setSingleStep(spec.step)
+            if spec.suffix:
+                w.setSuffix(spec.suffix)
+            self._set_spin_value(w, spec, value, float)
+            return w
+        if kind == "nullable_float":
             w = QtWidgets.QLineEdit("" if value is None else str(value))
+            validator = QtGui.QDoubleValidator(spec.min, spec.max, spec.decimals)
+            validator.setLocale(QtCore.QLocale.c())
+            w.setValidator(validator)
+            w.setPlaceholderText(self._tr("val_auto"))
+            return w
+        if kind == "float_csv":
+            w = AxesField(spec.axes or ("X", "Y", "Z"), spec.min, spec.max,
+                          spec.step or 0.01, spec.decimals, spec.suffix)
+            w.set_values(self._coerce_float_list(spec, value))
             return w
         if kind == "password":
             w = QtWidgets.QLineEdit("" if value is None else str(value))
@@ -244,8 +253,6 @@ class SettingsForm:
             w = build_language_picker()
             set_language_combo_value(w, "" if value is None else str(value))
             return w
-        if kind == "float_csv":
-            return QtWidgets.QLineEdit(as_csv(value))
         if kind == "appmode":
             w = NoWheelComboBox()
             w.addItems(list(config_mod.APP_MODES))
@@ -255,6 +262,11 @@ class SettingsForm:
             w = NoWheelComboBox()
             w.addItems(["auto", "vr", "desktop"])
             w.setCurrentText(str(value or "auto"))
+            return w
+        if kind == "uilang":
+            w = NoWheelComboBox()
+            w.addItems([""] + list(i18n.LANGS))
+            w.setCurrentText(str(value or ""))
             return w
         if kind == "hand":
             w = NoWheelComboBox()
@@ -285,6 +297,24 @@ class SettingsForm:
             return w
         return QtWidgets.QLineEdit("" if value is None else str(value))
 
+    def _set_spin_value(self, spin, spec: FieldSpec, value, coerce) -> None:
+        try:
+            value = coerce(value)
+        except (TypeError, ValueError):
+            log.warning("bad config value for %s: %r, using default",
+                        spec.path, value)
+            value = coerce(settings_schema.default_for(spec.path))
+        _widen_range(spin, value)
+        spin.setValue(value)
+
+    def _coerce_float_list(self, spec: FieldSpec, value) -> list[float]:
+        try:
+            return [float(v) for v in (value or [])]
+        except (TypeError, ValueError):
+            log.warning("bad config value for %s: %r, using default",
+                        spec.path, value)
+            return [float(v) for v in settings_schema.default_for(spec.path)]
+
     # ---------------- sync / readback ----------------
     def sync_steamvr_autolaunch(self) -> None:
         chk = self._chk_autolaunch
@@ -302,17 +332,24 @@ class SettingsForm:
 
     def sync_from_config(self) -> None:
         focus = QtWidgets.QApplication.focusWidget()
-        for path, (widget, kind) in self._fields.items():
+        for path, (widget, spec) in self._fields.items():
             if focus is not None and (focus is widget or widget.isAncestorOf(focus)):
                 continue
             self._set_field_widget_value(
-                widget, kind, config_mod.get_path(self._controller.raw_cfg, path))
+                widget, spec, config_mod.get_path(self._controller.raw_cfg, path))
 
-    def _set_field_widget_value(self, widget, kind: str, value) -> None:
+    def _set_field_widget_value(self, widget, spec: FieldSpec, value) -> None:
+        kind = spec.kind
         blocked = widget.blockSignals(True)
         try:
             if kind == "bool":
                 widget.setChecked(bool(value))
+            elif kind == "int":
+                self._set_spin_value(widget, spec, value, int)
+            elif kind == "float":
+                self._set_spin_value(widget, spec, value, float)
+            elif kind == "float_csv":
+                widget.set_values(self._coerce_float_list(spec, value))
             elif kind == "language":
                 set_language_combo_value(widget, "" if value is None else str(value))
             elif kind == "multiline":
@@ -322,29 +359,34 @@ class SettingsForm:
                 widget.setKeySequence(QtGui.QKeySequence("" if value is None else str(value)))
             elif isinstance(widget, QtWidgets.QComboBox):
                 widget.setCurrentText("" if value is None else str(value))
-            elif kind in ("csv", "float_csv"):
+            elif kind == "csv":
                 widget.setText(as_csv(value))
             else:
                 widget.setText("" if value is None else str(value))
         finally:
             widget.blockSignals(blocked)
 
-    def _field_value(self, widget, kind: str):
+    def _field_value(self, widget, spec: FieldSpec):
+        kind = spec.kind
         if kind == "bool":
             return widget.isChecked()
-        if kind == "int":
-            return int(widget.text().strip())
-        if kind == "float":
-            return float(widget.text().strip())
+        if kind in ("int", "float"):
+            return widget.value()
         if kind == "nullable_float":
             text = widget.text().strip()
-            return None if not text else float(text)
+            if not text:
+                return None
+            try:
+                return float(text)
+            except ValueError:
+                raise FieldValueError(spec.path, spec.label_key,
+                                      f"not a number: {text!r}")
         if kind == "csv":
             return from_csv(widget.text())
         if kind == "multiline":
             return widget.toPlainText()
         if kind == "float_csv":
-            return from_float_list(widget.text())
+            return widget.values()
         if kind == "hotkey":
             return widget.keySequence().toString(
                 QtGui.QKeySequence.SequenceFormat.PortableText)
@@ -355,7 +397,53 @@ class SettingsForm:
         return widget.text()
 
     def config_from_fields(self) -> dict:
+        """Read every field back into a config dict. Collects all per-field
+        failures into one SettingsValidationError (fields stay marked until
+        the next successful read)."""
+        self.clear_invalid()
         cfg = copy.deepcopy(self._controller.raw_cfg)
-        for path, (widget, kind) in self._fields.items():
-            config_mod.set_path(cfg, path, self._field_value(widget, kind))
+        errors: list[FieldValueError] = []
+        for path, (widget, spec) in self._fields.items():
+            try:
+                value = self._field_value(widget, spec)
+            except FieldValueError as e:
+                errors.append(e)
+                continue
+            except Exception as e:
+                errors.append(FieldValueError(path, spec.label_key, str(e)))
+                continue
+            config_mod.set_path(cfg, path, value)
+        if errors:
+            self.mark_invalid([e.path for e in errors])
+            raise SettingsValidationError(errors)
         return cfg
+
+    # ---------------- invalid-field marking ----------------
+    def mark_invalid(self, paths: list[str]):
+        """Red-border the offending widgets; returns the first one so the
+        caller can scroll it into view."""
+        first = None
+        for path in paths:
+            row = self._rows.get(path)
+            if row is None:
+                continue
+            widget = row[3]
+            self._set_invalid_prop(widget, True)
+            self._invalid_widgets.append(widget)
+            if first is None:
+                first = widget
+        return first
+
+    def first_invalid_widget(self):
+        return self._invalid_widgets[0] if self._invalid_widgets else None
+
+    def clear_invalid(self) -> None:
+        for widget in self._invalid_widgets:
+            self._set_invalid_prop(widget, False)
+        self._invalid_widgets = []
+
+    @staticmethod
+    def _set_invalid_prop(widget, invalid: bool) -> None:
+        widget.setProperty("invalid", "true" if invalid else "false")
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
