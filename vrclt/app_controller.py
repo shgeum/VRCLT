@@ -54,6 +54,13 @@ def steamvr_running() -> bool:
     return result
 
 
+def _cancel_all_tasks(loop) -> None:
+    """Run inside the loop (via call_soon_threadsafe): force-cancel every
+    task so a stop() blocked on a hung await can still unwind."""
+    for task in asyncio.all_tasks(loop):
+        task.cancel()
+
+
 def resolve_ui_mode(cfg: dict) -> str:
     mode = cfg.get("ui", {}).get("mode", "auto")
     if mode == "auto":
@@ -250,6 +257,10 @@ class AppController:
         self._app_registrar = steamvr_apps.SteamVrAppRegistrar(steamvr_running)
         self._app_registrar.start(
             lambda: bool(self.cfg.get("steamvr", {}).get("register", True)))
+
+        from .diag import MemoryDiagnostics
+        self._diag = MemoryDiagnostics(self)
+        self._diag.start()
 
     def subscribe(self, fn: Callable[[], None]) -> None:
         self._listeners.append(fn)
@@ -943,6 +954,7 @@ class AppController:
         """Stop for good: a queued restart() arriving after this is a no-op."""
         with self._lifecycle_lock:
             self._closed = True
+            self._diag.stop()
             self._app_registrar.stop()
             self.stop(timeout=timeout)
         # flush queued config saves (late _persist calls fall back to sync)
@@ -979,8 +991,22 @@ class AppController:
                 self._panels = []
             if thread is not None and thread.is_alive():
                 thread.join(timeout=timeout)
+                if thread.is_alive() and loop is not None:
+                    # a graceful close is stuck (hung network close etc.).
+                    # Cancel every task: the pipelines' finally-blocks still
+                    # run on CancelledError, releasing the mic/tap/players,
+                    # instead of leaving a fully-live orphaned runtime behind
+                    # the new one.
+                    log.warning("runtime thread did not stop within %.1fs - "
+                                "cancelling its tasks", timeout)
+                    try:
+                        loop.call_soon_threadsafe(_cancel_all_tasks, loop)
+                    except Exception:
+                        pass
+                    thread.join(timeout=4.0)
                 if thread.is_alive():
-                    log.warning("runtime thread did not stop within %.1fs", timeout)
+                    log.error("runtime thread is stuck in a blocking call; "
+                              "its resources leak until the process exits")
             self._thread = None
             self._loop = None
             self._stop_event = None
@@ -997,7 +1023,7 @@ class AppController:
         store = self.store
         cfg = self.cfg
 
-        pipeline = inbound = control = None
+        pipeline = inbound = control = created_renderer = None
         panels: list = []
         try:
             pipeline = OutboundPipeline(cfg, key, state)
@@ -1070,7 +1096,8 @@ class AppController:
                         get_provider=self.get_provider))
                 if panels:
                     from .vr.render import VrRenderer
-                    renderer = VrRenderer(panels, can_start=steamvr_running)
+                    renderer = created_renderer = VrRenderer(
+                        panels, can_start=steamvr_running)
                     renderer.start()
                     self._panels = panels
                     self._renderer_signature = self._vr_config_signature(cfg)
@@ -1086,6 +1113,13 @@ class AppController:
             if control is not None:
                 try:
                     control.stop()
+                except Exception:
+                    pass
+            if created_renderer is not None:
+                # a renderer we just started would otherwise keep its thread,
+                # GL context, and textures alive with no owner
+                try:
+                    created_renderer.stop()
                 except Exception:
                     pass
             raise
@@ -1108,6 +1142,9 @@ class AppController:
             self._set_status("Running")
             try:
                 loop.run_until_complete(self._gather_pipelines(stop_event, pipeline, inbound))
+            except asyncio.CancelledError:
+                # stop() escalated with _cancel_all_tasks after a join timeout
+                log.warning("runtime tasks force-cancelled during stop")
             except Exception as e:
                 log.exception("runtime worker crashed")
                 self._set_status("Failed", str(e))

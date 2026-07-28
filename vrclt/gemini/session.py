@@ -145,6 +145,30 @@ class LiveTranslateSession:
 
     async def run(self, stop: asyncio.Event) -> None:
         """Supervisor: wait for voice, run sessions, reconnect with backoff."""
+        try:
+            await self._run_supervisor(stop)
+        finally:
+            # genai.Client holds httpx sync+async clients and an SSL context
+            # bound to this loop; without closing them here every runtime
+            # restart would pin them until process exit
+            await self._close_client()
+
+    async def _close_client(self) -> None:
+        client = self._client
+        for closer in (getattr(getattr(client, "aio", None), "aclose", None),
+                       getattr(client, "close", None)):
+            if closer is None:
+                continue
+            try:
+                result = closer()
+                if asyncio.iscoroutine(result):
+                    await result
+            except (Exception, asyncio.CancelledError):
+                # CancelledError included: on a forced stop the sync close
+                # below must still get its chance
+                log.debug("[%s] client close failed", self.name, exc_info=True)
+
+    async def _run_supervisor(self, stop: asyncio.Event) -> None:
         backoff = RECONNECT_MIN_BACKOFF
         waiting_logged = False
         while not stop.is_set():

@@ -439,6 +439,17 @@ class OutboundPipeline(_TranslationPipeline):
             tick_task.cancel()
             if route_task:
                 route_task.cancel()
+            # await the cancellations so the coroutine frames (and the
+            # buffers they close over) are released now, not at some later
+            # GC pass ("Task was destroyed but it is pending"). Swallow a
+            # CancelledError delivered AT this await (forced-stop path) so
+            # the device cleanup below still runs.
+            try:
+                await asyncio.gather(
+                    *(t for t in (tick_task, route_task) if t is not None),
+                    return_exceptions=True)
+            except asyncio.CancelledError:
+                pass
             self.segmenter.flush()
             self.mic.stop()
             if self.tts_player:
@@ -519,6 +530,10 @@ class InboundPipeline(_TranslationPipeline):
         finally:
             tap_task.cancel()
             tick_task.cancel()
+            try:
+                await asyncio.gather(tap_task, tick_task, return_exceptions=True)
+            except asyncio.CancelledError:
+                pass
             self.segmenter.flush()
             self.tap.stop()
             self._tap_running = False
