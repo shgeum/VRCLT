@@ -87,6 +87,16 @@ def main():
     win._refresh()
     assert win._subtitle_view.toPlainText() == ""
 
+    # window chrome: versioned title + bundled icon
+    from vrclt import __version__
+    from vrclt.resources import icon_path
+    from PySide6 import QtGui
+    assert win.windowTitle() == f"VRCLT v{__version__}", win.windowTitle()
+    assert icon_path().exists() and icon_path("icon.png").exists()
+    assert not QtGui.QIcon(str(icon_path())).isNull()
+    from vrclt.ui.tray import make_tray_icon
+    assert not make_tray_icon().isNull()
+
     # cycle all UI languages (font + retranslate + settings rebuild)
     from vrclt import i18n
     for lang in ("ko", "ja", "zh", "en"):

@@ -18,7 +18,7 @@ from .config import get_path as _get_path, set_path as _set_path
 from .desktop_overlay import DesktopSubtitleOverlay
 from .languages import language_code_from_text, language_label
 from .hotkeys import HotkeyRegistration, WindowsGlobalHotkeys
-from .resources import bundled_font, resolve_font_path
+from .resources import bundled_font, icon_path, resolve_font_path
 from .ui import theme
 from .ui.log_view import LogPanel
 from .ui.settings_form import SettingsForm, SettingsValidationError
@@ -194,7 +194,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._signals.subtitles_hotkey.connect(self._toggle_subtitles)
         self._signals.translation_hold.connect(self._controller.set_hold_mute)
 
-        self.setWindowTitle("vrclt")
+        self.setWindowTitle(f"VRCLT v{__version__}")
         self.resize(980, 720)
         self._tabs = QtWidgets.QTabWidget()
         self.setCentralWidget(self._tabs)
@@ -1490,6 +1490,16 @@ def run_qt_app(controller, log_file: Path) -> int:
     app = QtWidgets.QApplication([])
     app.setApplicationName("vrclt")
     app.setQuitOnLastWindowClosed(False)
+    # own AppUserModelID so the taskbar shows our icon, not python.exe's,
+    # on dev runs (frozen exes get it from the embedded .ico anyway)
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("shgeum.vrclt")
+    except Exception:
+        pass
+    icon_file = icon_path()
+    if icon_file.exists():
+        app.setWindowIcon(QtGui.QIcon(str(icon_file)))
     _install_app_font(app, controller.state.ui_lang)
     win = MainWindow(controller, log_file)
     win.show()

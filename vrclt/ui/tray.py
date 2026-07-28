@@ -2,10 +2,17 @@
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from . import theme
+from ..resources import icon_path
 
 
 def make_tray_icon() -> QtGui.QIcon:
-    """Blue rounded rect + white V (matches the VR dashboard thumbnail)."""
+    """The bundled app icon; painted fallback (blue rect + V) if the asset
+    is missing so the tray never shows an empty icon."""
+    bundled = icon_path()
+    if bundled.exists():
+        icon = QtGui.QIcon(str(bundled))
+        if not icon.isNull():
+            return icon
     pix = QtGui.QPixmap(64, 64)
     pix.fill(QtCore.Qt.GlobalColor.transparent)
     painter = QtGui.QPainter(pix)

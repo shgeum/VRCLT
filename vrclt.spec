@@ -18,6 +18,11 @@ if font_dir.exists():
         if path.is_file():
             datas.append((str(path), "vrclt/assets/fonts"))
 
+for icon_name in ("icon.ico", "icon.png"):
+    icon_file = Path("vrclt") / "assets" / icon_name
+    if icon_file.exists():
+        datas.append((str(icon_file), "vrclt/assets"))
+
 # native / data-heavy packages PyInstaller can't fully trace on its own
 for pkg in [
     "onnxruntime", "soxr", "proctap", "openvr", "sounddevice",
@@ -52,7 +57,7 @@ exe = EXE(
     [],
     name="vrclt",
     console=False,
-    icon=None,
+    icon="vrclt/assets/icon.ico",
     strip=False,
     upx=False,
 )

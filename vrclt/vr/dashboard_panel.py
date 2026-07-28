@@ -8,6 +8,7 @@ also controls placement, so there is no transform handling either.
 Texture is a persistent OpenGL texture (see vr/render.py for why).
 """
 import logging
+import shutil
 import threading
 import time
 
@@ -21,7 +22,7 @@ from .button_table import (
     Widget, draw_page, glyph_draw, lang_grid_widgets, lang_page_count,
     widget_at,
 )
-from ..resources import bundled_font, resolve_font_path
+from ..resources import bundled_font, icon_path as icon_asset_path, resolve_font_path
 from ..state import AppState
 from .font_fallback import load_fallback_font
 from .panel_common import (
@@ -144,11 +145,16 @@ def _build_widgets() -> tuple:
 
 
 def _ensure_icon() -> bool:
-    """256px thumbnail matching the Qt tray icon (blue rounded rect + V)."""
+    """256px thumbnail: the bundled app icon (scripts/make_icon.py), with
+    the original painted mark as fallback when the asset is missing."""
     try:
         if ICON_PATH.exists():
             return True
         ICON_PATH.parent.mkdir(parents=True, exist_ok=True)
+        bundled = icon_asset_path("icon.png")
+        if bundled.exists():
+            shutil.copyfile(bundled, ICON_PATH)
+            return True
         s = 256
         img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)

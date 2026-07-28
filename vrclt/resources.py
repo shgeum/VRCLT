@@ -19,6 +19,11 @@ def bundled_font(name: str) -> str:
     return f"{_BUNDLED_PREFIX}{name}"
 
 
+def icon_path(name: str = "icon.ico") -> Path:
+    """Bundled app icon (icon.ico / icon.png; see scripts/make_icon.py)."""
+    return ASSET_ROOT / name
+
+
 def font_path(name: str) -> Path:
     return ASSET_ROOT / "fonts" / name
 
