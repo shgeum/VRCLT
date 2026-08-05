@@ -13,7 +13,7 @@ from .resources import bundled_font
 
 log = logging.getLogger(__name__)
 
-APP_MODES = ("vrchat", "discord")
+APP_MODES = ("vrchat", "discord", "custom")
 CLOSE_ACTIONS = ("tray", "exit")
 PROVIDERS = ("gemini", "qwen")
 QWEN_ENDPOINTS = ("intl", "beijing")
@@ -46,6 +46,7 @@ RESET_PRESERVE_PATHS = (
     ("outbound", "tts_gain"),   # note: the preserve loop skips falsy values,
     ("outbound", "glossary"),   # so a muted 0.0 gain resets to 1.0 - acceptable
     ("inbound", "audio_device"),
+    ("app", "profiles", "custom", "process"),
 )
 
 _PROFILE_RUNTIME_FIELDS = {
@@ -90,7 +91,7 @@ DEFAULTS = {
                                         # (qwen-translate-vc-...)
     },
     "app": {
-        "mode": "vrchat",              # vrchat | discord
+        "mode": "vrchat",              # vrchat | discord | custom
         "profiles": {
             "vrchat": {
                 "process": "VRChat.exe",
@@ -111,6 +112,16 @@ DEFAULTS = {
                 "osc_control": False,
                 "vr_overlay": False,
                 "wrist_ui": False,
+            },
+            "custom": {                 # any other app: pick it in Settings
+                "process": "",          # empty = keep whatever is being captured
+                "ui_mode": "auto",
+                "voice_output": True,
+                "passthrough_while_translating": False,
+                "chatbox": False,       # no VRChat OSC outside VRChat
+                "osc_control": False,
+                "vr_overlay": True,     # subtitles are the point of capturing it
+                "wrist_ui": True,
             },
         },
     },
@@ -187,8 +198,9 @@ DEFAULTS = {
         "mic_idle_disconnect_sec": 15.0,
         "voice_rms_threshold": 90.0,    # mic energy gate; raise if noise opens sessions, lower if speech is missed
         "voice_hangover_sec": 2.5,      # keep the turn open this long through pauses (avoids re-speak lag + chopping)
-        "turn_end_silence_sec": 0.55,   # tell Gemini the turn ended after this much real silence
-        "inbound_turn_end_silence_sec": 0.35,  # faster flush for subtitle sessions
+        "turn_end_silence_sec": 0.55,   # after this much real silence the gated stream
+                                        # is padded with silence so the server VAD ends the turn
+        "inbound_turn_end_silence_sec": 0.35,  # faster turn end for subtitle sessions
         "subtitle_partial_interval_sec": 0.15,  # live subtitle refresh cadence
         "subtitle_finalize_silence_sec": 0.8,  # finalize subtitle lines after this silence
         "echo_guard_multiplier": 4.0,   # gate boost while game audio plays (1.0 = off)
@@ -364,6 +376,8 @@ def apply_app_profile(cfg: dict, mode: str | None = None, *, force: bool = False
 
     app["mode"] = selected
     if profile.get("process"):
+        # empty (a custom profile with no target picked yet) leaves the current
+        # inbound.process alone, so switching to it keeps capturing what it was
         _apply_profile_value(cfg, "inbound", "process", profile["process"], force)
     if profile.get("ui_mode"):
         _apply_profile_value(cfg, "ui", "mode", profile["ui_mode"], force)

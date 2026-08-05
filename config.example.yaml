@@ -20,7 +20,7 @@ qwen:                        # Alibaba Cloud Model Studio (DashScope) realtime
                              # or a pre-cloned voice ID (qwen-translate-vc-...)
 
 app:
-  mode: vrchat                 # vrchat | discord; override with: python -m vrclt run --app vrchat
+  mode: vrchat                 # vrchat | discord | custom; override with: python -m vrclt run --app vrchat
   profiles:
     vrchat:
       process: VRChat.exe      # process captured for inbound subtitles
@@ -40,6 +40,17 @@ app:
       osc_control: false
       vr_overlay: false
       wrist_ui: false
+    custom:
+      process: ''              # any other app - pick it in Settings (the list
+                               # shows whatever is playing audio right now);
+                               # empty = keep the current capture target
+      ui_mode: auto
+      voice_output: true
+      passthrough_while_translating: false
+      chatbox: false           # no VRChat OSC outside VRChat
+      osc_control: false
+      vr_overlay: true         # subtitles are the point of capturing another app
+      wrist_ui: true
 
 dashboard:
   translation_on: true         # last Dashboard translation toggle state
@@ -113,8 +124,9 @@ audio:
   mic_idle_disconnect_sec: 15.0
   voice_rms_threshold: 90.0   # raise if noise opens sessions, lower if speech is missed
   voice_hangover_sec: 2.5     # keep the turn open this long through pauses
-  turn_end_silence_sec: 0.55  # tell Gemini to flush after this much real silence
-  inbound_turn_end_silence_sec: 0.35  # faster flush for subtitle sessions
+  turn_end_silence_sec: 0.55  # after this much real silence the gated stream is
+                              # padded with silence so the server VAD ends the turn
+  inbound_turn_end_silence_sec: 0.35  # faster turn end for subtitle sessions
   subtitle_partial_interval_sec: 0.15 # live subtitle refresh cadence
   subtitle_finalize_silence_sec: 0.8  # finalize subtitle lines after this silence
   echo_guard_multiplier: 4.0  # gate boost while game audio plays; 1.0 = off

@@ -627,12 +627,17 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.setSpacing(8)
         self._app_mode_group = QtWidgets.QButtonGroup(self)
         self._app_mode_group.setExclusive(True)
+        # product names stay untranslated; "custom" is a word, so it follows
+        # the UI language and is re-read on every language change
         labels = {
             "vrchat": "VRChat",
             "discord": "Discord",
         }
         for mode in config_mod.APP_MODES:
-            btn = QtWidgets.QPushButton(labels.get(mode, mode))
+            btn = QtWidgets.QPushButton(labels.get(mode, ""))
+            if mode not in labels:
+                self._on_retranslate(
+                    lambda b=btn, m=mode: b.setText(self._tr(f"app_mode_{m}")))
             btn.setCheckable(True)
             btn.setProperty("modeButton", True)
             btn.setMinimumSize(112, 52)
@@ -1090,9 +1095,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self._set_app_mode_checked(self._controller.cfg.get("app", {}).get("mode", "vrchat"))
         self._sync_text_only()
         self._dashboard_note.setText(
-            self._tr("msg_mode_applied") if ok else self._tr("msg_saved_start_failed"))
+            self._mode_applied_note() if ok else self._tr("msg_saved_start_failed"))
         self._sync_hotkeys(force=True)
         self._populate_settings()
+
+    def _mode_applied_note(self) -> str:
+        """Custom mode without a target picked yet keeps capturing whatever it
+        was - say so instead of a bare "applied" the user can't act on."""
+        cfg = self._controller.cfg
+        if cfg.get("app", {}).get("mode") == "custom" and not _get_path(
+                cfg, "app.profiles.custom.process"):
+            return self._tr("msg_mode_custom_unset").format(
+                process=_get_path(cfg, "inbound.process") or "?")
+        return self._tr("msg_mode_applied")
 
     def _set_dashboard_apply_enabled(self, enabled: bool) -> None:
         for btn in self._app_mode_buttons.values():

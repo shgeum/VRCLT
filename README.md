@@ -18,6 +18,7 @@ people's speech.
 - SteamVR dashboard settings panel and auto-start with SteamVR (Startup/Overlay Apps registration)
 - VRC Text Only mode for sending translated chatbox text while passing your original voice through
 - Discord mode with Discord process audio capture and VRChat-only features disabled
+- Custom mode for capturing any other app, picked from the processes that are playing audio right now
 - Low-latency raw mic passthrough with separate Gemini resampling for translation
 - GitHub Releases update notification and safe config reset that keeps your API key, saved language lists, UI language, close action, and selected audio devices
 - Downloadable Windows exe from [VRCLT Releases](https://github.com/shgeum/VRCLT/releases)
@@ -133,7 +134,7 @@ China), vrclt can use **Alibaba Qwen3.5 LiveTranslate** instead of Gemini:
       cannot auto-detect them — empty is treated as English. Both can be
       changed later on the Dashboard tab or the SteamVR dashboard panel.
 
-3. Choose the app mode: `vrchat` or `discord`.
+3. Choose the app mode: `vrchat`, `discord`, or `custom` (then pick the app to capture in Settings).
 4. Select your physical microphone as **Mic input**.
 5. Select `CABLE Input` as **Voice output** / translated voice output.
 6. In VRChat or Discord, set the microphone input to **CABLE Output (VB-Audio Virtual Cable)**.
@@ -188,12 +189,14 @@ Qwen notes:
 | --- | --- | --- |
 | `vrchat` | VRChat | Captures `VRChat.exe`, enables OSC chatbox, avatar OSC control, SteamVR subtitles, and wrist UI |
 | `discord` | Discord | Captures the root `Discord.exe` process tree, disables VRChat OSC/SteamVR features, keeps the native PC UI and desktop subtitles active |
+| `custom` | Any other app | Captures the process you pick in Settings, keeps SteamVR subtitles and the wrist menu, disables the VRChat OSC features |
 
 Choose a mode in Settings or pass it for one launch:
 
 ```powershell
 .\vrclt.exe run --app vrchat
 .\vrclt.exe run --app discord
+.\vrclt.exe run --app custom
 ```
 
 For VRChat text-only behavior, enable **Text only** in the Dashboard or
@@ -203,12 +206,19 @@ translated text to the OSC chatbox without translated voice output.
 For Discord Canary or PTB, change the Discord process name in Settings or in
 `app.profiles.discord.process`.
 
+To caption any other app - a browser, a media player, another game - switch to
+**Custom** mode and set **Custom capture process** in Settings. Opening that
+dropdown lists the processes that hold a Windows audio session, with the ones
+playing sound right now marked and sorted first, so you never have to guess an
+exe name. The same picker backs **Capture process**, which is whatever is being
+captured at this moment.
+
 ## Native UI
 
 Dashboard:
 
 - Runtime status and connection state
-- VRChat/Discord mode toggle and VRChat text-only toggle
+- VRChat/Discord/Custom mode toggle and VRChat text-only toggle
 - Translation ON/OFF
 - Subtitles ON/OFF
 - Global PC hotkeys for translation/subtitle toggles
@@ -320,8 +330,8 @@ Top-level and app profile settings:
 | `qwen.voice` | `""` | With cloning `off`: empty = model default voice, or a pre-cloned voice ID (`qwen-translate-vc-...`). |
 | `log_level` | `INFO` | Python logging level. |
 | `meta.last_version` | `""` | Last app version that acknowledged the current config. Used for one-time update reset prompts. |
-| `app.mode` | `vrchat` | Active profile: `vrchat` or `discord`. |
-| `app.profiles.<mode>.process` | `VRChat.exe` / `Discord.exe` | Process captured for inbound subtitles. |
+| `app.mode` | `vrchat` | Active profile: `vrchat`, `discord`, or `custom`. |
+| `app.profiles.<mode>.process` | `VRChat.exe` / `Discord.exe` / empty | Process captured for inbound subtitles. Empty (the custom profile default) keeps the current capture target. |
 | `app.profiles.<mode>.ui_mode` | `auto` / `desktop` | UI mode applied by the profile. |
 | `app.profiles.<mode>.voice_output` | `true` | Enables translated voice output. |
 | `app.profiles.<mode>.passthrough_while_translating` | `false` | Sends raw microphone audio while translation is active. |
@@ -413,8 +423,8 @@ Audio, control, UI, and wrist menu:
 | `audio.mic_idle_disconnect_sec` | `15.0` | Disconnects idle Gemini mic sessions after this many seconds. |
 | `audio.voice_rms_threshold` | `90.0` | Microphone energy gate threshold. |
 | `audio.voice_hangover_sec` | `2.5` | Keeps the mic turn open through short pauses. |
-| `audio.turn_end_silence_sec` | `0.55` | Sends a turn-end hint to Gemini after this much real microphone silence. Lower values can reduce translated voice delay. |
-| `audio.inbound_turn_end_silence_sec` | `0.35` | Sends a faster turn-end hint for inbound subtitle sessions. |
+| `audio.turn_end_silence_sec` | `0.55` | After this much real microphone silence the gated stream is padded with silence so the server voice-activity detector ends the turn and the model finishes the sentence. Lower values can reduce translated voice delay. |
+| `audio.inbound_turn_end_silence_sec` | `0.35` | Same, but faster, for inbound subtitle sessions. |
 | `audio.subtitle_partial_interval_sec` | `0.15` | Live subtitle refresh cadence before a line is finalized. |
 | `audio.subtitle_finalize_silence_sec` | `0.8` | Silence duration before an inbound subtitle line is finalized. |
 | `audio.echo_guard_multiplier` | `4.0` | Raises mic gate while target-app audio is active. `1.0` disables it. |

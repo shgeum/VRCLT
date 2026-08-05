@@ -17,6 +17,7 @@ Live API 翻译你的麦克风音频，通过 VB-Audio Virtual Cable 将翻译�
 - 支持 SteamVR 仪表板设置面板和随 SteamVR 自动启动（注册到启动/叠加层应用）
 - VRChat 仅文本模式: 保留原始语音直通，只向 OSC 聊天框追加翻译文本
 - Discord 模式: 捕获 Discord 进程音频，并自动禁用 VRChat 专用功能
+- 自定义模式: 捕获任意其他应用，从当前正在播放音频的进程中直接选择
 - 原声直通直接使用 48 kHz 原始麦克风流，Gemini 翻译流单独重采样
 - GitHub Releases 更新提醒，以及保留 API 密钥、已保存语言列表、UI 语言、窗口关闭行为和已选择音频设备的安全配置重置
 - 可从 [VRCLT Releases](https://github.com/shgeum/VRCLT/releases) 下载的 Windows exe
@@ -132,7 +133,7 @@ API 密钥会以明文保存在该文件中。
    1. 把 Gemini API 密钥粘贴到 **Gemini API 密钥**（见第 3 节）。引擎设置
       到此为止 — Gemini 会自动检测语音语言。
 
-3. 选择应用模式: `vrchat` 或 `discord`。
+3. 选择应用模式: `vrchat`、`discord` 或 `custom`（选 `custom` 后在设置中选择要捕获的应用）。
 4. **麦克风输入**选择你的真实麦克风。
 5. **语音输出**或翻译语音输出设备选择 `CABLE Input`。
 6. 在 VRChat 或 Discord 中，将麦克风输入设置为 **CABLE Output (VB-Audio Virtual Cable)**。
@@ -185,12 +186,14 @@ Qwen 注意事项:
 | --- | --- | --- |
 | `vrchat` | VRChat | 捕获 `VRChat.exe` 音频，启用 OSC 聊天框、角色 OSC 控制、SteamVR 字幕和手腕 UI |
 | `discord` | Discord | 捕获根 `Discord.exe` 进程树音频，禁用 VRChat OSC/SteamVR 功能，保留 PC UI 和桌面字幕 |
+| `custom` | 任意其他应用 | 捕获在设置中选定的进程，保留 SteamVR 字幕和手腕菜单，禁用 VRChat OSC 功能 |
 
 可以在设置中选择模式，也可以只为一次启动传入参数:
 
 ```powershell
 .\vrclt.exe run --app vrchat
 .\vrclt.exe run --app discord
+.\vrclt.exe run --app custom
 ```
 
 若要在 VRChat 中使用仅文本行为，请在仪表板或设置中启用 **仅文本**。
@@ -200,12 +203,17 @@ Qwen 注意事项:
 如果使用 Discord Canary 或 PTB，请在设置或 `app.profiles.discord.process`
 中修改 Discord 进程名。
 
+若要为其他应用（浏览器、媒体播放器、别的游戏）生成字幕，请切换到 **自定义**
+模式，并在设置中指定 **自定义捕获进程**。打开该下拉列表会列出持有 Windows
+音频会话的进程，当前正在播放声音的会带标记并排在最前，因此无需事先知道 exe
+名称。**捕获进程** 使用同一个选择器，显示此刻实际捕获的目标。
+
 ## 原生 UI
 
 仪表板:
 
 - 运行时状态和连接状态
-- VRChat/Discord 模式切换和 VRChat 仅文本切换
+- VRChat/Discord/自定义 模式切换和 VRChat 仅文本切换
 - 翻译 ON/OFF
 - 字幕 ON/OFF
 - 使用 PC 全局热键切换翻译/字幕
@@ -307,8 +315,8 @@ VRChat 模式可使用:
 | `qwen.voice` | `""` | 复刻为 `off` 时: 留空 = 模型默认音色，或预先复刻的语音 ID（`qwen-translate-vc-...`）。 |
 | `log_level` | `INFO` | Python 日志级别。 |
 | `meta.last_version` | `""` | 当前配置已确认的最后应用版本。用于更新后的一次性重置确认。 |
-| `app.mode` | `vrchat` | 当前配置: `vrchat` 或 `discord`。 |
-| `app.profiles.<mode>.process` | `VRChat.exe` / `Discord.exe` | 入站字幕要捕获的进程。 |
+| `app.mode` | `vrchat` | 当前配置: `vrchat`、`discord` 或 `custom`。 |
+| `app.profiles.<mode>.process` | `VRChat.exe` / `Discord.exe` / 留空 | 入站字幕要捕获的进程。留空（自定义配置的默认值）表示沿用当前捕获目标。 |
 | `app.profiles.<mode>.ui_mode` | `auto` / `desktop` | 此配置应用的 UI 模式。 |
 | `app.profiles.<mode>.voice_output` | `true` | 启用翻译语音输出。 |
 | `app.profiles.<mode>.passthrough_while_translating` | `false` | 翻译过程中也发送原始麦克风音频。 |
@@ -400,8 +408,8 @@ PC 热键:
 | `audio.mic_idle_disconnect_sec` | `15.0` | 麦克风空闲达到此秒数后断开 Gemini 会话。 |
 | `audio.voice_rms_threshold` | `90.0` | 麦克风语音检测能量阈值。 |
 | `audio.voice_hangover_sec` | `2.5` | 在短暂停顿期间保持麦克风回合的时间。 |
-| `audio.turn_end_silence_sec` | `0.55` | 实际麦克风静音达到此秒数后向 Gemini 发送回合结束提示。降低它可能减少翻译语音延迟。 |
-| `audio.inbound_turn_end_silence_sec` | `0.35` | 为入站字幕会话发送更快的回合结束提示。 |
+| `audio.turn_end_silence_sec` | `0.55` | 实际麦克风静音达到此秒数后，补回被门限裁掉的静音，让服务端语音检测结束回合、模型把句子说完。降低它可能减少翻译语音延迟。 |
+| `audio.inbound_turn_end_silence_sec` | `0.35` | 入站字幕会话使用的更快回合结束。 |
 | `audio.subtitle_partial_interval_sec` | `0.15` | 字幕行确认前的实时刷新间隔。 |
 | `audio.subtitle_finalize_silence_sec` | `0.8` | 确认入站字幕行前所需的静音时间。 |
 | `audio.echo_guard_multiplier` | `4.0` | 目标应用音频活跃时提高麦克风门限的倍数。`1.0` 表示禁用。 |

@@ -6,6 +6,7 @@ from ..languages import (
     language_label,
     supported_language_options,
 )
+from . import theme
 
 
 class NoWheelComboBox(QtWidgets.QComboBox):
@@ -17,6 +18,62 @@ class NoWheelComboBox(QtWidgets.QComboBox):
             super().wheelEvent(event)
         else:
             event.ignore()
+
+
+_PLAYING_ICON: "QtGui.QIcon | None" = None
+
+
+def _playing_icon() -> QtGui.QIcon:
+    """Small filled dot marking a process that is playing audio right now."""
+    global _PLAYING_ICON
+    if _PLAYING_ICON is None:
+        pixmap = QtGui.QPixmap(10, 10)
+        pixmap.fill(QtCore.Qt.GlobalColor.transparent)
+        painter = QtGui.QPainter(pixmap)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        painter.setBrush(QtGui.QColor(*theme.ON_GREEN))
+        painter.drawEllipse(1, 1, 8, 8)
+        painter.end()
+        _PLAYING_ICON = QtGui.QIcon(pixmap)
+    return _PLAYING_ICON
+
+
+class AudioProcessCombo(NoWheelComboBox):
+    """Editable process picker that re-lists the apps currently holding an
+    audio session every time the dropdown opens (they come and go), keeping
+    whatever the user typed. Item text stays the bare exe name so reading the
+    field back needs no parsing; playing apps sort first, above a separator.
+    """
+
+    def __init__(self, list_processes, playing_suffix: str = "", parent=None):
+        super().__init__(parent)
+        self._list_processes = list_processes
+        self._playing_suffix = playing_suffix
+        self.setEditable(True)
+        self.setInsertPolicy(QtWidgets.QComboBox.InsertPolicy.NoInsert)
+
+    def showPopup(self) -> None:
+        current = self.currentText()
+        self.blockSignals(True)
+        try:
+            self.clear()
+            self.addItem("")
+            separated = False
+            for name, playing in self._list_processes():
+                if not playing and not separated and self.count() > 1:
+                    self.insertSeparator(self.count())
+                    separated = True
+                self.addItem(_playing_icon() if playing else QtGui.QIcon(), name)
+                if playing and self._playing_suffix:
+                    self.setItemData(self.count() - 1, self._playing_suffix,
+                                     QtCore.Qt.ItemDataRole.ToolTipRole)
+            if current and self.findText(current) < 0:
+                self.addItem(current)   # a target that is not running right now
+            self.setCurrentText(current)
+        finally:
+            self.blockSignals(False)
+        super().showPopup()
 
 
 class NoWheelSpinBox(QtWidgets.QSpinBox):

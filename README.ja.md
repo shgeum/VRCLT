@@ -17,6 +17,7 @@ Cable 経由で対象アプリのマイク入力へ送り、相手の発話は�
 - SteamVR ダッシュボード設定パネルと SteamVR 自動起動（スタートアップ/オーバーレイアプリ登録）対応
 - 元の声をそのまま通し、OSC チャットボックスに翻訳テキストだけを追加する VRChat テキストのみモード
 - Discord プロセス音声キャプチャと、VRChat 専用機能の自動無効化
+- 現在音を出しているプロセスから選んで任意のアプリをキャプチャできるカスタムモード
 - 原音送出は 48 kHz の元マイクストリームを直接使い、Gemini 翻訳用ストリームは別にリサンプリング
 - GitHub Releases の更新通知と、API キー、保存済み言語リスト、UI 言語、ウィンドウを閉じる動作、選択したオーディオデバイスを保持する安全な設定リセット
 - [VRCLT Releases](https://github.com/shgeum/VRCLT/releases) からダウンロードできる Windows exe
@@ -132,7 +133,7 @@ Gemini の代わりに **Alibaba Qwen3.5 LiveTranslate** を使えます。
       英語として扱われます。どちらもダッシュボードタブや SteamVR
       ダッシュボードパネルで後から変更できます。
 
-3. アプリモードを `vrchat` または `discord` にします。
+3. アプリモードを `vrchat`、`discord`、`custom` から選びます (`custom` は設定でキャプチャするアプリを選択)。
 4. **マイク入力**には実際のマイクを選択します。
 5. **音声出力**または翻訳音声出力デバイスには `CABLE Input` を選択します。
 6. VRChat または Discord のマイク入力を **CABLE Output (VB-Audio Virtual Cable)** に設定します。
@@ -187,12 +188,14 @@ Qwen の注意点:
 | --- | --- | --- |
 | `vrchat` | VRChat | `VRChat.exe` の音声をキャプチャし、OSC チャットボックス、アバター OSC 制御、SteamVR 字幕、手首 UI を有効化 |
 | `discord` | Discord | ルート `Discord.exe` プロセスツリーの音声をキャプチャし、VRChat OSC/SteamVR 機能を無効化し、PC UI とデスクトップ字幕は維持 |
+| `custom` | それ以外のアプリ | 設定で選んだプロセスをキャプチャ。SteamVR 字幕と手首メニューは維持し、VRChat OSC 機能は無効化 |
 
 設定でモードを選ぶか、1 回の起動だけ引数で指定できます。
 
 ```powershell
 .\vrclt.exe run --app vrchat
 .\vrclt.exe run --app discord
+.\vrclt.exe run --app custom
 ```
 
 VRChat でテキストのみの挙動にするには、ダッシュボードまたは設定の
@@ -202,12 +205,18 @@ Gemini の翻訳結果は翻訳音声なしで OSC チャットボックスの�
 Discord Canary または PTB を使う場合は、設定または `app.profiles.discord.process`
 で Discord のプロセス名を変更します。
 
+ブラウザ、メディアプレイヤー、別のゲームなど他のアプリを字幕にしたい場合は、
+**カスタム** モードに切り替えて設定の **カスタムキャプチャプロセス** を指定
+します。この一覧を開くと Windows のオーディオセッションを持つプロセスが表示され、
+現在音を出しているものが印付きで先頭に並びます。exe 名を知らなくても選べます。
+**キャプチャプロセス** も同じピッカーで、いま実際にキャプチャしている対象です。
+
 ## ネイティブ UI
 
 ダッシュボード:
 
 - ランタイム状態と接続状態
-- VRChat/Discord モード切り替えと VRChat テキストのみ切り替え
+- VRChat/Discord/カスタム モード切り替えと VRChat テキストのみ切り替え
 - 翻訳 ON/OFF
 - 字幕 ON/OFF
 - PC グローバルホットキーで翻訳/字幕を切り替え
@@ -312,8 +321,8 @@ VR オーバーレイを強制的に有効にするには `ui.mode: vr`、無効
 | `qwen.voice` | `""` | クローンが `off` のとき: 空ならモデル既定の声、またはクローン済みボイスID（`qwen-translate-vc-...`）。 |
 | `log_level` | `INFO` | Python ログレベル。 |
 | `meta.last_version` | `""` | 現在の設定で確認済みの最後のアプリバージョン。更新後の 1 回限りのリセット確認に使います。 |
-| `app.mode` | `vrchat` | 有効なプロファイル: `vrchat` または `discord`。 |
-| `app.profiles.<mode>.process` | `VRChat.exe` / `Discord.exe` | 受信側字幕用にキャプチャするプロセス。 |
+| `app.mode` | `vrchat` | 有効なプロファイル: `vrchat`、`discord`、`custom`。 |
+| `app.profiles.<mode>.process` | `VRChat.exe` / `Discord.exe` / 空欄 | 受信側字幕用にキャプチャするプロセス。空欄 (カスタムプロファイルの既定) は現在のキャプチャ対象を維持します。 |
 | `app.profiles.<mode>.ui_mode` | `auto` / `desktop` | プロファイルが適用する UI モード。 |
 | `app.profiles.<mode>.voice_output` | `true` | 翻訳音声出力を有効にします。 |
 | `app.profiles.<mode>.passthrough_while_translating` | `false` | 翻訳中も元のマイク音声を送ります。 |
@@ -405,8 +414,8 @@ PC ホットキー:
 | `audio.mic_idle_disconnect_sec` | `15.0` | マイク入力がない Gemini セッションを切断するまでの秒数。 |
 | `audio.voice_rms_threshold` | `90.0` | マイク音声検出のエネルギーしきい値。 |
 | `audio.voice_hangover_sec` | `2.5` | 短い間の沈黙中もマイクターンを維持する時間。 |
-| `audio.turn_end_silence_sec` | `0.55` | 実際のマイク無音がこの秒数続いたら Gemini へターン終了ヒントを送ります。低くすると翻訳音声の遅延を減らせる場合があります。 |
-| `audio.inbound_turn_end_silence_sec` | `0.35` | 受信側字幕セッションへより早いターン終了ヒントを送ります。 |
+| `audio.turn_end_silence_sec` | `0.55` | 実際のマイク無音がこの秒数続いたら、ゲートで削られた無音を補って送り、サーバー側の音声検出がターンを終了してモデルが文を言い切れるようにします。低くすると翻訳音声の遅延を減らせる場合があります。 |
+| `audio.inbound_turn_end_silence_sec` | `0.35` | 受信側字幕セッション向けの、より早いターン終了。 |
 | `audio.subtitle_partial_interval_sec` | `0.15` | 字幕行が確定する前のライブ更新間隔。 |
 | `audio.subtitle_finalize_silence_sec` | `0.8` | 受信側字幕行を確定する前に必要な無音時間。 |
 | `audio.echo_guard_multiplier` | `4.0` | 対象アプリ音声が有効な時にマイクゲートを上げる倍率。`1.0` で無効。 |

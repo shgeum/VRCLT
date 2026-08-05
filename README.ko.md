@@ -17,6 +17,7 @@
 - SteamVR 대시보드 설정 패널과 SteamVR 자동 시작(시작/오버레이 앱 등록) 지원
 - 원래 목소리는 그대로 보내고 OSC 챗박스 번역 텍스트만 추가하는 VRChat 텍스트 전용 모드
 - Discord 프로세스 오디오 캡처와 VRChat 전용 기능 자동 비활성화
+- 지금 소리를 내고 있는 프로세스 목록에서 골라 아무 앱이나 캡처하는 커스텀 모드
 - 원음 송출은 48 kHz 원본 마이크 스트림을 바로 사용하고, Gemini 번역용 스트림은 별도로 리샘플링
 - GitHub Releases 업데이트 알림과 API 키, 저장 언어 목록, UI 언어, 창 닫기 동작, 선택한 오디오 장치를 보존하는 안전한 설정 리셋
 - [VRCLT Releases](https://github.com/shgeum/VRCLT/releases)에서 받을 수 있는 Windows exe
@@ -132,7 +133,7 @@ VRChat 또는 Discord가 번역 음성을 마이크처럼 받게 하려면 VB-Au
       간주합니다. 두 값은 나중에 대시보드 탭이나 SteamVR 대시보드 패널에서도
       바꿀 수 있습니다.
 
-3. 앱 모드를 `vrchat` 또는 `discord`로 선택합니다.
+3. 앱 모드를 `vrchat`, `discord`, `custom` 중에서 선택합니다(`custom`은 설정에서 캡처할 앱을 고릅니다).
 4. **마이크 입력**에는 실제 마이크를 선택합니다.
 5. **음성 출력** 또는 번역 음성 출력 장치에는 `CABLE Input`을 선택합니다.
 6. VRChat 또는 Discord의 마이크 입력을 **CABLE Output (VB-Audio Virtual Cable)**으로 설정합니다.
@@ -187,12 +188,14 @@ Qwen 참고 사항:
 | --- | --- | --- |
 | `vrchat` | VRChat | `VRChat.exe` 오디오 캡처, OSC 챗박스, 아바타 OSC 제어, SteamVR 자막, 손목 UI 활성화 |
 | `discord` | Discord | 루트 `Discord.exe` 프로세스 트리 오디오 캡처, VRChat OSC/SteamVR 기능 비활성화, PC UI와 데스크톱 자막 유지 |
+| `custom` | 그 외 아무 앱 | 설정에서 고른 프로세스를 캡처, SteamVR 자막·손목 메뉴는 유지, VRChat OSC 기능은 비활성화 |
 
 설정에서 모드를 고르거나 실행 한 번에만 인자로 지정할 수 있습니다.
 
 ```powershell
 .\vrclt.exe run --app vrchat
 .\vrclt.exe run --app discord
+.\vrclt.exe run --app custom
 ```
 
 VRChat에서 텍스트 전용으로 쓰려면 대시보드 또는 설정의 **텍스트 전용**을
@@ -202,12 +205,18 @@ VRChat에서 텍스트 전용으로 쓰려면 대시보드 또는 설정의 **�
 Discord Canary 또는 PTB를 사용한다면 설정 또는 `app.profiles.discord.process`에서
 프로세스 이름을 바꿉니다.
 
+브라우저, 미디어 플레이어, 다른 게임 등 그 외 앱의 자막을 보려면 **커스텀**
+모드로 바꾸고 설정에서 **커스텀 캡처 프로세스**를 지정합니다. 이 목록을 열면
+Windows 오디오 세션을 가진 프로세스가 나열되며, 지금 소리를 내고 있는 것이
+표시와 함께 맨 위에 옵니다. exe 이름을 미리 알 필요가 없습니다. **캡처
+프로세스** 항목도 같은 선택기를 쓰며, 지금 실제로 캡처 중인 대상을 보여줍니다.
+
 ## 자체 UI
 
 대시보드:
 
 - 런타임 상태와 연결 상태
-- VRChat/Discord 모드 토글과 VRChat 텍스트 전용 토글
+- VRChat/Discord/커스텀 모드 토글과 VRChat 텍스트 전용 토글
 - 번역 ON/OFF
 - 자막 ON/OFF
 - PC 전역 핫키로 번역/자막 토글
@@ -310,8 +319,8 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 | `qwen.voice` | `""` | 복제가 `off`일 때: 비우면 모델 기본 음성, 또는 미리 복제된 음성 ID(`qwen-translate-vc-...`). |
 | `log_level` | `INFO` | Python 로그 레벨. |
 | `meta.last_version` | `""` | 현재 설정에서 확인한 마지막 앱 버전. 업데이트 후 1회 리셋 확인에 사용합니다. |
-| `app.mode` | `vrchat` | 활성 프로필: `vrchat` 또는 `discord`. |
-| `app.profiles.<mode>.process` | `VRChat.exe` / `Discord.exe` | 인바운드 자막용으로 캡처할 프로세스. |
+| `app.mode` | `vrchat` | 활성 프로필: `vrchat`, `discord`, `custom`. |
+| `app.profiles.<mode>.process` | `VRChat.exe` / `Discord.exe` / 빈 값 | 인바운드 자막용으로 캡처할 프로세스. 빈 값(커스텀 프로필 기본)이면 현재 캡처 대상을 그대로 씁니다. |
 | `app.profiles.<mode>.ui_mode` | `auto` / `desktop` | 프로필이 적용하는 UI 모드. |
 | `app.profiles.<mode>.voice_output` | `true` | 번역 음성 출력을 켭니다. |
 | `app.profiles.<mode>.passthrough_while_translating` | `false` | 번역 중에도 원본 마이크 음성을 보냅니다. |
@@ -403,8 +412,8 @@ PC 핫키:
 | `audio.mic_idle_disconnect_sec` | `15.0` | 마이크 입력이 없을 때 Gemini 세션을 끊는 시간. |
 | `audio.voice_rms_threshold` | `90.0` | 마이크 음성 감지 에너지 임계값. |
 | `audio.voice_hangover_sec` | `2.5` | 짧은 멈춤 동안 마이크 턴을 유지하는 시간. |
-| `audio.turn_end_silence_sec` | `0.55` | 실제 마이크 침묵이 이만큼 이어지면 Gemini에 턴 종료 힌트를 보냅니다. 낮출수록 번역 음성 지연이 줄 수 있습니다. |
-| `audio.inbound_turn_end_silence_sec` | `0.35` | 인바운드 자막 세션에 더 빠른 턴 종료 힌트를 보냅니다. |
+| `audio.turn_end_silence_sec` | `0.55` | 실제 마이크 침묵이 이만큼 이어지면 게이트로 잘려나간 무음을 채워 보내, 서버 음성 감지가 턴을 끝내고 모델이 문장을 끝맺도록 합니다. 낮출수록 번역 음성 지연이 줄 수 있습니다. |
+| `audio.inbound_turn_end_silence_sec` | `0.35` | 인바운드 자막 세션용으로 더 빠른 턴 종료. |
 | `audio.subtitle_partial_interval_sec` | `0.15` | 자막 줄이 확정되기 전 실시간으로 갱신하는 주기. |
 | `audio.subtitle_finalize_silence_sec` | `0.8` | 인바운드 자막 줄을 확정하기 전 필요한 침묵 시간. |
 | `audio.echo_guard_multiplier` | `4.0` | 대상 앱 오디오가 활성일 때 마이크 게이트를 높이는 배수. `1.0`이면 비활성. |

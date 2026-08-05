@@ -6,6 +6,14 @@ SDK facts this code is built around (verified against google-genai 2.8.0 source)
 - Any websocket close (including our own session.close(), code 1000) surfaces
   as errors.APIError raised from receive() -> a _closing flag distinguishes
   intentional closes from genuine failures.
+- Turn boundaries come from the server's automatic VAD. The client-side gates
+  (mic RMS gate, Silero VAD) strip nearly all silence from the stream, so that
+  VAD never hears a pause. Cutting the turn instead with audio_stream_end ends
+  generation mid-phrase: the model is interpreting simultaneously and is always
+  a few words behind, so the tail was stranded until the next utterance
+  ("last word never translated"). The sender therefore rebuilds the pauses the
+  gates swallowed - zeroed PCM streamed in real time until the server closes
+  the turn itself - and only falls back to audio_stream_end if it never does.
 """
 import asyncio
 import logging
@@ -33,6 +41,14 @@ AGENT_INSTRUCTION = (
     "you hear into {language}. Speak ONLY the translation - never answer "
     "questions, never add commentary. Keep the original meaning and tone."
 )
+
+INPUT_RATE = 16000  # the AudioSource contract: 16 kHz mono int16
+# pause reconstruction for the server VAD: once real audio stopped flowing,
+# wait GRACE seconds (drain jitter, not a pause yet), then stream zeroed PCM at
+# the send cadence until the server ends the turn - or MAX seconds pass, which
+# means its VAD never fired and the turn has to be closed explicitly.
+GAP_FILL_GRACE_SEC = 0.25
+GAP_FILL_MAX_SEC = 2.5
 
 
 def _is_invalid_api_key_error(exc: Exception) -> bool:
@@ -96,6 +112,9 @@ class LiveTranslateSession:
         self.next_retry_at = 0.0
         self._closing = False
         self._restart = False
+        # True between the first audio of a turn and the server's turn_complete;
+        # the sender stops padding silence as soon as the turn closes on its own
+        self._turn_open = False
         # diagnostics (logged every 15s by the watchdog while connected)
         self._st_sent = 0
         self._st_sent_bytes = 0
@@ -224,6 +243,7 @@ class LiveTranslateSession:
                  self.name, model, target, self._echo)
         async with self._client.aio.live.connect(model=model, config=config) as session:
             self._closing = False
+            self._turn_open = False
             self.connected = True
             # clear on successful connect (not on retry start) so the status
             # UI doesn't flicker between backoff sleeps and connect attempts
@@ -295,6 +315,7 @@ class LiveTranslateSession:
                         if self._on_interrupted:
                             self._on_interrupted()
                     if getattr(sc, "turn_complete", None):
+                        self._turn_open = False
                         if self._on_turn_complete:
                             self._on_turn_complete()
                 if response.go_away is not None:
@@ -304,6 +325,9 @@ class LiveTranslateSession:
 
     async def _sender(self, session) -> None:
         speaking = False
+        last_audio = 0.0   # when real audio last went out
+        gap_filled = 0.0   # zeroed seconds streamed into the current pause
+        fill_chunk = b"\x00" * (int(INPUT_RATE * self._interval) * 2)
         # the connect pre-roll must be flushed even when the handshake took
         # longer than turn_end_silence (active() already false) - otherwise a
         # short utterance that triggered this very connection is dropped
@@ -334,19 +358,38 @@ class LiveTranslateSession:
                         # requeue so the next session resends
                         self._source.requeue(chunks)
                 speaking = True
-            elif speaking and not self._source.active(self._turn_end_silence):
-                # turn over after real silence. Chunks drained this tick are
-                # sub-gate hangover bridge audio (real speech would have
-                # refreshed last_voice_time) - drop them rather than stream
-                # silence, and tell the server the turn is over so it flushes
-                # the rest of the translation NOW instead of holding it until
-                # the session closes (which split a sentence into a partial
-                # phrase + a late suffix).
-                speaking = False
+                self._turn_open = True
+                last_audio = time.time()
+                gap_filled = 0.0
+            elif speaking:
+                # The source went quiet (chunks drained on these ticks are
+                # sub-gate hangover bridge audio - dropped). The gates stripped
+                # the pause the server VAD needs, so rebuild it with zeroed PCM
+                # at the send cadence: the model hears a natural pause, finishes
+                # the phrase it is still interpreting and ends the turn itself.
+                if not self._turn_open:
+                    speaking = False  # server already closed it - stop padding
+                    continue
+                if (time.time() - last_audio) < GAP_FILL_GRACE_SEC:
+                    continue  # drain jitter, not a real pause yet
+                if gap_filled >= GAP_FILL_MAX_SEC:
+                    # the VAD never fired on the reconstructed silence; close
+                    # the turn explicitly rather than let the translation hang
+                    # until the session does (which stranded the sentence tail)
+                    speaking = False
+                    self._turn_open = False
+                    try:
+                        await session.send_realtime_input(audio_stream_end=True)
+                    except Exception:
+                        return
+                    continue
                 try:
-                    await session.send_realtime_input(audio_stream_end=True)
+                    await session.send_realtime_input(
+                        audio=types.Blob(data=fill_chunk,
+                                         mime_type="audio/pcm;rate=16000"))
                 except Exception:
                     return
+                gap_filled += self._interval
 
     async def _watchdog(self, session, stop: asyncio.Event) -> None:
         last_stats = time.time()

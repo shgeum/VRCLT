@@ -47,7 +47,8 @@ GROUPS: tuple = (
         F("qwen.voice_clone", "qwen_voice_clone"),
         F("qwen.voice", "text"),
         F("app.mode", "appmode"),
-        F("app.profiles.discord.process", "text"),
+        F("app.profiles.discord.process", "audio_process"),
+        F("app.profiles.custom.process", "audio_process"),
     )),
     ("grp_lang", (
         F("outbound.target_language", "language"),
@@ -75,7 +76,7 @@ GROUPS: tuple = (
         F("outbound.tts_device", "output_device"),
         F("outbound.monitor_device", "output_device"),
         F("inbound.audio_device", "output_device"),
-        F("inbound.process", "text"),
+        F("inbound.process", "audio_process"),
     )),
     ("grp_audio", (
         F("outbound.tts_gain", "float", min=0.0, max=2.0, step=0.05),

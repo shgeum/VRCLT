@@ -37,6 +37,9 @@ STRINGS = {
     "tab_settings": {"ko": "설정", "en": "Settings", "ja": "設定", "zh": "设置"},
     "tab_logs": {"ko": "로그/정보", "en": "Logs/About", "ja": "ログ/情報", "zh": "日志/关于"},
     "label_app_mode": {"ko": "앱 모드", "en": "App mode", "ja": "アプリモード", "zh": "应用模式"},
+    "app_mode_custom": {"ko": "커스텀", "en": "Custom", "ja": "カスタム", "zh": "自定义"},
+    "process_playing": {"ko": "지금 소리를 내고 있는 앱", "en": "Playing audio right now",
+                        "ja": "現在音を出しているアプリ", "zh": "当前正在播放音频"},
     "label_out_lang": {"ko": "출력 언어", "en": "Output language", "ja": "出力言語", "zh": "输出语言"},
     "label_sub_lang": {"ko": "자막 언어", "en": "Subtitle language", "ja": "字幕言語", "zh": "字幕语言"},
     "label_pc_sub_size": {"ko": "PC 자막 크기", "en": "PC subtitle size",
@@ -264,6 +267,15 @@ STRINGS = {
                           "ja": "アプリモードを適用中...", "zh": "正在应用模式..."},
     "msg_mode_applied": {"ko": "앱 모드 적용됨", "en": "App mode applied",
                          "ja": "アプリモードを適用しました", "zh": "应用模式已生效"},
+    "msg_mode_custom_unset": {
+        "ko": "커스텀 모드 적용됨 - 아직 {process}를 캡처 중입니다. "
+              "설정 > 커스텀 캡처 프로세스에서 앱을 고르세요.",
+        "en": "Custom mode applied - still capturing {process}. "
+              "Pick an app in Settings > Custom capture process.",
+        "ja": "カスタムモードを適用 - まだ {process} をキャプチャ中です。"
+              "設定 > カスタムキャプチャプロセスでアプリを選んでください。",
+        "zh": "自定义模式已生效 — 当前仍在捕获 {process}。"
+              "请在设置 > 自定义捕获进程中选择应用。"},
     "msg_text_only_failed": {"ko": "텍스트 전용 적용 실패", "en": "Text-only apply failed",
                              "ja": "テキストのみ適用失敗", "zh": "仅文本模式应用失败"},
     "msg_text_only_applying": {"ko": "텍스트 전용 적용 중...", "en": "Applying text-only mode...",
@@ -342,6 +354,8 @@ STRINGS = {
                    "ja": "既定の実行対象", "zh": "默认应用目标"},
     "f.app.profiles.discord.process": {"ko": "Discord 캡처 프로세스", "en": "Discord capture process",
                                         "ja": "Discordキャプチャプロセス", "zh": "Discord 捕获进程"},
+    "f.app.profiles.custom.process": {"ko": "커스텀 캡처 프로세스", "en": "Custom capture process",
+                                      "ja": "カスタムキャプチャプロセス", "zh": "自定义捕获进程"},
     "f.outbound.target_language": {"ko": "기본 출력 언어", "en": "Default output language",
                                    "ja": "既定の出力言語", "zh": "默认输出语言"},
     "f.outbound.source_language": {"ko": "내 발화 언어 (Qwen 필수)",
@@ -749,6 +763,15 @@ STRINGS = {
         "en": "Process name whose audio is captured in Discord mode (e.g. Discord.exe).",
         "ja": "Discordモードで相手音声をキャプチャするプロセス名 (例: Discord.exe)。",
         "zh": "Discord 模式下捕获对方语音的进程名（如 Discord.exe）。"},
+    "f.app.profiles.custom.process.tip": {
+        "ko": "커스텀 모드에서 캡처할 앱. 목록을 열면 지금 소리를 내는 앱이 먼저 표시됩니다. "
+              "비워두면 현재 캡처 대상을 그대로 씁니다.",
+        "en": "App captured in Custom mode. Opening the list shows the apps playing "
+              "audio right now first. Empty = keep the current capture target.",
+        "ja": "カスタムモードでキャプチャするアプリ。一覧を開くと現在音を出しているアプリが"
+              "先に表示されます。空欄 = 現在のキャプチャ対象を維持。",
+        "zh": "自定义模式下捕获的应用。打开列表时会优先显示当前正在播放音频的应用。"
+              "留空 = 保持当前捕获目标。"},
     "f.outbound.source_language.tip": {
         "ko": "Qwen 전용 — 자동 감지가 없어 내가 말하는 언어를 지정해야 합니다. "
               "비우면 영어로 간주, Gemini는 무시.",
@@ -805,11 +828,14 @@ STRINGS = {
         "ja": "翻訳音声を自分でも聞きたい場合にヘッドホンを指定します。空欄 = オフ。",
         "zh": "想自己也听到翻译语音时，在此指定耳机。留空 = 关闭。"},
     "f.inbound.process.tip": {
-        "ko": "상대 음성을 캡처할 앱의 프로세스 이름 (VRChat 모드: VRChat.exe). "
-              "이 앱의 소리가 자막으로 변환됩니다.",
-        "en": "Process whose audio is captured for subtitles (VRChat mode: VRChat.exe).",
-        "ja": "字幕用に音声をキャプチャするアプリのプロセス名 (VRChatモード: VRChat.exe)。",
-        "zh": "为字幕捕获音频的应用进程名（VRChat 模式：VRChat.exe）。"},
+        "ko": "지금 캡처 중인 앱 (VRChat 모드: VRChat.exe). 이 앱의 소리가 자막으로 변환됩니다. "
+              "목록을 열면 소리를 내고 있는 앱이 먼저 표시됩니다.",
+        "en": "App captured right now (VRChat mode: VRChat.exe); its audio becomes "
+              "subtitles. Opening the list shows the apps playing audio first.",
+        "ja": "現在キャプチャ中のアプリ (VRChatモード: VRChat.exe)。この音声が字幕になります。"
+              "一覧を開くと音を出しているアプリが先に表示されます。",
+        "zh": "当前捕获的应用（VRChat 模式：VRChat.exe），其音频将转为字幕。"
+              "打开列表时会优先显示正在播放音频的应用。"},
     "f.audio.voice_rms_threshold.tip": {
         "ko": "마이크 음성 감지 문턱값. 소음이 오인식되면 올리고, 말이 잘리면 낮추세요. "
               "대시보드의 마이크 레벨 미터로 확인할 수 있습니다.",

@@ -17,9 +17,11 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from .. import config as config_mod
 from .. import i18n
+from ..audio import sessions as audio_sessions
 from . import settings_schema
 from .settings_schema import FieldSpec
 from .widgets import (
+    AudioProcessCombo,
     AxesField,
     HotkeyEdit,
     NoWheelComboBox,
@@ -290,6 +292,11 @@ class SettingsForm:
             w = NoWheelComboBox()
             w.addItems(list(config_mod.QWEN_VOICE_CLONE_MODES))
             w.setCurrentText(str(value or "once"))
+            return w
+        if kind == "audio_process":
+            w = AudioProcessCombo(audio_sessions.audio_processes,
+                                  self._tr("process_playing"))
+            w.setCurrentText("" if value is None else str(value))
             return w
         if kind in ("input_device", "output_device"):
             w = NoWheelComboBox()
