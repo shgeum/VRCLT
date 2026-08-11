@@ -65,7 +65,7 @@ class PcmPlayer:
                 stream = sd.RawOutputStream(
                     device=self._device_index, samplerate=self._rate, channels=1,
                     dtype="int16", blocksize=self._blocksize, latency="low",
-                    extra_settings=sd.WasapiSettings(auto_convert=True),
+                    extra_settings=devices.extra_settings(),
                 )
                 stream.start()
                 return stream

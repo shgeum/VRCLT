@@ -26,6 +26,7 @@ import sounddevice as sd
 import soxr
 
 from . import devices
+from .. import platform_support
 
 log = logging.getLogger(__name__)
 
@@ -181,8 +182,9 @@ class MicCapture:
         kwargs = dict(device=idx, samplerate=CAPTURE_RATE, channels=1, dtype="int16",
                       blocksize=self._blocksize, latency=latency,
                       callback=self._make_callback(rs))
-        if api == "Windows WASAPI":
-            kwargs["extra_settings"] = sd.WasapiSettings(auto_convert=True)
+        settings = devices.extra_settings(api)
+        if settings is not None:
+            kwargs["extra_settings"] = settings
         s = sd.RawInputStream(**kwargs)
         if start:
             s.start()
@@ -210,11 +212,12 @@ class MicCapture:
                              "(Gemini %d Hz, gate RMS %.0f, hangover %.1fs, latency=%s)",
                              idx, name, api, CAPTURE_RATE, RATE, self._threshold,
                              self._hangover, latency or "default")
-                    if api != "Windows WASAPI":
-                        log.warning("mic opened via %s (HIGH latency). WASAPI was busy "
+                    best = self._best_api()
+                    if best and api != best:
+                        log.warning("mic opened via %s (HIGH latency). %s was busy "
                                     "(VRChat probing the mic?); will auto-upgrade to "
-                                    "WASAPI in the background.", api)
-                        self._start_upgrade(candidates)
+                                    "%s in the background.", api, best, best)
+                        self._start_upgrade(candidates, best)
                     return
                 except Exception as e:
                     last_err = e
@@ -232,26 +235,34 @@ class MicCapture:
             "The mic may be held by another app - set VRChat's microphone to "
             "'CABLE Output', not this mic.")
 
-    # ---------------- background WASAPI upgrade ----------------
-    def _start_upgrade(self, candidates: list[tuple[int, str]]) -> None:
-        wasapi = next(((idx, api) for idx, api in candidates if api == "Windows WASAPI"), None)
-        if wasapi is None:
+    # ---------------- background host-API upgrade ----------------
+    @staticmethod
+    def _best_api() -> str:
+        """Lowest-latency host API on this platform (WASAPI on Windows).
+        Empty when the platform has only one, so no upgrade is attempted."""
+        order = platform_support.host_api_order()
+        return order[0] if len(order) > 1 else ""
+
+    def _start_upgrade(self, candidates: list[tuple[int, str]], best: str) -> None:
+        target = next(((idx, api) for idx, api in candidates if api == best), None)
+        if target is None:
             return
         self._upgrade_stop.clear()
         self._upgrade_thread = threading.Thread(
-            target=self._upgrade_loop, args=(wasapi[0],), daemon=True, name="vrclt-mic-upgrade")
+            target=self._upgrade_loop, args=(target[0], best), daemon=True,
+            name="vrclt-mic-upgrade")
         self._upgrade_thread.start()
 
-    def _upgrade_loop(self, wasapi_idx: int) -> None:
+    def _upgrade_loop(self, target_idx: int, target_api: str) -> None:
         while not self._upgrade_stop.wait(UPGRADE_INTERVAL):
-            if self._current_api == "Windows WASAPI":
+            if self._current_api == target_api:
                 return
             new = None
             new_rs = None
             for latency in ("low", None):
                 try:
                     new_rs = soxr.ResampleStream(CAPTURE_RATE, RATE, 1, dtype="float32")
-                    new = self._open(wasapi_idx, "Windows WASAPI", latency, new_rs,
+                    new = self._open(target_idx, target_api, latency, new_rs,
                                      start=False)
                     break
                 except Exception:
@@ -273,7 +284,7 @@ class MicCapture:
                 else:
                     prev = (self._stream, self._rs, self._current_api)
                     self._stream, self._rs, self._current_api = \
-                        new, new_rs, "Windows WASAPI"
+                        new, new_rs, target_api
                     try:
                         new.start()
                     except Exception:
@@ -295,7 +306,8 @@ class MicCapture:
                     old.close()
                 except Exception:
                     pass
-            log.info("mic upgraded to WASAPI (low latency) - outbound is now fast")
+            log.info("mic upgraded to %s (low latency) - outbound is now fast",
+                     target_api)
             return
 
     # ---------------- source interface ----------------

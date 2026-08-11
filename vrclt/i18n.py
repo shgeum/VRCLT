@@ -321,10 +321,20 @@ STRINGS = {
         "en": "Qwen intl endpoint requires a Model Studio workspace ID.",
         "ja": "Qwen intlサーバーにはModel StudioワークスペースIDが必要です。",
         "zh": "Qwen intl 服务器需要 Model Studio 工作空间 ID。"},
+    "err_openai_api_key_url": {"ko": "API 키에는 URL이 아니라 OpenAI API 키를 입력해야 합니다.",
+                               "en": "Enter an OpenAI API key, not a URL.",
+                               "ja": "URLではなくOpenAI APIキーを入力してください。",
+                               "zh": "请输入 OpenAI API 密钥，而不是 URL。"},
+    "err_openai_api_key_empty": {"ko": "OpenAI API 키가 비어 있습니다.",
+                                 "en": "OpenAI API key is empty.",
+                                 "ja": "OpenAI APIキーが空です。",
+                                 "zh": "OpenAI API 密钥为空。"},
     "default_device": {"ko": "(기본)", "en": "(default)", "ja": "(既定)", "zh": "(默认)"},
     # ---- settings field labels ----
-    "f.provider": {"ko": "번역 엔진 (gemini | qwen)", "en": "Translation engine (gemini | qwen)",
-                   "ja": "翻訳エンジン (gemini | qwen)", "zh": "翻译引擎 (gemini | qwen)"},
+    "f.provider": {"ko": "번역 엔진 (gemini | qwen | openai)",
+                   "en": "Translation engine (gemini | qwen | openai)",
+                   "ja": "翻訳エンジン (gemini | qwen | openai)",
+                   "zh": "翻译引擎 (gemini | qwen | openai)"},
     "f.api_key": {"ko": "Gemini API 키", "en": "Gemini API key",
                   "ja": "Gemini APIキー", "zh": "Gemini API 密钥"},
     "f.model": {"ko": "Gemini 모델", "en": "Gemini model",
@@ -350,6 +360,25 @@ STRINGS = {
                      "en": "Qwen voice ID (when cloning off; empty = default)",
                      "ja": "QwenボイスID (クローンoff時, 空欄 = 既定)",
                      "zh": "Qwen 语音 ID（复刻 off 时，留空 = 默认）"},
+    "f.openai.api_key": {"ko": "OpenAI API 키", "en": "OpenAI API key",
+                         "ja": "OpenAI APIキー", "zh": "OpenAI API 密钥"},
+    "f.openai.model": {"ko": "OpenAI 번역 모델", "en": "OpenAI translation model",
+                       "ja": "OpenAI翻訳モデル", "zh": "OpenAI 翻译模型"},
+    "f.openai.transcribe_model": {
+        "ko": "OpenAI 원문 인식 모델 - 챗박스 (비우면 번역만)",
+        "en": "OpenAI source ASR - chatbox (empty = translation only)",
+        "ja": "OpenAI原文認識モデル - チャットボックス (空欄 = 翻訳のみ)",
+        "zh": "OpenAI 原文识别模型 - 聊天框（留空 = 仅翻译）"},
+    "f.openai.inbound_transcribe_model": {
+        "ko": "OpenAI 원문 인식 모델 - 자막 (기본: 비움 = 번역만)",
+        "en": "OpenAI source ASR - subtitles (default: empty = translation only)",
+        "ja": "OpenAI原文認識モデル - 字幕 (既定: 空欄 = 翻訳のみ)",
+        "zh": "OpenAI 原文识别模型 - 字幕（默认留空 = 仅翻译）"},
+    "f.openai.noise_reduction": {
+        "ko": "OpenAI 입력 잡음 억제 (near_field=헤드셋 | far_field=룸)",
+        "en": "OpenAI input noise reduction (near_field | far_field)",
+        "ja": "OpenAI入力ノイズ抑制 (near_field=ヘッドセット | far_field=室内)",
+        "zh": "OpenAI 输入降噪（near_field=头戴麦 | far_field=房间麦）"},
     "f.app.mode": {"ko": "기본 실행 대상", "en": "Default app target",
                    "ja": "既定の実行対象", "zh": "默认应用目标"},
     "f.app.profiles.discord.process": {"ko": "Discord 캡처 프로세스", "en": "Discord capture process",
@@ -457,6 +486,10 @@ STRINGS = {
                                    "ja": "VAD保持 (秒)", "zh": "VAD 保持 (秒)"},
     "f.inbound.play_audio": {"ko": "인바운드 음성 재생", "en": "Play inbound voice",
                              "ja": "受信音声を再生", "zh": "播放接收语音"},
+    "f.inbound.allow_system_audio": {"ko": "전체 시스템 소리 캡처 허용",
+                                     "en": "Allow whole-desktop capture",
+                                     "ja": "システム全体の音声取り込みを許可",
+                                     "zh": "允许捕获整个系统声音"},
     "f.outbound.chatbox": {"ko": "VRChat 챗박스 전송", "en": "Send to VRChat chatbox",
                            "ja": "VRChatチャットボックス送信", "zh": "发送到 VRChat 聊天框"},
     "f.osc.ip": {"ko": "OSC IP", "en": "OSC IP", "ja": "OSC IP", "zh": "OSC IP"},
@@ -720,6 +753,61 @@ STRINGS = {
               "ありません。空欄の場合はDASHSCOPE_API_KEY環境変数を使用。",
         "zh": "DashScope 的 sk-… 密钥。密钥按区域（intl/beijing）发放且不通用。"
               "留空时使用 DASHSCOPE_API_KEY 环境变量。"},
+    "f.openai.api_key.tip": {
+        "ko": "platform.openai.com/api-keys 의 sk-… 키. 비우면 OPENAI_API_KEY 환경변수 사용.",
+        "en": "sk-... key from platform.openai.com/api-keys. If empty, the OPENAI_API_KEY "
+              "environment variable is used.",
+        "ja": "platform.openai.com/api-keys のsk-…キー。空欄の場合はOPENAI_API_KEY環境変数を使用。",
+        "zh": "platform.openai.com/api-keys 的 sk-… 密钥。留空时使用 OPENAI_API_KEY 环境变量。"},
+    "f.openai.model.tip": {
+        "ko": "gpt-realtime-translate: 음성을 바로 번역 음성으로 바꾸는 전용 모델. 대상 언어는 "
+              "세션당 하나이며 13개 언어(en·es·pt·fr·ja·ru·zh·de·ko·hi·id·vi·it)만 말합니다. "
+              "내 목소리 특성은 자동으로 따라가며 음성 선택 옵션은 없습니다.",
+        "en": "gpt-realtime-translate: speech-to-speech translation. One target language per "
+              "session, and it speaks only 13 (en, es, pt, fr, ja, ru, zh, de, ko, hi, id, "
+              "vi, it). The voice adapts to the speaker; there is no voice option.",
+        "ja": "gpt-realtime-translate: 音声をそのまま翻訳音声にする専用モデル。対象言語は"
+              "セッションごとに1つで、13言語 (en·es·pt·fr·ja·ru·zh·de·ko·hi·id·vi·it) のみ"
+              "話せます。声は話者に合わせて自動調整され、ボイス選択はありません。",
+        "zh": "gpt-realtime-translate：语音直接转为翻译语音的专用模型。每个会话一种目标语言，"
+              "且仅能说 13 种（en·es·pt·fr·ja·ru·zh·de·ko·hi·id·vi·it）。声音自动贴合说话人，"
+              "无音色选项。"},
+    "f.openai.transcribe_model.tip": {
+        "ko": "아웃바운드(내 목소리) 세션에서 원문을 인식하는 ASR. VRChat 챗박스가 원문을 "
+              "번역문 위에 표시하려면 필요합니다(OSC의 '챗박스에 원문 표시'). 비우면 챗박스에 "
+              "번역문만 나오고 분당 전사 요금이 빠집니다. 원문 언어는 항상 자동 감지입니다.",
+        "en": "The ASR that transcribes the original in the outbound (your voice) session. "
+              "Required for the VRChat chatbox to print the source above the translation "
+              "(OSC 'Show source in chatbox'). Empty leaves the chatbox translation-only and "
+              "drops the per-minute charge. The source language is always auto-detected.",
+        "ja": "送信側（自分の声）セッションで原文を認識するASR。VRChatチャットボックスが原文を"
+              "翻訳の上に表示するために必要です（OSCの「チャットボックスに原文表示」）。空欄なら"
+              "翻訳のみとなり分単位の課金も外れます。原文言語は常に自動検出です。",
+        "zh": "在出站（你的声音）会话中识别原文的 ASR。VRChat 聊天框要在翻译上方显示原文时需要"
+              "（OSC 的\"聊天框显示原文\"）。留空则聊天框只显示翻译，并省去按分钟计费。"
+              "原文语言始终自动检测。"},
+    "f.openai.inbound_transcribe_model.tip": {
+        "ko": "인바운드(상대 목소리) 세션에서 원문을 인식하는 ASR. 기본값은 비움 — 자막에 "
+              "번역문만 나오고 분당 전사 요금도 붙지 않습니다. 자막에 원문도 띄우려면 "
+              "gpt-realtime-whisper를 넣고 오버레이의 '원문도 표시'를 켜세요.",
+        "en": "The ASR that transcribes the original in the inbound (others' voices) session. "
+              "Empty by default — subtitles show the translation only and the per-minute "
+              "charge is avoided. To show the original too, set gpt-realtime-whisper and "
+              "enable the overlay's 'Show source' option.",
+        "ja": "受信側（相手の声）セッションで原文を認識するASR。既定は空欄で、字幕は翻訳のみ、"
+              "分単位の課金も発生しません。字幕に原文も出すには gpt-realtime-whisper を指定し、"
+              "オーバーレイの「原文も表示」を有効にします。",
+        "zh": "在入站（他人声音）会话中识别原文的 ASR。默认留空 — 字幕只显示翻译，也不产生按分钟"
+              "计费的费用。想在字幕中同时显示原文时，填 gpt-realtime-whisper 并开启叠加层的"
+              "\"同时显示原文\"。"},
+    "f.openai.noise_reduction.tip": {
+        "ko": "near_field = 헤드셋/입 가까운 마이크, far_field = 방 안 거리 마이크. "
+              "비우면 서버 잡음 억제를 사용하지 않습니다.",
+        "en": "near_field = headset/close mic; far_field = room mic. Empty disables the "
+              "server-side noise reduction.",
+        "ja": "near_field = ヘッドセット/口元マイク、far_field = 室内の離れたマイク。"
+              "空欄でサーバー側ノイズ抑制を使用しません。",
+        "zh": "near_field = 头戴/近讲麦克风；far_field = 房间麦克风。留空则不使用服务端降噪。"},
     "f.qwen.endpoint.tip": {
         "ko": "intl = 국제(싱가포르, Model Studio), beijing = 중국 본토(Bailian). "
               "API 키는 각 서버 전용입니다.",
@@ -944,6 +1032,19 @@ STRINGS = {
         "en": "During echo guard, your own louder speech above this multiplier still passes.",
         "ja": "エコーガード中でも、この倍率を超える自分の声は通します。",
         "zh": "回声防护期间，超过此倍数的你的语音仍可通过。"},
+    "f.inbound.allow_system_audio.tip": {
+        "ko": "프로세스 단위 캡처는 Windows 11(빌드 20348+)에서만 됩니다. 지원되지 않을 때 "
+              "이 옵션을 켜면 선택한 앱 대신 시스템 전체 소리를 캡처합니다(다른 앱 소리와 "
+              "내 번역 음성까지 자막이 됩니다). 꺼두면 인바운드가 시작되지 않습니다.",
+        "en": "Per-process capture requires Windows 11 (build 20348+). Where it is "
+              "unavailable, turning this on captures the whole desktop instead of the "
+              "selected app - other apps and your own translated voice get subtitled. "
+              "Off keeps inbound from starting.",
+        "ja": "プロセス単位のキャプチャは Windows 11 (ビルド 20348+) が必要です。利用できない "
+              "環境でこれをオンにすると、選択したアプリではなくシステム全体の音声を取り込みます"
+              "（他アプリの音や自分の翻訳音声も字幕化されます）。オフなら受信側は開始しません。",
+        "zh": "按进程捕获需要 Windows 11（内部版本 20348+）。在不支持的环境中开启此项会捕获整个"
+              "系统声音而非所选应用（其他应用的声音和你自己的翻译语音也会被转写）。关闭则不启动入站。"},
     "f.inbound.vad_enabled.tip": {
         "ko": "Silero VAD로 말소리만 API에 보냅니다(음악/효과음 차단). 끄면 모든 소리를 보냅니다.",
         "en": "Send only detected speech to the API (filters music/SFX). Off = send everything.",

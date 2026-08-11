@@ -1,16 +1,17 @@
-"""Logging: console + rotating file in %LOCALAPPDATA%/vrclt/logs.
+"""Logging: console + rotating file under the per-user app data directory.
 
 File I/O goes through a QueueListener thread so hot paths never block on disk.
 """
 import atexit
 import logging
 import logging.handlers
-import os
 import queue
 import sys
 from pathlib import Path
 
-LOG_DIR = Path(os.environ.get("LOCALAPPDATA", ".")) / "vrclt" / "logs"
+from . import platform_support
+
+LOG_DIR = platform_support.app_data_dir() / "logs"
 
 
 def setup(level: str = "INFO", console: bool | None = None) -> Path:

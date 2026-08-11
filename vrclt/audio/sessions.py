@@ -1,16 +1,22 @@
-"""Enumerate processes that own a Windows audio session (render endpoints).
+"""Enumerate the processes the inbound tap could capture, best candidates first.
 
-Feeds the settings "capture process" picker: instead of typing an exe name,
-the user picks from the apps that actually produce sound right now - which is
-exactly the set the inbound process tap can capture.
+Feeds the settings "capture process" picker: instead of typing an exe name, the
+user picks from a list of real applications.
 
-Implemented on raw ctypes COM (MMDevice / IAudioSessionManager2) rather than
-pycaw+comtypes: no extra dependency, and nothing for the frozen build to miss.
-The vtable indices below are the documented method order of each interface;
-IUnknown occupies slots 0-2 in all of them.
+Windows lists the owners of an audio session on the render endpoints - exactly
+the apps producing sound right now. Implemented on raw ctypes COM (MMDevice /
+IAudioSessionManager2) rather than pycaw+comtypes: no extra dependency, and
+nothing for the frozen build to miss. The vtable indices below are the
+documented method order of each interface; IUnknown occupies slots 0-2 in all
+of them. COM runs on a throwaway thread so this never initializes (or tears
+down) an apartment on the Qt/VR thread that calls it.
 
-COM runs on a throwaway thread so this never initializes (or tears down) an
-apartment on the Qt/VR thread that calls it.
+macOS has no equivalent read-only "who is playing" query without extra
+entitlements, so it lists running bundled applications (the ones ProcTap's
+ScreenCaptureKit backend can resolve to a bundle ID) and reports none of them
+as playing.
+
+Anywhere else the list is empty and the picker degrades to a plain text field.
 """
 from __future__ import annotations
 
@@ -22,6 +28,8 @@ from ctypes import POINTER, byref, c_int, c_uint32, c_void_p
 from ctypes.wintypes import DWORD
 
 import psutil
+
+from .. import platform_support
 
 log = logging.getLogger(__name__)
 
@@ -151,10 +159,14 @@ def _device_sessions(device: _Com, iid_mgr: _GUID) -> list[tuple[int, bool]]:
 
 
 def audio_processes() -> list[tuple[str, bool]]:
-    """[(exe name, currently playing)] for every process holding an audio
-    session, deduplicated by name, playing ones first. Empty on any failure -
+    """[(process name, currently playing)] for the capture candidates on this
+    platform, deduplicated by name, playing ones first. Empty on any failure -
     the picker stays usable as a plain text field.
     """
+    if platform_support.IS_MACOS:
+        return _macos_applications()
+    if not platform_support.IS_WINDOWS:
+        return []
     result: queue.Queue = queue.Queue(maxsize=1)
 
     def work():
@@ -172,6 +184,29 @@ def audio_processes() -> list[tuple[str, bool]]:
         log.warning("audio session enumeration timed out")
         return []
     return _names_for(pids)
+
+
+def _macos_applications() -> list[tuple[str, bool]]:
+    """Running .app bundles, by executable name.
+
+    A macOS GUI application runs from `<Name>.app/Contents/MacOS/<exe>`, which
+    is exactly the shape ProcTap's ScreenCaptureKit backend needs to resolve a
+    bundle ID from a PID. Helper processes live under the same path, so keep
+    only the executable whose name matches its bundle.
+    """
+    found: dict[str, bool] = {}
+    for proc in psutil.process_iter(["name", "exe"]):
+        try:
+            exe = proc.info.get("exe") or ""
+            name = proc.info.get("name") or ""
+            if not name or "/Contents/MacOS/" not in exe:
+                continue
+            bundle = exe.split("/Contents/MacOS/", 1)[0].rsplit("/", 1)[-1]
+            if bundle.endswith(".app") and bundle[:-4] == name:
+                found.setdefault(name, False)
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+    return sorted(found.items(), key=lambda item: item[0].lower())
 
 
 def _names_for(pids: list[tuple[int, bool]]) -> list[tuple[str, bool]]:

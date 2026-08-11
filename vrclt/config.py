@@ -9,16 +9,21 @@ from pathlib import Path
 
 import yaml
 
+from . import platform_support
 from .resources import bundled_font
 
 log = logging.getLogger(__name__)
 
 APP_MODES = ("vrchat", "discord", "custom")
 CLOSE_ACTIONS = ("tray", "exit")
-PROVIDERS = ("gemini", "qwen")
+PROVIDERS = ("gemini", "qwen", "openai")
 QWEN_ENDPOINTS = ("intl", "beijing")
 QWEN_VOICE_CLONE_MODES = ("once", "always", "off")
-APPDATA_DIR = Path(os.environ.get("LOCALAPPDATA", ".")) / "vrclt"
+# source-transcript ASR inside a gpt-realtime-translate session; "" = no
+# original-language subtitles (and no transcription charge)
+OPENAI_TRANSCRIBE_MODELS = ("gpt-realtime-whisper", "gpt-live-transcribe", "")
+OPENAI_NOISE_REDUCTION = ("near_field", "far_field", "")
+APPDATA_DIR = platform_support.app_data_dir()
 # clamps for overlay.* config values, shared by the VR subtitle panel,
 # the controller, and both UIs (keep the panel and its callers in sync)
 OVERLAY_MIN_WIDTH_M = 0.45
@@ -34,6 +39,7 @@ RESET_PRESERVE_PATHS = (
     ("qwen", "endpoint"),
     ("qwen", "workspace_id"),
     ("qwen", "base_url"),
+    ("openai", "api_key"),
     ("outbound", "source_language"),
     ("inbound", "source_language"),
     ("control", "languages"),
@@ -90,11 +96,25 @@ DEFAULTS = {
                                         # default voice, or a pre-cloned voice ID
                                         # (qwen-translate-vc-...)
     },
+    "openai": {                         # OpenAI realtime translation
+        "api_key": "",                  # empty -> use OPENAI_API_KEY env var
+        "model": "gpt-realtime-translate",   # speech-to-speech translation;
+                                        # one target language per session
+        # ASR that produces the original-language line inside the same session,
+        # billed per minute on top of the translation. Split per pipeline
+        # because the two consume it differently: the outbound chatbox prints
+        # the source above the translation (osc.show_source), while inbound
+        # subtitles normally show the translation alone.
+        "transcribe_model": "gpt-realtime-whisper",   # outbound / chatbox
+        "inbound_transcribe_model": "",               # subtitles: translation only
+        "noise_reduction": "near_field",  # near_field (headset/close mic) |
+                                        # far_field (room mic) | "" = off
+    },
     "app": {
         "mode": "vrchat",              # vrchat | discord | custom
         "profiles": {
             "vrchat": {
-                "process": "VRChat.exe",
+                "process": platform_support.process_name("VRChat"),
                 "ui_mode": "auto",
                 "voice_output": True,
                 "passthrough_while_translating": False,
@@ -104,7 +124,7 @@ DEFAULTS = {
                 "wrist_ui": True,
             },
             "discord": {
-                "process": "Discord.exe",
+                "process": platform_support.process_name("Discord"),
                 "ui_mode": "desktop",
                 "voice_output": True,
                 "passthrough_while_translating": False,
@@ -146,7 +166,9 @@ DEFAULTS = {
                                         # ("" -> server default en); Gemini ignores this
         "echo_target_language": False,
         "mic_device": "",               # substring; empty = default input device
-        "tts_device": "CABLE Input",    # translated voice -> VB-Cable -> VRChat mic
+        # translated voice -> loopback device -> target app mic
+        # (VB-Cable on Windows, BlackHole on macOS)
+        "tts_device": platform_support.default_loopback_device(),
         "tts_gain": 1.0,                # translated-voice volume 0.0-2.0 (also monitor)
         "monitor_device": "",           # also play translated voice here ("" = off)
         "text_only": False,              # True = original mic + translated OSC text only
@@ -160,7 +182,12 @@ DEFAULTS = {
         "target_language": "ko",
         "source_language": "",          # others' spoken language (Qwen only, see outbound)
         "languages": ["ko", "en", "ja", "zh-Hans", "zh-Hant"],  # wrist menu cycles subtitles through these
-        "process": "VRChat.exe",
+        "process": platform_support.process_name("VRChat"),
+        # per-process capture needs Windows 11 (build 20348+). Where it is
+        # missing the OS can only offer whole-desktop loopback; True accepts
+        # that (every app plus our own translated voice gets transcribed),
+        # False keeps inbound off instead.
+        "allow_system_audio": False,
         "play_audio": False,            # translated speech to my headphones
         "audio_device": "",             # "" = default output
         "vad_enabled": True,            # Silero VAD: send only speech (gate out music)
@@ -489,8 +516,17 @@ def qwen_api_key(cfg: dict) -> str:
     return (qw.get("api_key") or os.environ.get("DASHSCOPE_API_KEY", "")).strip()
 
 
+def openai_api_key(cfg: dict) -> str:
+    oa = cfg.get("openai") or {}
+    return (oa.get("api_key") or os.environ.get("OPENAI_API_KEY", "")).strip()
+
+
 def api_key_for(cfg: dict, prov: str) -> str:
-    return qwen_api_key(cfg) if prov == "qwen" else api_key(cfg)
+    if prov == "qwen":
+        return qwen_api_key(cfg)
+    if prov == "openai":
+        return openai_api_key(cfg)
+    return api_key(cfg)
 
 
 def api_key_validation_error(key: str, provider_label: str = "Gemini") -> str | None:
@@ -499,5 +535,6 @@ def api_key_validation_error(key: str, provider_label: str = "Gemini") -> str | 
         return None
     lowered = key.lower()
     if "://" in lowered or "github.com" in lowered:
-        return f"API key must be a {provider_label} API key, not a URL."
+        article = "an" if provider_label[:1].lower() in "aeiou" else "a"
+        return f"API key must be {article} {provider_label} API key, not a URL."
     return None

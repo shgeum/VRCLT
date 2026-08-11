@@ -193,6 +193,36 @@ def qwen_language_code(code: str) -> str:
     return code if len(code) <= 3 else code.split("-", 1)[0]
 
 
+# --- OpenAI (gpt-realtime-translate) -------------------------------------
+# The translation model accepts 70+ input languages (auto-detected, never
+# configured) but speaks only the 13 below, so the target is the only code
+# that has to be mapped. Bare ISO-639-1, no script/region variants.
+_OPENAI_CODE_OVERRIDES = {
+    "zh-Hans": "zh",
+    "zh-Hant": "zh",   # one Chinese output, like Qwen; documented in READMEs
+    "pt-BR": "pt",
+    "pt-PT": "pt",
+}
+
+# Everything gpt-realtime-translate can speak. There is no text-only tier:
+# an unsupported target has no translation at all, so the session refuses it
+# rather than connecting and producing silence.
+OPENAI_OUTPUT_LANGUAGES = frozenset({
+    "en", "es", "pt", "fr", "ja", "ru", "zh", "de", "ko", "hi", "id", "vi",
+    "it",
+})
+
+
+def openai_language_code(code: str) -> str:
+    """Map a catalog BCP-47 code to the code gpt-realtime-translate expects."""
+    code = canonical_language_code(code)
+    if not code:
+        return ""
+    if code in _OPENAI_CODE_OVERRIDES:
+        return _OPENAI_CODE_OVERRIDES[code]
+    return code if len(code) <= 3 else code.split("-", 1)[0]
+
+
 def language_code_from_text(text: str, fallback_codes=()) -> str:
     raw = str(text or "").strip()
     if not raw:

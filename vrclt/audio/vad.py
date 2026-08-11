@@ -2,18 +2,19 @@
 
 Used on the inbound (game audio) path so only speech is sent to Gemini -
 background music alone is gated out (no spurious translation / junk tokens).
-The ~2.3 MB ONNX model is downloaded once to %LOCALAPPDATA%/vrclt.
+The ~2.3 MB ONNX model is downloaded once to the per-user app data directory.
 """
 import logging
 import os
 import urllib.request
-from pathlib import Path
 
 import numpy as np
 
+from .. import platform_support
+
 log = logging.getLogger(__name__)
 
-MODEL_PATH = Path(os.environ.get("LOCALAPPDATA", ".")) / "vrclt" / "silero_vad.onnx"
+MODEL_PATH = platform_support.app_data_dir() / "silero_vad.onnx"
 MODEL_URL = ("https://github.com/snakers4/silero-vad/raw/master/"
              "src/silero_vad/data/silero_vad.onnx")
 MODEL_MIN_BYTES = 500_000  # real model is ~2.3 MB; smaller = truncated/error page

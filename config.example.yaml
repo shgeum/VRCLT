@@ -2,7 +2,7 @@
 # Developer reference config. The standalone exe stores user settings in AppData.
 # In a source checkout, copy this file to config.yaml if you want local overrides.
 # Leave api_key empty to use the GEMINI_API_KEY environment variable instead.
-provider: gemini             # gemini | qwen (translation engine for BOTH pipelines)
+provider: gemini             # gemini | qwen | openai (engine for BOTH pipelines)
 api_key: ""                  # Gemini API key (Google AI Studio)
 model: gemini-3.5-live-translate-preview
 
@@ -18,6 +18,17 @@ qwen:                        # Alibaba Cloud Model Studio (DashScope) realtime
                              # always (per response; multi-speaker, slower) | off
   voice: ""                  # when voice_clone is off: "" = model default voice,
                              # or a pre-cloned voice ID (qwen-translate-vc-...)
+
+openai:                      # OpenAI realtime translation (/v1/realtime/translations)
+  api_key: ""                # empty -> OPENAI_API_KEY env var
+  model: gpt-realtime-translate   # speech-to-speech; ONE target language per session,
+                             # and it speaks only en es pt fr ja ru zh de ko hi id vi it
+  transcribe_model: gpt-realtime-whisper   # source ASR for OUTBOUND; the chatbox needs
+                             # it to print the original above the translation
+  inbound_transcribe_model: ""   # source ASR for SUBTITLES; "" = translation only
+                             # (both are billed per minute on top of the translation)
+  noise_reduction: near_field  # near_field (headset) | far_field (room mic) | "" = off
+                             # note: source_language is ignored - always auto-detected
 
 app:
   mode: vrchat                 # vrchat | discord | custom; override with: python -m vrclt run --app vrchat
@@ -88,6 +99,8 @@ inbound:                  # others' voices -> me (subtitles)
   source_language: ""     # others' spoken language (Qwen only, same rules as outbound)
   languages: [ko, en, ja] # wrist menu cycles subtitle language through these
   process: VRChat.exe
+  allow_system_audio: false  # per-process capture needs Windows 11 (build 20348+);
+                             # true = fall back to capturing ALL desktop audio there
   play_audio: false       # also speak the translation into my headphones
   audio_device: ""
   vad_enabled: true       # Silero VAD: send only speech to Gemini

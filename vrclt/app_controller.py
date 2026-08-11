@@ -835,13 +835,14 @@ class AppController:
             prov = config_mod.provider(self.cfg)
             key = config_mod.api_key_for(self.cfg, prov)
             if not key:
-                self._set_status(
-                    "API key required",
-                    "Qwen (DashScope) API key is empty." if prov == "qwen"
-                    else "API key is empty.")
+                self._set_status("API key required", {
+                    "qwen": "Qwen (DashScope) API key is empty.",
+                    "openai": "OpenAI API key is empty.",
+                }.get(prov, "API key is empty."))
                 return False
             key_error = config_mod.api_key_validation_error(
-                key, provider_label="DashScope" if prov == "qwen" else "Gemini")
+                key, provider_label={"qwen": "DashScope",
+                                     "openai": "OpenAI"}.get(prov, "Gemini"))
             if key_error:
                 self._set_status("API key invalid", key_error)
                 return False

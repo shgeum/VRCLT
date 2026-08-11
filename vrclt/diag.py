@@ -39,6 +39,7 @@ class MemoryDiagnostics:
         self._trace = bool(os.environ.get(TRACE_ENV, "").strip())
         self._ticks = 0
         self._last_snapshot = None
+        self._last_rss: float | None = None
 
     def start(self) -> None:
         if self._thread is not None:
@@ -64,14 +65,28 @@ class MemoryDiagnostics:
     def _tick(self) -> None:
         mem = self._proc.memory_info()
         c = self._controller
+        # delta and handle count: the growth episodes are intermittent and
+        # leave no other trace in the log, so each line has to say on its own
+        # whether memory moved and whether OS handles moved with it. Handles
+        # climbing alongside rss means a handle/GDI leak (device, context or
+        # overlay churn); rss alone means a plain native heap leak.
+        rss_mb = mem.rss / 1e6
+        delta = rss_mb - self._last_rss if self._last_rss is not None else 0.0
+        self._last_rss = rss_mb
+        try:
+            handles = self._proc.num_handles()
+        except Exception:
+            handles = -1
+        renderer = getattr(c, "_renderer", None)
         log.info(
-            "diag: rss=%.1fMB vms=%.1fMB threads=%d gc_objects=%d "
-            "state_ls=%d store_ls=%d panels=%d",
-            mem.rss / 1e6, mem.vms / 1e6, threading.active_count(),
+            "diag: rss=%.1fMB (%+.1f) vms=%.1fMB threads=%d handles=%d "
+            "gc_objects=%d state_ls=%d store_ls=%d panels=%d vr=%s",
+            rss_mb, delta, mem.vms / 1e6, threading.active_count(), handles,
             len(gc.get_objects()),
             len(getattr(c.state, "_listeners", ())),
             len(getattr(c.store, "_listeners", ())),
-            len(getattr(c, "_panels", ())))
+            len(getattr(c, "_panels", ())),
+            "on" if getattr(renderer, "_thread", None) is not None else "off")
         self._ticks += 1
         if self._trace and self._ticks % TRACE_EVERY_TICKS == 0:
             self._log_tracemalloc()

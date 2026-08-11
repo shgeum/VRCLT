@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import ctypes
 import logging
-import os
 import string
 import threading
 import time
 from dataclasses import dataclass
 from typing import Callable
+
+from . import platform_support
 
 log = logging.getLogger(__name__)
 
@@ -175,7 +176,7 @@ class WindowsGlobalHotkeys:
         registrations = [reg for reg in registrations if (reg.sequence or "").strip()]
         if not registrations:
             return
-        if os.name != "nt":
+        if not platform_support.supports_global_hotkeys():
             log.warning("global hotkeys are only supported on Windows")
             return
 

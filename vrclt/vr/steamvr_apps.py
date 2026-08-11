@@ -21,6 +21,7 @@ import tempfile
 import threading
 from pathlib import Path
 
+from .. import platform_support
 from ..config import APPDATA_DIR
 from . import openvr_ctx
 
@@ -33,7 +34,10 @@ MANIFEST_PATH = APPDATA_DIR / "vrclt.vrmanifest"
 def registration_supported() -> bool:
     """Only frozen builds register: a dev venv python path in SteamVR's app
     list would break as soon as the venv moves. VRCLT_DEV_VRMANIFEST=1
-    overrides for development testing."""
+    overrides for development testing. Platforms without a SteamVR runtime
+    never write a manifest."""
+    if not platform_support.supports_steamvr():
+        return False
     return bool(getattr(sys, "frozen", False) or os.environ.get("VRCLT_DEV_VRMANIFEST"))
 
 

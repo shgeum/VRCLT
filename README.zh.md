@@ -12,7 +12,7 @@ Live API 翻译你的麦克风音频，通过 VB-Audio Virtual Cable 将翻译�
 - 托盘菜单支持打开应用、打开设置、切换翻译/字幕和退出
 - 出站翻译: 你的麦克风 -> Gemini Live -> 翻译语音 -> 目标应用麦克风
 - 入站字幕: 目标应用音频 -> Gemini Live -> 翻译字幕
-- 两种翻译引擎: Google Gemini Live（默认），以及面向无法访问 Google 的地区（如中国大陆）的 Alibaba Qwen3.5 LiveTranslate
+- 三种翻译引擎: Google Gemini Live（默认）、面向无法访问 Google 的地区（如中国大陆）的 Alibaba Qwen3.5 LiveTranslate，以及 OpenAI gpt-realtime-translate
 - 支持 VRChat OSC 聊天框输出、角色 OSC 控制、SteamVR 字幕和手腕菜单
 - 支持 SteamVR 仪表板设置面板和随 SteamVR 自动启动（注册到启动/叠加层应用）
 - VRChat 仅文本模式: 保留原始语音直通，只向 OSC 聊天框追加翻译文本
@@ -153,18 +153,18 @@ API 密钥会以明文保存在该文件中。
 
 ## 翻译引擎
 
-vrclt 支持两种实时翻译引擎，通过 **翻译引擎** 设置（`config.yaml` 中的
+vrclt 支持三种实时翻译引擎，通过 **翻译引擎** 设置（`config.yaml` 中的
 `provider`）选择。该选择同时作用于两个方向: 你的语音和入站字幕。
 
-| | Gemini Live（默认） | Qwen3.5 LiveTranslate |
-| --- | --- | --- |
-| 提供方 / 密钥 | Google AI Studio (`GEMINI_API_KEY`) | 阿里云百炼 / DashScope (`DASHSCOPE_API_KEY`) |
-| 必要设置 | 仅需 API 密钥 | 引擎设为 `qwen`、API 密钥 + 服务器（`intl` 还需工作空间 ID）、**我的/对方语音语言** |
-| 中国大陆可用性 | 需要能访问 Google 服务 | 可直连 `beijing` 端点 |
-| 语音语言检测 | 自动检测 | **手动** — 需设置"我的/对方语音语言" |
-| 支持语言 | 70+ 种 BCP-47 目标语言，含 `zh-Hans`/`zh-Hant` | 29 种带语音 + 另外 31 种仅文本；中文只有 `zh`（不区分简体/繁体）；粤语（`yue`）仅文本 |
-| 翻译语音 | 复刻说话者音色 | 通过服务端声音复刻还原说话者音色（`qwen.voice_clone`，默认 `once`）；关闭复刻时使用固定音色 |
-| 抢话打断（barge-in） | 支持 | 不支持 — 同时说话时音频可能排队播放 |
+| | Gemini Live（默认） | Qwen3.5 LiveTranslate | gpt-realtime-translate |
+| --- | --- | --- | --- |
+| 提供方 / 密钥 | Google AI Studio (`GEMINI_API_KEY`) | 阿里云百炼 / DashScope (`DASHSCOPE_API_KEY`) | OpenAI (`OPENAI_API_KEY`) |
+| 必要设置 | 仅需 API 密钥 | 引擎设为 `qwen`、API 密钥 + 服务器（`intl` 还需工作空间 ID）、**我的/对方语音语言** | 引擎设为 `openai`，仅需 API 密钥 |
+| 中国大陆可用性 | 需要能访问 Google 服务 | 可直连 `beijing` 端点 | 需要能访问 OpenAI 服务 |
+| 语音语言检测 | 自动检测 | **手动** — 需设置"我的/对方语音语言" | 自动检测（语音语言设置会被忽略） |
+| 支持语言 | 70+ 种 BCP-47 目标语言，含 `zh-Hans`/`zh-Hant` | 29 种带语音 + 另外 31 种仅文本；中文只有 `zh`（不区分简体/繁体）；粤语（`yue`）仅文本 | 输入 70+ 种，但目标语言仅 **13 种**（`en es pt fr ja ru zh de ko hi id vi it`）；中文只有 `zh`；每个会话一种目标语言 |
+| 翻译语音 | 复刻说话者音色 | 通过服务端声音复刻还原说话者音色（`qwen.voice_clone`，默认 `once`）；关闭复刻时使用固定音色 | 自动贴合说话人音色；无音色选项 |
+| 抢话打断（barge-in） | 支持 | 不支持 — 同时说话时音频可能排队播放 | 不支持 — 同时说话时音频可能排队播放 |
 
 Qwen 注意事项:
 
@@ -303,7 +303,7 @@ VRChat 模式可使用:
 
 | 键 | 默认值 | 说明 |
 | --- | --- | --- |
-| `provider` | `gemini` | 同时作用于两条管线的翻译引擎: `gemini` 或 `qwen`。 |
+| `provider` | `gemini` | 同时作用于两条管线的翻译引擎: `gemini`、`qwen` 或 `openai`。 |
 | `api_key` | `""` | Gemini API 密钥。留空时可使用 `GEMINI_API_KEY` 环境变量。 |
 | `model` | `gemini-3.5-live-translate-preview` | Gemini Live 模型名。 |
 | `qwen.api_key` | `""` | DashScope API 密钥。留空时可使用 `DASHSCOPE_API_KEY` 环境变量。 |
@@ -313,6 +313,11 @@ VRChat 模式可使用:
 | `qwen.base_url` | `""` | 高级: 覆盖完整 `wss://` URL。 |
 | `qwen.voice_clone` | `once` | 服务端说话者声音复刻: `once`（会话开始时，低延迟）、`always`（每次回复，较慢）或 `off`。 |
 | `qwen.voice` | `""` | 复刻为 `off` 时: 留空 = 模型默认音色，或预先复刻的语音 ID（`qwen-translate-vc-...`）。 |
+| `openai.api_key` | `""` | OpenAI API 密钥。留空时可使用 `OPENAI_API_KEY` 环境变量。 |
+| `openai.model` | `gpt-realtime-translate` | OpenAI 实时翻译模型。语音直接转为翻译语音，每个会话一种目标语言，且仅能说 `en es pt fr ja ru zh de ko hi id vi it`。音色自动贴合说话人，无法选择。 |
+| `openai.transcribe_model` | `gpt-realtime-whisper` | 出站会话的原文识别 ASR。VRChat 聊天框需要它才能在翻译上方显示原文（`osc.show_source`）。留空则聊天框只显示翻译。 |
+| `openai.inbound_transcribe_model` | `""` | 入站字幕的原文识别 ASR。默认留空时只显示翻译字幕；想同时看到原文请填 `gpt-realtime-whisper` 并开启 `overlay.show_source`。两个 ASR 都会在翻译之外按分钟计费。 |
+| `openai.noise_reduction` | `near_field` | 服务端输入降噪: `near_field`（头戴麦）、`far_field`（房间麦），留空则关闭。 |
 | `log_level` | `INFO` | Python 日志级别。 |
 | `meta.last_version` | `""` | 当前配置已确认的最后应用版本。用于更新后的一次性重置确认。 |
 | `app.mode` | `vrchat` | 当前配置: `vrchat`、`discord` 或 `custom`。 |
@@ -369,6 +374,7 @@ PC 热键:
 | `inbound.source_language` | `""` | 对方语音语言（仅 Qwen，规则与 `outbound.source_language` 相同）。 |
 | `inbound.languages` | `[ko, en, ja]` | 仪表板和手腕菜单使用的已保存字幕语言列表。只从 UI 选择器中添加需要的语言。 |
 | `inbound.process` | `VRChat.exe` | 入站字幕要捕获的进程名。 |
+| `inbound.allow_system_audio` | `false` | 按进程捕获需要 Windows 11（内部版本 20348+）。在不支持的环境中设为 `true` 会捕获整个系统声音而非所选应用（其他应用的声音和你自己的翻译语音也会被转写）；`false` 则不启动入站。 |
 | `inbound.play_audio` | `false` | 将入站翻译语音播放到你的耳机。 |
 | `inbound.audio_device` | `""` | 入站翻译语音输出设备。留空时使用默认输出。 |
 | `inbound.vad_enabled` | `true` | 使用语音活动检测过滤背景音乐/噪声。 |

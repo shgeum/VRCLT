@@ -153,19 +153,19 @@ Gemini の代わりに **Alibaba Qwen3.5 LiveTranslate** を使えます。
 
 ## 翻訳エンジン
 
-vrclt は 2 つのリアルタイム翻訳エンジンに対応し、**翻訳エンジン** 設定
+vrclt は 3 つのリアルタイム翻訳エンジンに対応し、**翻訳エンジン** 設定
 （`config.yaml` の `provider`）で選択します。選択したエンジンは、自分の音声と
 受信側字幕の両方向に適用されます。
 
-| | Gemini Live（既定） | Qwen3.5 LiveTranslate |
-| --- | --- | --- |
-| プロバイダー / キー | Google AI Studio (`GEMINI_API_KEY`) | Alibaba Cloud Model Studio / DashScope (`DASHSCOPE_API_KEY`) |
-| 必要な設定 | API キーのみ | エンジンを `qwen` に、API キー + サーバー（`intl` はワークスペース ID も）、**自分/相手の発話言語** |
-| 中国本土での利用 | 不可 | 可（`beijing` エンドポイント） |
-| 発話言語の検出 | 自動検出 | **手動** — 「自分/相手の発話言語」を設定 |
-| 対応言語 | `zh-Hans`/`zh-Hant` を含む 70 以上の BCP-47 対象言語 | 音声付き 29 + テキストのみ 31; 中国語は `zh` のみ（簡体字/繁体字の区別なし）; 広東語（`yue`）はテキストのみ |
-| 翻訳音声 | 話者の声を再現 | サーバー側の音声クローンで話者の声を再現（`qwen.voice_clone`、既定 `once`）。クローンをオフにすると固定の声 |
-| 割り込み（barge-in） | 対応 | 非対応 — 発話が重なると音声がキューに溜まることがあります |
+| | Gemini Live（既定） | Qwen3.5 LiveTranslate | gpt-realtime-translate |
+| --- | --- | --- | --- |
+| プロバイダー / キー | Google AI Studio (`GEMINI_API_KEY`) | Alibaba Cloud Model Studio / DashScope (`DASHSCOPE_API_KEY`) | OpenAI (`OPENAI_API_KEY`) |
+| 必要な設定 | API キーのみ | エンジンを `qwen` に、API キー + サーバー（`intl` はワークスペース ID も）、**自分/相手の発話言語** | エンジンを `openai` に、API キーのみ |
+| 中国本土での利用 | 不可 | 可（`beijing` エンドポイント） | 不可 |
+| 発話言語の検出 | 自動検出 | **手動** — 「自分/相手の発話言語」を設定 | 自動検出（発話言語の設定は無視されます） |
+| 対応言語 | `zh-Hans`/`zh-Hant` を含む 70 以上の BCP-47 対象言語 | 音声付き 29 + テキストのみ 31; 中国語は `zh` のみ（簡体字/繁体字の区別なし）; 広東語（`yue`）はテキストのみ | 入力は 70 以上だが対象言語は **13 のみ**（`en es pt fr ja ru zh de ko hi id vi it`）; 中国語は `zh` のみ; セッションごとに 1 言語 |
+| 翻訳音声 | 話者の声を再現 | サーバー側の音声クローンで話者の声を再現（`qwen.voice_clone`、既定 `once`）。クローンをオフにすると固定の声 | 話者の声に自動で合わせます。ボイス選択はありません |
+| 割り込み（barge-in） | 対応 | 非対応 — 発話が重なると音声がキューに溜まることがあります | 非対応 — 発話が重なると音声がキューに溜まることがあります |
 
 Qwen の注意点:
 
@@ -309,7 +309,7 @@ VR オーバーレイを強制的に有効にするには `ui.mode: vr`、無効
 
 | キー | 既定値 | 説明 |
 | --- | --- | --- |
-| `provider` | `gemini` | 両方向のパイプラインに適用される翻訳エンジン: `gemini` または `qwen`。 |
+| `provider` | `gemini` | 両方向のパイプラインに適用される翻訳エンジン: `gemini`、`qwen` または `openai`。 |
 | `api_key` | `""` | Gemini API キー。空の場合は `GEMINI_API_KEY` 環境変数を使えます。 |
 | `model` | `gemini-3.5-live-translate-preview` | Gemini Live モデル名。 |
 | `qwen.api_key` | `""` | DashScope API キー。空の場合は `DASHSCOPE_API_KEY` 環境変数を使えます。 |
@@ -319,6 +319,11 @@ VR オーバーレイを強制的に有効にするには `ui.mode: vr`、無効
 | `qwen.base_url` | `""` | 上級者向け: `wss://` URL 全体の上書き。 |
 | `qwen.voice_clone` | `once` | サーバー側の話者音声クローン: `once`（セッション開始時、低遅延）、`always`（応答ごと、遅い）、`off`。 |
 | `qwen.voice` | `""` | クローンが `off` のとき: 空ならモデル既定の声、またはクローン済みボイスID（`qwen-translate-vc-...`）。 |
+| `openai.api_key` | `""` | OpenAI APIキー。空の場合は `OPENAI_API_KEY` 環境変数を使用します。 |
+| `openai.model` | `gpt-realtime-translate` | OpenAIリアルタイム翻訳モデル。音声をそのまま翻訳音声にし、対象言語はセッションごとに1つ、話せるのは `en es pt fr ja ru zh de ko hi id vi it` のみです。声は話者に合わせて自動調整され選択できません。 |
+| `openai.transcribe_model` | `gpt-realtime-whisper` | 送信側セッションの原文認識ASR。VRChatチャットボックスが原文を翻訳の上に表示するために必要です（`osc.show_source`）。空欄ならチャットボックスは翻訳のみになります。 |
+| `openai.inbound_transcribe_model` | `""` | 受信側字幕の原文認識ASR。既定の空欄では翻訳字幕のみです。原文も表示するには `gpt-realtime-whisper` と `overlay.show_source` を有効にします。どちらのASRも翻訳に加えて分単位で課金されます。 |
+| `openai.noise_reduction` | `near_field` | サーバー側の入力ノイズ抑制: `near_field`（ヘッドセット）、`far_field`（室内マイク）、空で無効。 |
 | `log_level` | `INFO` | Python ログレベル。 |
 | `meta.last_version` | `""` | 現在の設定で確認済みの最後のアプリバージョン。更新後の 1 回限りのリセット確認に使います。 |
 | `app.mode` | `vrchat` | 有効なプロファイル: `vrchat`、`discord`、`custom`。 |
@@ -375,6 +380,7 @@ PC ホットキー:
 | `inbound.source_language` | `""` | 相手の発話言語（Qwen のみ。`outbound.source_language` と同じルール）。 |
 | `inbound.languages` | `[ko, en, ja]` | ダッシュボードと手首メニューで使う保存済み字幕言語リスト。UI の選択リストから必要な言語だけ追加します。 |
 | `inbound.process` | `VRChat.exe` | 受信側字幕用にキャプチャするプロセス名。 |
+| `inbound.allow_system_audio` | `false` | プロセス単位のキャプチャは Windows 11（ビルド 20348+）が必要です。利用できない環境で `true` にすると、選択したアプリではなくシステム全体の音声を取り込みます（他アプリの音や自分の翻訳音声も字幕化されます）。`false` なら受信側は開始しません。 |
 | `inbound.play_audio` | `false` | 受信側の翻訳音声を自分のヘッドホンで再生します。 |
 | `inbound.audio_device` | `""` | 受信側翻訳音声の出力デバイス。空なら既定出力を使います。 |
 | `inbound.vad_enabled` | `true` | 背景音楽やノイズを減らすため音声活動検出を使います。 |

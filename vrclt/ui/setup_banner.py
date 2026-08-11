@@ -14,6 +14,7 @@ KEY_URLS = {
     "gemini": "https://aistudio.google.com/apikey",
     "qwen": "https://modelstudio.console.alibabacloud.com/?tab=model#/api-key",
     "qwen_beijing": "https://bailian.console.aliyun.com/?tab=model#/api-key",
+    "openai": "https://platform.openai.com/api-keys",
 }
 
 
@@ -89,5 +90,5 @@ class SetupBanner(QtWidgets.QFrame):
             url = KEY_URLS["qwen_beijing"] if self._endpoint == "beijing" \
                 else KEY_URLS["qwen"]
         else:
-            url = KEY_URLS["gemini"]
+            url = KEY_URLS.get(self._provider, KEY_URLS["gemini"])
         self._on_open_url(QtCore.QUrl(url))

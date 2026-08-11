@@ -265,6 +265,10 @@ class MainWindow(QtWidgets.QMainWindow):
             return self._tr("err_qwen_api_key_url")
         if error == "Qwen intl endpoint requires a Model Studio workspace ID.":
             return self._tr("err_qwen_workspace_required")
+        if error == "OpenAI API key is empty.":
+            return self._tr("err_openai_api_key_empty")
+        if error == "API key must be an OpenAI API key, not a URL.":
+            return self._tr("err_openai_api_key_url")
         return error
 
     def _on_retranslate(self, fn) -> None:
@@ -937,6 +941,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 cfg.get("qwen", {}).get("api_key", ""), provider_label="DashScope")
             if qwen_key_error:
                 raise ValueError(self._tr("err_qwen_api_key_url"))
+            openai_key_error = config_mod.api_key_validation_error(
+                cfg.get("openai", {}).get("api_key", ""), provider_label="OpenAI")
+            if openai_key_error:
+                raise ValueError(self._tr("err_openai_api_key_url"))
             qw = cfg.get("qwen", {})
             if config_mod.provider(cfg) == "qwen" \
                     and str(qw.get("endpoint", "intl") or "intl").strip() != "beijing" \

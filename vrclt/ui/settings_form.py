@@ -293,6 +293,17 @@ class SettingsForm:
             w.addItems(list(config_mod.QWEN_VOICE_CLONE_MODES))
             w.setCurrentText(str(value or "once"))
             return w
+        if kind == "openai_transcribe":
+            w = NoWheelComboBox()
+            w.setEditable(True)   # the model list moves faster than releases
+            w.addItems(list(config_mod.OPENAI_TRANSCRIBE_MODELS))
+            w.setCurrentText(str(value or ""))
+            return w
+        if kind == "openai_noise":
+            w = NoWheelComboBox()
+            w.addItems(list(config_mod.OPENAI_NOISE_REDUCTION))
+            w.setCurrentText(str(value or ""))
+            return w
         if kind == "audio_process":
             w = AudioProcessCombo(audio_sessions.audio_processes,
                                   self._tr("process_playing"))

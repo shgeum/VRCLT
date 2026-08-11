@@ -20,6 +20,7 @@ from .audio.player import PcmPlayer
 from . import config as config_mod
 from . import i18n
 from .gemini.session import LiveTranslateSession
+from .openai.session import OpenAIRealtimeTranslateSession
 from .qwen.session import QwenLiveTranslateSession
 from .languages import language_label
 from .out.osc_chatbox import Chatbox, MAX_CHARS as CHATBOX_MAX_CHARS
@@ -38,6 +39,8 @@ HARD_FINALIZE_CHARS = 140
 SENTENCE_STREAM_MIN_CHARS = 8
 CHAT_TAIL_MAX_AGE_SEC = 15.0   # rolling-bubble sentences older than this drop
 CHAT_TAIL_MAX_SEGMENTS = 6
+TAP_STATS_INTERVAL_SEC = 15.0  # capture summary cadence, like the session stats
+TAP_SILENCE_WARN_SEC = 60.0    # warn once after this long with no capture data
 SENTENCE_END_CHARS = (".", "!", "?", "。", "！", "？", "…")
 PASSTHROUGH_POLL_SEC = 0.008
 PASSTHROUGH_PREBUFFER_MS = 0
@@ -177,7 +180,24 @@ class _TranslationPipeline:
             on_turn_complete=self.segmenter.turn_complete,
             on_interrupted=self._on_interrupted,
         )
-        if config_mod.provider(cfg) == "qwen":
+        prov = config_mod.provider(cfg)
+        if prov == "openai":
+            oa = cfg.get("openai", {})
+            # source transcripts are billed separately and only one side
+            # displays them by default: the chatbox prints the original above
+            # the translation, inbound subtitles do not
+            transcribe_key = ("inbound_transcribe_model" if name == "inbound"
+                              else "transcribe_model")
+            self.session = OpenAIRealtimeTranslateSession(
+                model=oa.get("model", "gpt-realtime-translate"),
+                transcribe_model=oa.get(
+                    transcribe_key,
+                    config_mod.DEFAULTS["openai"][transcribe_key]),
+                noise_reduction=oa.get("noise_reduction", "near_field"),
+                get_source_language=get_source_language,
+                **common,
+            )
+        elif prov == "qwen":
             qw = cfg.get("qwen", {})
             self.session = QwenLiveTranslateSession(
                 model=qw.get("model", "qwen3.5-livetranslate-flash-realtime"),
@@ -363,9 +383,21 @@ class OutboundPipeline(_TranslationPipeline):
         one snapshot, oldest trimmed until it fits a single chatbox message
         (so nothing ever replays in delayed chunk parts)."""
         now = time.time()
-        self._chat_tail = [e for e in self._chat_tail
-                           if (now - e[0]) <= CHAT_TAIL_MAX_AGE_SEC
-                           ][-CHAT_TAIL_MAX_SEGMENTS:]
+        # Expire by CONVERSATION GAP, not by absolute age: an entry that is
+        # merely old is still the context of a sentence still being spoken.
+        # Dropping those made a running conversation lose its head mid-bubble,
+        # which reads as the chatbox resetting itself. A real pause longer
+        # than the window still clears the bubble.
+        kept: list[tuple[float, str, str]] = []
+        previous = None
+        for entry in self._chat_tail:
+            if previous is not None and (entry[0] - previous) > CHAT_TAIL_MAX_AGE_SEC:
+                kept = []          # the talking stopped here; start a new bubble
+            kept.append(entry)
+            previous = entry[0]
+        if kept and (now - kept[-1][0]) > CHAT_TAIL_MAX_AGE_SEC:
+            kept = []              # nothing said recently: the bubble is stale
+        self._chat_tail = kept[-CHAT_TAIL_MAX_SEGMENTS:]
         entries = list(self._chat_tail)
         if cur_src or cur_dst:
             entries.append((now, cur_src, cur_dst))
@@ -491,6 +523,7 @@ class InboundPipeline(_TranslationPipeline):
             use_vad=ib.get("vad_enabled", True),
             vad_threshold=ib.get("vad_threshold", 0.5),
             vad_hangover_sec=ib.get("vad_hangover_sec", 0.35),
+            allow_system_audio=ib.get("allow_system_audio", False),
         )
         self._tap_running = False
         self.player = PcmPlayer(ib["audio_device"], name="inbound-audio") if ib["play_audio"] else None
@@ -548,8 +581,17 @@ class InboundPipeline(_TranslationPipeline):
         outbound session sharing this event loop never stalls.
         """
         waiting_logged = False
+        last_stats = time.time()
         while not stop.is_set():
             await asyncio.sleep(3.0)
+            if self._tap_running:
+                # ProcTap logs nothing of its own once running, so a capture
+                # that dies quietly used to leave the log completely blank
+                self.tap.check_capture(TAP_SILENCE_WARN_SEC)
+                if (time.time() - last_stats) >= TAP_STATS_INTERVAL_SEC:
+                    last_stats = time.time()
+                    log.info("game tap stats(%ds): %s",
+                             int(TAP_STATS_INTERVAL_SEC), self.tap.stats_line())
             pid = await asyncio.to_thread(find_pid, self._process_name)
             if pid is not None and (not self._tap_running or self.tap.pid != pid):
                 if self._tap_running:

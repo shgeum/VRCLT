@@ -154,19 +154,19 @@ China), vrclt can use **Alibaba Qwen3.5 LiveTranslate** instead of Gemini:
 
 ## Translation Engines
 
-vrclt supports two realtime translation engines, selected by the **Translation
+vrclt supports three realtime translation engines, selected by the **Translation
 engine** setting (`provider` in `config.yaml`). The choice applies to both
 directions: your voice and the inbound subtitles.
 
-| | Gemini Live (default) | Qwen3.5 LiveTranslate |
-| --- | --- | --- |
-| Provider / key | Google AI Studio (`GEMINI_API_KEY`) | Alibaba Cloud Model Studio / DashScope (`DASHSCOPE_API_KEY`) |
-| Required setup | API key only | Engine to `qwen`, API key + endpoint (workspace ID on `intl`), **My/Others' spoken language** |
-| Works in mainland China | No | Yes (`beijing` endpoint) |
-| Spoken-language detection | Automatic | **Manual** — set "My/Others' spoken language" |
-| Languages | 70+ BCP-47 targets, incl. `zh-Hans`/`zh-Hant` | 29 with voice + 31 more text-only; plain `zh` only (no Simplified/Traditional split); Cantonese (`yue`) is text-only |
-| Translated voice | Replicates the speaker's voice | Replicates the speaker via server-side voice cloning (`qwen.voice_clone`, default `once`); or a fixed voice with cloning off |
-| Barge-in (voice interrupts) | Yes | No — overlapping speech can queue audio |
+| | Gemini Live (default) | Qwen3.5 LiveTranslate | gpt-realtime-translate |
+| --- | --- | --- | --- |
+| Provider / key | Google AI Studio (`GEMINI_API_KEY`) | Alibaba Cloud Model Studio / DashScope (`DASHSCOPE_API_KEY`) | OpenAI (`OPENAI_API_KEY`) |
+| Required setup | API key only | Engine to `qwen`, API key + endpoint (workspace ID on `intl`), **My/Others' spoken language** | Engine to `openai`, API key only |
+| Works in mainland China | No | Yes (`beijing` endpoint) | No |
+| Spoken-language detection | Automatic | **Manual** — set "My/Others' spoken language" | Automatic (the spoken-language settings are ignored) |
+| Languages | 70+ BCP-47 targets, incl. `zh-Hans`/`zh-Hant` | 29 with voice + 31 more text-only; plain `zh` only (no Simplified/Traditional split); Cantonese (`yue`) is text-only | 70+ inputs, but only **13 targets** (`en es pt fr ja ru zh de ko hi id vi it`); plain `zh` only; one target per session |
+| Translated voice | Replicates the speaker's voice | Replicates the speaker via server-side voice cloning (`qwen.voice_clone`, default `once`); or a fixed voice with cloning off | Adapts to the speaker automatically; no voice option |
+| Barge-in (voice interrupts) | Yes | No — overlapping speech can queue audio | No — overlapping speech can queue audio |
 
 Qwen notes:
 
@@ -318,7 +318,7 @@ Top-level and app profile settings:
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `provider` | `gemini` | Translation engine for both pipelines: `gemini` or `qwen`. |
+| `provider` | `gemini` | Translation engine for both pipelines: `gemini`, `qwen` or `openai`. |
 | `api_key` | `""` | Gemini API key. Empty means `GEMINI_API_KEY` can be used. |
 | `model` | `gemini-3.5-live-translate-preview` | Gemini Live model name. |
 | `qwen.api_key` | `""` | DashScope API key. Empty means `DASHSCOPE_API_KEY` can be used. |
@@ -328,6 +328,11 @@ Top-level and app profile settings:
 | `qwen.base_url` | `""` | Advanced: full `wss://` URL override. |
 | `qwen.voice_clone` | `once` | Server-side speaker-voice cloning: `once` (session start, low latency), `always` (per response, slower), or `off`. |
 | `qwen.voice` | `""` | With cloning `off`: empty = model default voice, or a pre-cloned voice ID (`qwen-translate-vc-...`). |
+| `openai.api_key` | `""` | OpenAI API key. Empty means `OPENAI_API_KEY` can be used. |
+| `openai.model` | `gpt-realtime-translate` | OpenAI realtime translation model. Speech-to-speech, one target language per session; it speaks only `en es pt fr ja ru zh de ko hi id vi it`. The voice adapts to the speaker and cannot be chosen. |
+| `openai.transcribe_model` | `gpt-realtime-whisper` | Source ASR for the outbound session. The VRChat chatbox needs it to print the original above the translation (`osc.show_source`). Empty leaves the chatbox translation-only. |
+| `openai.inbound_transcribe_model` | `""` | Source ASR for inbound subtitles. Empty (the default) shows the translated line only; set `gpt-realtime-whisper` and `overlay.show_source` to see the original too. Both ASR settings are billed per minute on top of the translation. |
+| `openai.noise_reduction` | `near_field` | Server-side input noise reduction: `near_field` (headset), `far_field` (room mic), or empty to disable. |
 | `log_level` | `INFO` | Python logging level. |
 | `meta.last_version` | `""` | Last app version that acknowledged the current config. Used for one-time update reset prompts. |
 | `app.mode` | `vrchat` | Active profile: `vrchat`, `discord`, or `custom`. |
@@ -384,6 +389,7 @@ Inbound subtitles:
 | `inbound.source_language` | `""` | Others' spoken language (Qwen only, same rules as `outbound.source_language`). |
 | `inbound.languages` | `[ko, en, ja]` | Saved subtitle language list used by the Dashboard and wrist menu. Add only the languages you need from the UI picker. |
 | `inbound.process` | `VRChat.exe` | Process name captured for inbound subtitles. |
+| `inbound.allow_system_audio` | `false` | Per-process capture requires Windows 11 (build 20348+). Where it is unavailable, `true` captures the whole desktop instead of the selected app (other apps and your own translated voice get subtitled); `false` keeps inbound from starting. |
 | `inbound.play_audio` | `false` | Plays translated inbound speech to your headphones. |
 | `inbound.audio_device` | `""` | Output device for inbound translated speech. Empty uses default output. |
 | `inbound.vad_enabled` | `true` | Uses voice activity detection to gate background music/noise. |

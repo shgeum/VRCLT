@@ -12,7 +12,7 @@
 - 창 열기, 설정 열기, 번역/자막 토글, 종료를 제공하는 트레이 메뉴
 - 아웃바운드 번역: 내 마이크 -> Gemini Live -> 번역 음성 -> 대상 앱 마이크
 - 인바운드 자막: 대상 앱 오디오 -> Gemini Live -> 번역 자막
-- 두 가지 번역 엔진: Google Gemini Live(기본)와, Google을 사용할 수 없는 지역(예: 중국 본토)을 위한 Alibaba Qwen3.5 LiveTranslate
+- 세 가지 번역 엔진: Google Gemini Live(기본), Google을 사용할 수 없는 지역(예: 중국 본토)을 위한 Alibaba Qwen3.5 LiveTranslate, 그리고 OpenAI gpt-realtime-translate
 - VRChat OSC 챗박스, 아바타 OSC 제어, SteamVR 자막, 손목 메뉴 지원
 - SteamVR 대시보드 설정 패널과 SteamVR 자동 시작(시작/오버레이 앱 등록) 지원
 - 원래 목소리는 그대로 보내고 OSC 챗박스 번역 텍스트만 추가하는 VRChat 텍스트 전용 모드
@@ -153,19 +153,19 @@ VRChat 또는 Discord가 번역 음성을 마이크처럼 받게 하려면 VB-Au
 
 ## 번역 엔진
 
-vrclt는 두 가지 실시간 번역 엔진을 지원하며, **번역 엔진** 설정(`config.yaml`의
+vrclt는 세 가지 실시간 번역 엔진을 지원하며, **번역 엔진** 설정(`config.yaml`의
 `provider`)으로 선택합니다. 선택한 엔진은 내 음성과 인바운드 자막 양쪽 방향에
 모두 적용됩니다.
 
-| | Gemini Live (기본) | Qwen3.5 LiveTranslate |
-| --- | --- | --- |
-| 제공자 / 키 | Google AI Studio (`GEMINI_API_KEY`) | Alibaba Cloud Model Studio / DashScope (`DASHSCOPE_API_KEY`) |
-| 필요한 설정 | API 키만 입력 | 엔진을 `qwen`으로, API 키 + 서버(`intl`은 워크스페이스 ID까지), **내/상대 발화 언어** |
-| 중국 본토에서 사용 | 불가 | 가능 (`beijing` 엔드포인트) |
-| 발화 언어 감지 | 자동 감지 | **수동** — "내/상대 발화 언어"를 설정해야 함 |
-| 지원 언어 | `zh-Hans`/`zh-Hant`를 포함한 70개 이상 BCP-47 도착어 | 음성 지원 29개 + 텍스트 전용 31개; 중국어는 `zh` 하나뿐(간체/번체 구분 없음); 광둥어(`yue`)는 텍스트 전용 |
-| 번역 음성 | 화자 목소리 재현 | 서버 측 음성 복제로 화자 목소리 재현 (`qwen.voice_clone`, 기본 `once`); 복제를 끄면 고정 음성 |
-| 끼어들기(barge-in) | 지원 | 미지원 — 발화가 겹치면 오디오가 줄지어 재생될 수 있음 |
+| | Gemini Live (기본) | Qwen3.5 LiveTranslate | gpt-realtime-translate |
+| --- | --- | --- | --- |
+| 제공자 / 키 | Google AI Studio (`GEMINI_API_KEY`) | Alibaba Cloud Model Studio / DashScope (`DASHSCOPE_API_KEY`) | OpenAI (`OPENAI_API_KEY`) |
+| 필요한 설정 | API 키만 입력 | 엔진을 `qwen`으로, API 키 + 서버(`intl`은 워크스페이스 ID까지), **내/상대 발화 언어** | 엔진을 `openai`로, API 키만 입력 |
+| 중국 본토에서 사용 | 불가 | 가능 (`beijing` 엔드포인트) | 불가 |
+| 발화 언어 감지 | 자동 감지 | **수동** — "내/상대 발화 언어"를 설정해야 함 | 자동 감지 (발화 언어 설정은 무시됨) |
+| 지원 언어 | `zh-Hans`/`zh-Hant`를 포함한 70개 이상 BCP-47 도착어 | 음성 지원 29개 + 텍스트 전용 31개; 중국어는 `zh` 하나뿐(간체/번체 구분 없음); 광둥어(`yue`)는 텍스트 전용 | 입력은 70개 이상이지만 도착어는 **13개뿐**(`en es pt fr ja ru zh de ko hi id vi it`); 중국어는 `zh` 하나; 세션당 도착어 1개 |
+| 번역 음성 | 화자 목소리 재현 | 서버 측 음성 복제로 화자 목소리 재현 (`qwen.voice_clone`, 기본 `once`); 복제를 끄면 고정 음성 | 화자 목소리를 자동으로 따라감; 음성 선택 옵션 없음 |
+| 끼어들기(barge-in) | 지원 | 미지원 — 발화가 겹치면 오디오가 줄지어 재생될 수 있음 | 미지원 — 발화가 겹치면 오디오가 줄지어 재생될 수 있음 |
 
 Qwen 참고 사항:
 
@@ -307,7 +307,7 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 
 | 키 | 기본값 | 설명 |
 | --- | --- | --- |
-| `provider` | `gemini` | 두 파이프라인 모두에 적용되는 번역 엔진: `gemini` 또는 `qwen`. |
+| `provider` | `gemini` | 두 파이프라인 모두에 적용되는 번역 엔진: `gemini`, `qwen` 또는 `openai`. |
 | `api_key` | `""` | Gemini API 키. 비어 있으면 `GEMINI_API_KEY` 환경 변수를 사용할 수 있습니다. |
 | `model` | `gemini-3.5-live-translate-preview` | Gemini Live 모델 이름. |
 | `qwen.api_key` | `""` | DashScope API 키. 비어 있으면 `DASHSCOPE_API_KEY` 환경 변수를 사용할 수 있습니다. |
@@ -317,6 +317,11 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 | `qwen.base_url` | `""` | 고급: 전체 `wss://` URL 재정의. |
 | `qwen.voice_clone` | `once` | 서버 측 화자 음성 복제: `once`(세션 시작 시, 낮은 지연), `always`(응답마다, 느림), `off`. |
 | `qwen.voice` | `""` | 복제가 `off`일 때: 비우면 모델 기본 음성, 또는 미리 복제된 음성 ID(`qwen-translate-vc-...`). |
+| `openai.api_key` | `""` | OpenAI API 키. 비우면 `OPENAI_API_KEY` 환경변수를 사용합니다. |
+| `openai.model` | `gpt-realtime-translate` | OpenAI 실시간 번역 모델. 음성을 바로 번역 음성으로 바꾸며 세션당 대상 언어는 하나, 말할 수 있는 언어는 `en es pt fr ja ru zh de ko hi id vi it` 뿐입니다. 음성은 화자를 따라가며 선택할 수 없습니다. |
+| `openai.transcribe_model` | `gpt-realtime-whisper` | 아웃바운드 세션의 원문 인식 ASR. VRChat 챗박스가 원문을 번역문 위에 표시하려면 필요합니다(`osc.show_source`). 비우면 챗박스에 번역문만 나옵니다. |
+| `openai.inbound_transcribe_model` | `""` | 인바운드 자막의 원문 인식 ASR. 기본값인 빈 값이면 번역 자막만 나옵니다. 원문도 보려면 `gpt-realtime-whisper`와 `overlay.show_source`를 함께 켜세요. 두 ASR 모두 번역 요금에 더해 분당 과금됩니다. |
+| `openai.noise_reduction` | `near_field` | 서버 입력 잡음 억제: `near_field`(헤드셋), `far_field`(룸 마이크), 비우면 사용 안 함. |
 | `log_level` | `INFO` | Python 로그 레벨. |
 | `meta.last_version` | `""` | 현재 설정에서 확인한 마지막 앱 버전. 업데이트 후 1회 리셋 확인에 사용합니다. |
 | `app.mode` | `vrchat` | 활성 프로필: `vrchat`, `discord`, `custom`. |
@@ -373,6 +378,7 @@ PC 핫키:
 | `inbound.source_language` | `""` | 상대 발화 언어(Qwen 전용, `outbound.source_language`와 같은 규칙). |
 | `inbound.languages` | `[ko, en, ja]` | 대시보드와 손목 메뉴에서 사용할 저장된 자막 언어 목록. UI 선택기에서 필요한 언어만 추가합니다. |
 | `inbound.process` | `VRChat.exe` | 인바운드 자막용으로 캡처할 프로세스 이름. |
+| `inbound.allow_system_audio` | `false` | 프로세스 단위 캡처는 Windows 11(빌드 20348+)이 필요합니다. 지원되지 않는 환경에서 `true`면 선택한 앱 대신 시스템 전체 소리를 캡처합니다(다른 앱 소리와 내 번역 음성까지 자막이 됩니다). `false`면 인바운드를 시작하지 않습니다. |
 | `inbound.play_audio` | `false` | 인바운드 번역 음성을 내 헤드폰으로 재생합니다. |
 | `inbound.audio_device` | `""` | 인바운드 번역 음성 출력 장치. 비어 있으면 기본 출력을 사용합니다. |
 | `inbound.vad_enabled` | `true` | 배경음악/잡음을 줄이기 위해 음성 활동 감지를 사용합니다. |
