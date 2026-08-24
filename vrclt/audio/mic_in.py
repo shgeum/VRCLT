@@ -1,7 +1,7 @@
-"""Microphone capture -> high-rate raw taps + 16 kHz Gemini source.
+"""Microphone capture -> 48 kHz raw taps + 16 kHz Gemini source.
 
-The physical mic is captured at 48 kHz mono int16 so raw passthrough keeps
-normal voice bandwidth. Audio buffered for Gemini is resampled to 16 kHz and
+The physical mic is opened at its endpoint-default rate.  Raw passthrough is
+kept at 48 kHz mono int16 and Gemini audio is resampled to 16 kHz.  Audio is
 voice-activity gated: only audio during actual speech (RMS over the gate, plus
 a short pre-roll and hangover tail) is buffered for sending. This matters for
 two reasons:
@@ -43,6 +43,8 @@ CHUNK_MS = 10
 PREROLL_CHUNKS = 20  # ~200 ms kept so speech onsets aren't clipped
 UPGRADE_INTERVAL = 6.0  # how often to retry upgrading to WASAPI
 BUFFER_CHUNKS = int(13_000 / CHUNK_MS)
+STATS_INTERVAL = 15.0
+STATUS_WARNING_INTERVAL = 5.0
 
 
 def _device_rate(idx: int) -> int:
@@ -89,6 +91,14 @@ class MicCapture:
         self._swap_lock = threading.Lock()
         self._upgrade_stop = threading.Event()
         self._upgrade_thread: threading.Thread | None = None
+        self._st_started = time.monotonic()
+        self._st_last_callback = 0.0
+        self._st_calls = 0
+        self._st_frames = 0
+        self._st_status = 0
+        self._st_raw_dropped = 0
+        self._st_max_gap_ms = 0.0
+        self._st_last_status_warning = 0.0
 
     def set_threshold_boost(self, fn) -> None:
         self._boost = fn
@@ -113,21 +123,33 @@ class MicCapture:
             pass
 
     # ---------------- audio callback ----------------
-    def _make_callback(self, rs: soxr.ResampleStream, prs):
+    def _make_callback(self, rs: soxr.ResampleStream, prs, rate: int):
         def callback(indata, frames, time_info, status):
-            self._callback(indata, frames, time_info, status, rs, prs)
+            self._callback(indata, frames, time_info, status, rs, prs, rate)
         return callback
 
     def _callback(self, indata, frames, time_info, status, rs: soxr.ResampleStream,
-                  prs=None):
+                  prs=None, rate: int = CAPTURE_RATE):
         # currency guard: during a WASAPI hot-swap (or after stop()) a stale
         # stream's callback may still fire; only the stream owning the live
         # resampler may touch buffer/_preroll/_in_voice. An escaped exception
         # here would make sounddevice abort the stream permanently.
         if rs is not self._rs:
             return
+        mono_now = time.monotonic()
+        self._st_calls += 1
+        self._st_frames += int(frames)
+        if self._st_last_callback:
+            self._st_max_gap_ms = max(
+                self._st_max_gap_ms,
+                (mono_now - self._st_last_callback) * 1000.0)
+        self._st_last_callback = mono_now
         if status:
-            log.debug("mic status: %s", status)
+            self._st_status += 1
+            if mono_now - self._st_last_status_warning >= STATUS_WARNING_INTERVAL:
+                self._st_last_status_warning = mono_now
+                log.warning("mic callback status: %s (count=%d)", status,
+                            self._st_status)
         data = bytes(indata)
         now = time.time()
         x16 = np.frombuffer(data, dtype=np.int16)
@@ -161,7 +183,10 @@ class MicCapture:
                    if pass_y.size else b"")
         if raw:
             for tap in list(self._raw_taps):
+                if tap.maxlen is not None and len(tap) >= tap.maxlen:
+                    self._st_raw_dropped += 1
                 tap.append(raw)
+        self._maybe_log_stats(mono_now, rate)
         try:
             suppressed = bool(self._suppress())
         except Exception:
@@ -210,7 +235,7 @@ class MicCapture:
               start: bool = True) -> sd.RawInputStream:
         kwargs = dict(device=idx, samplerate=rate, channels=1, dtype="int16",
                       blocksize=int(rate * CHUNK_MS / 1000), latency=latency,
-                      callback=self._make_callback(rs, prs))
+                      callback=self._make_callback(rs, prs, rate))
         settings = devices.extra_settings(api)
         if settings is not None:
             kwargs["extra_settings"] = settings
@@ -236,10 +261,11 @@ class MicCapture:
                     s = self._open(idx, api, latency, rs, prs, rate, start=False)
                     self._rs = rs
                     self._stream = s
+                    self._reset_stats()
                     s.start()
                     self._current_api = api
                     log.info("mic capture started: [%d] %s via %s @ %d Hz mono "
-                             "(device native; passthrough %d Hz%s, send %d Hz, "
+                             "(endpoint default; passthrough %d Hz%s, send %d Hz, "
                              "gate RMS %.0f, hangover %.1fs, latency=%s)",
                              idx, name, api, rate, CAPTURE_RATE,
                              "" if prs is None else " resampled", RATE,
@@ -275,6 +301,34 @@ class MicCapture:
         through = (None if rate == CAPTURE_RATE
                    else soxr.ResampleStream(rate, CAPTURE_RATE, 1, dtype="float32"))
         return send, through
+
+    def _reset_stats(self) -> None:
+        self._st_started = time.monotonic()
+        self._st_last_callback = 0.0
+        self._st_calls = 0
+        self._st_frames = 0
+        self._st_status = 0
+        self._st_raw_dropped = 0
+        self._st_max_gap_ms = 0.0
+        self._st_last_status_warning = 0.0
+
+    def _maybe_log_stats(self, mono_now: float, rate: int) -> None:
+        if mono_now - self._st_started < STATS_INTERVAL:
+            return
+        elapsed = mono_now - self._st_started
+        max_raw_queue = max((len(t) for t in self._raw_taps), default=0)
+        log.info(
+            "mic stats(%.0fs): calls=%d audio=%.1fs max_gap=%.1fms "
+            "status=%d raw_queue=%dms dropped=%d",
+            elapsed, self._st_calls,
+            self._st_frames / max(1, rate), self._st_max_gap_ms,
+            self._st_status, max_raw_queue * CHUNK_MS, self._st_raw_dropped)
+        self._st_started = mono_now
+        self._st_calls = 0
+        self._st_frames = 0
+        self._st_status = 0
+        self._st_raw_dropped = 0
+        self._st_max_gap_ms = 0.0
 
     @staticmethod
     def _best_api() -> str:

@@ -43,8 +43,12 @@ TAP_STATS_INTERVAL_SEC = 15.0  # capture summary cadence, like the session stats
 TAP_SILENCE_WARN_SEC = 60.0    # warn once after this long with no capture data
 SENTENCE_END_CHARS = (".", "!", "?", "。", "！", "？", "…")
 PASSTHROUGH_POLL_SEC = 0.008
-PASSTHROUGH_PREBUFFER_MS = 0
-PASSTHROUGH_SLICE_MS = 20
+# A zero-cushion bridge between two independently clocked devices is prone to
+# periodic WASAPI underruns.  Forty milliseconds is short enough for live
+# conversation but absorbs normal callback/event-loop jitter; PcmPlayer
+# re-arms this cushion after a reported underrun or starvation.
+PASSTHROUGH_PREBUFFER_MS = 40
+PASSTHROUGH_SLICE_MS = 10
 PASSTHROUGH_BLOCK_MS = 10
 TTS_PREBUFFER_MS = 80
 
@@ -272,7 +276,11 @@ class OutboundPipeline(_TranslationPipeline):
         self.passthrough = PcmPlayer(ob["tts_device"], name="passthrough", rate=CAPTURE_RATE,
                                      prebuffer_ms=PASSTHROUGH_PREBUFFER_MS,
                                      slice_ms=PASSTHROUGH_SLICE_MS,
-                                     block_ms=PASSTHROUGH_BLOCK_MS) \
+                                     block_ms=PASSTHROUGH_BLOCK_MS,
+                                     match_device_rate=True,
+                                     rebuffer_on_underflow=True,
+                                     stats_interval_sec=15.0,
+                                     max_buffer_ms=200) \
             if self.voice_output or self.passthrough_while_translating else None
         self._passthrough_tap = self.mic.add_raw_tap() if self.passthrough else None
         # passthrough (raw voice) intentionally stays at unity gain

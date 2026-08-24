@@ -7,7 +7,22 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 Release artifacts are attached to [GitHub Releases](https://github.com/shgeum/VRCLT/releases)
 as `vrclt-v<version>-windows-x64.exe` plus a `.sha256` checksum.
 
-## [0.18.0]
+## [0.18.1] - 2026-08-24
+
+### Fixed
+
+- **Raw microphone passthrough could sound robotic or repeatedly cut out.**
+  The Pico input and VB-Cable output are independently clocked devices, but
+  passthrough previously ran with no jitter cushion and ignored PortAudio's
+  output-underflow signal.  Passthrough now starts with a 40 ms cushion,
+  rebuilds that cushion after starvation/underflow, and opens the output at
+  its endpoint-default rate with an in-process resampler when needed.  TTS and
+  inbound playback retain their existing buffering behavior.
+- Microphone callback status/gaps and passthrough queue/underflow/write timing
+  are summarized in the normal INFO log so another device-specific failure is
+  distinguishable from a network or VRChat problem.
+
+## [0.18.0] - 2026-08-24
 
 ### Fixed
 
