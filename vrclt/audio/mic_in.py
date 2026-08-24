@@ -31,11 +31,29 @@ from .. import platform_support
 log = logging.getLogger(__name__)
 
 RATE = 16000  # Gemini input rate
+# Rate the raw passthrough is delivered at. The mic itself is opened at
+# whatever the device actually runs at (see _device_rate): forcing a rate the
+# hardware does not use pushes a sample-rate conversion into the driver, and
+# WASAPI's converter with a fixed 10 ms blocksize glitches audibly on devices
+# with unusual rates (e.g. a 30 kHz headset-link mic). Capturing natively and
+# resampling here keeps the passthrough contract fixed for PcmPlayer while the
+# stream stays glitch-free.
 CAPTURE_RATE = 48000  # raw mic / passthrough rate
 CHUNK_MS = 10
 PREROLL_CHUNKS = 20  # ~200 ms kept so speech onsets aren't clipped
 UPGRADE_INTERVAL = 6.0  # how often to retry upgrading to WASAPI
 BUFFER_CHUNKS = int(13_000 / CHUNK_MS)
+
+
+def _device_rate(idx: int) -> int:
+    """The device's own sample rate; CAPTURE_RATE when it cannot be read."""
+    try:
+        rate = int(round(float(sd.query_devices(idx)["default_samplerate"])))
+    except Exception:
+        log.debug("mic: default_samplerate unreadable for device %s", idx,
+                  exc_info=True)
+        return CAPTURE_RATE
+    return rate if rate > 0 else CAPTURE_RATE
 
 
 class MicCapture:
@@ -68,7 +86,6 @@ class MicCapture:
         self._preroll: collections.deque[bytes] = collections.deque(maxlen=PREROLL_CHUNKS)
         self.last_voice_time = 0.0
         self._in_voice = False
-        self._blocksize = int(CAPTURE_RATE * CHUNK_MS / 1000)
         self._swap_lock = threading.Lock()
         self._upgrade_stop = threading.Event()
         self._upgrade_thread: threading.Thread | None = None
@@ -96,12 +113,13 @@ class MicCapture:
             pass
 
     # ---------------- audio callback ----------------
-    def _make_callback(self, rs: soxr.ResampleStream):
+    def _make_callback(self, rs: soxr.ResampleStream, prs):
         def callback(indata, frames, time_info, status):
-            self._callback(indata, frames, time_info, status, rs)
+            self._callback(indata, frames, time_info, status, rs, prs)
         return callback
 
-    def _callback(self, indata, frames, time_info, status, rs: soxr.ResampleStream):
+    def _callback(self, indata, frames, time_info, status, rs: soxr.ResampleStream,
+                  prs=None):
         # currency guard: during a WASAPI hot-swap (or after stop()) a stale
         # stream's callback may still fire; only the stream owning the live
         # resampler may touch buffer/_preroll/_in_voice. An escaped exception
@@ -115,7 +133,8 @@ class MicCapture:
         x16 = np.frombuffer(data, dtype=np.int16)
         x = x16.astype(np.float32)
         rms = float(np.sqrt(np.mean(x * x))) if x.size else 0.0
-        y = rs.resample_chunk(x / 32768.0)
+        xn = x / 32768.0
+        y = rs.resample_chunk(xn)
         if y.size:
             gemini_data = (np.clip(y, -1.0, 1.0) * 32767.0).astype(np.int16).tobytes()
         else:
@@ -132,8 +151,17 @@ class MicCapture:
         # raw passthrough taps always get the mic: the echo guard only
         # protects the Gemini send path below, so the user's real voice never
         # cuts out of passthrough while inbound audio is playing
-        for tap in list(self._raw_taps):
-            tap.append(data)
+        # taps expect CAPTURE_RATE; convert when the device runs at another
+        # rate, otherwise hand over the device bytes untouched
+        if prs is None:
+            raw = data
+        else:
+            pass_y = prs.resample_chunk(xn)
+            raw = ((np.clip(pass_y, -1.0, 1.0) * 32767.0).astype(np.int16).tobytes()
+                   if pass_y.size else b"")
+        if raw:
+            for tap in list(self._raw_taps):
+                tap.append(raw)
         try:
             suppressed = bool(self._suppress())
         except Exception:
@@ -178,10 +206,11 @@ class MicCapture:
 
     # ---------------- stream open ----------------
     def _open(self, idx: int, api: str, latency, rs: soxr.ResampleStream,
+              prs=None, rate: int = CAPTURE_RATE,
               start: bool = True) -> sd.RawInputStream:
-        kwargs = dict(device=idx, samplerate=CAPTURE_RATE, channels=1, dtype="int16",
-                      blocksize=self._blocksize, latency=latency,
-                      callback=self._make_callback(rs))
+        kwargs = dict(device=idx, samplerate=rate, channels=1, dtype="int16",
+                      blocksize=int(rate * CHUNK_MS / 1000), latency=latency,
+                      callback=self._make_callback(rs, prs))
         settings = devices.extra_settings(api)
         if settings is not None:
             kwargs["extra_settings"] = settings
@@ -198,20 +227,23 @@ class MicCapture:
         last_err = None
         for idx, api in candidates:
             name = sd.query_devices(idx)["name"]
+            rate = _device_rate(idx)
             for latency in ("low", None):
                 try:
-                    rs = soxr.ResampleStream(CAPTURE_RATE, RATE, 1, dtype="float32")
+                    rs, prs = self._resamplers(rate)
                     # install the resampler before starting the stream so the
                     # callback currency guard accepts the first frames
-                    s = self._open(idx, api, latency, rs, start=False)
+                    s = self._open(idx, api, latency, rs, prs, rate, start=False)
                     self._rs = rs
                     self._stream = s
                     s.start()
                     self._current_api = api
                     log.info("mic capture started: [%d] %s via %s @ %d Hz mono "
-                             "(Gemini %d Hz, gate RMS %.0f, hangover %.1fs, latency=%s)",
-                             idx, name, api, CAPTURE_RATE, RATE, self._threshold,
-                             self._hangover, latency or "default")
+                             "(device native; passthrough %d Hz%s, send %d Hz, "
+                             "gate RMS %.0f, hangover %.1fs, latency=%s)",
+                             idx, name, api, rate, CAPTURE_RATE,
+                             "" if prs is None else " resampled", RATE,
+                             self._threshold, self._hangover, latency or "default")
                     best = self._best_api()
                     if best and api != best:
                         log.warning("mic opened via %s (HIGH latency). %s was busy "
@@ -237,6 +269,14 @@ class MicCapture:
 
     # ---------------- background host-API upgrade ----------------
     @staticmethod
+    def _resamplers(rate: int):
+        """(send 16 kHz, passthrough 48 kHz or None) for a device rate."""
+        send = soxr.ResampleStream(rate, RATE, 1, dtype="float32")
+        through = (None if rate == CAPTURE_RATE
+                   else soxr.ResampleStream(rate, CAPTURE_RATE, 1, dtype="float32"))
+        return send, through
+
+    @staticmethod
     def _best_api() -> str:
         """Lowest-latency host API on this platform (WASAPI on Windows).
         Empty when the platform has only one, so no upgrade is attempted."""
@@ -259,11 +299,12 @@ class MicCapture:
                 return
             new = None
             new_rs = None
+            rate = _device_rate(target_idx)
             for latency in ("low", None):
                 try:
-                    new_rs = soxr.ResampleStream(CAPTURE_RATE, RATE, 1, dtype="float32")
+                    new_rs, new_prs = self._resamplers(rate)
                     new = self._open(target_idx, target_api, latency, new_rs,
-                                     start=False)
+                                     new_prs, rate, start=False)
                     break
                 except Exception:
                     new = None

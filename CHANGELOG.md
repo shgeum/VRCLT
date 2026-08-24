@@ -7,7 +7,19 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 Release artifacts are attached to [GitHub Releases](https://github.com/shgeum/VRCLT/releases)
 as `vrclt-v<version>-windows-x64.exe` plus a `.sha256` checksum.
 
-## [0.17.0] - 2026-08-07
+## [0.18.0]
+
+### Fixed
+
+- **The microphone was always opened at 48 kHz**, whatever rate the device
+  actually runs at, which pushed a sample-rate conversion into the driver. On
+  hardware with an unusual rate — a 30 kHz headset-link mic, for instance — that
+  conversion against a fixed 10 ms block produced audible chopping. The stream
+  is now opened at the device's own rate and resampled here instead; the
+  passthrough still leaves at 48 kHz, so nothing downstream changes. Devices
+  already running at 48 kHz behave exactly as before.
+
+## [0.17.0] - 2026-08-11
 
 ### Added
 
@@ -45,6 +57,17 @@ as `vrclt-v<version>-windows-x64.exe` plus a `.sha256` checksum.
     (`CABLE Input`) on Windows, BlackHole on macOS.
   - Global hotkeys, the audio-session process picker, and SteamVR registration
     are gated behind capability checks rather than `os.name` tests.
+- **Capture diagnostics.** The inbound capture used to log two lines in its
+  whole lifetime, so a capture that broke after starting left no trace at all.
+  It now reports the scope and format it actually got on start
+  (`process-scoped`/`SYSTEM-WIDE`, `format=48000Hz/2ch/32bit`), a summary every
+  15 seconds (`calls`, seconds of audio, VAD pass rate, queue depth, dropped
+  chunks, errors), and a one-time warning when audio stops arriving for a
+  minute. Conversion failures log the first few in full and are counted after
+  that instead of flooding the log.
+- The periodic memory diagnostics line now carries the change since the last
+  tick, the OS handle count, and whether the VR renderer is running — enough to
+  tell a native heap leak from a handle leak without another build.
 - Smoke tests for the platform layer and for the OpenAI session, the latter
   driving a mock realtime endpoint that asserts the auth header, session
   configuration, 24 kHz audio, transcript deltas, and the close handshake.
@@ -65,6 +88,12 @@ as `vrclt-v<version>-windows-x64.exe` plus a `.sha256` checksum.
   - The reproducible trigger is ProcTap's Windows build gate, which no Windows
     10 build can pass (WASAPI process loopback requires build 20348+), but six
     other failure paths can trigger the same fallback on Windows 11.
+
+- **The chatbox reset itself during long conversations.** Rolling-bubble
+  sentences expired on absolute age, so a sentence 15 seconds old vanished
+  mid-conversation and the bubble appeared to restart. Entries now expire on a
+  gap in the conversation: while talking continues the bubble only rolls by
+  length, and a real pause still clears it.
 
 ### Changed
 
