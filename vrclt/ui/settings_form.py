@@ -404,10 +404,12 @@ class SettingsForm(QtCore.QObject):
             chk.setChecked(bool(value))
             chk.blockSignals(blocked)
 
-    def sync_from_config(self) -> None:
+    def sync_from_config(self, paths: tuple[str, ...] | None = None) -> None:
         focus = QtWidgets.QApplication.focusWidget()
         for path, (widget, spec) in self._fields.items():
-            if focus is not None and (focus is widget or widget.isAncestorOf(focus)):
+            if paths is not None and path not in paths:
+                continue
+            if paths is None and focus is not None and (focus is widget or widget.isAncestorOf(focus)):
                 continue
             self._set_field_widget_value(
                 widget, spec, config_mod.get_path(self._controller.raw_cfg, path))

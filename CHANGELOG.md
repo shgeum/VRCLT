@@ -24,12 +24,15 @@ as `vrclt-v<version>-windows-x64.exe` plus a `.sha256` checksum.
   associated with their speaker. Subtitle metadata and speaker labels reach the
   PC preview, desktop overlay, and VR overlay; legacy subtitle snapshots remain
   compatible. Speaker numbers are local to each recognition session.
-- `soniox.keep_speaker_context` defaults to `true`, keeping active recognition
-  connections open through pauses so speaker labels persist within the session.
-  A settings checkbox and visible billing note explain the tradeoff: Soniox
+- `soniox.keep_speaker_context` defaults to `false`, using
+  `audio.mic_idle_disconnect_sec` for idle disconnects. A synchronized checkbox
+  appears on the Dashboard when Soniox is selected and is also available in
+  Settings. Enabling it keeps active recognition connections open through pauses
+  so speaker labels persist within the session. A visible billing note explains
+  the tradeoff: Soniox
   [bills the full connected stream, including silence](https://soniox.com/docs/stt/rt/connection-keepalive).
-  Set it to `false` to use `audio.mic_idle_disconnect_sec` for idle disconnects;
-  reconnecting starts a new speaker context.
+  Speaker diarization stays enabled with either choice; reconnecting starts a
+  new speaker context. Existing saved choices are preserved.
 
 ### Changed
 
@@ -38,6 +41,8 @@ as `vrclt-v<version>-windows-x64.exe` plus a `.sha256` checksum.
   editing plus display/app options into expandable sections.
 - Settings gain category navigation and show fields for the selected engine,
   with search available across the relevant settings.
+- Localized Soniox setup guides cover account signup, US-project API keys,
+  billing balance, app and language settings, and first-use troubleshooting.
 - Log bursts update the Qt document once per poll. Returning to the tab reads
   at most 256 KiB, keeps 2,000 recent lines, and bounds incomplete lines to 64 KiB.
 - Reconnect delays await the stop event using a monotonic timeout, eliminating

@@ -116,9 +116,24 @@ API 密钥会以明文保存在该文件中。
 
 ### 3c. Soniox 设置
 
-在 [Soniox 控制台](https://console.soniox.com)创建 API 密钥，在**设置 → 翻译引擎**中
-选择 `soniox` 并输入密钥。也可以使用 `SONIOX_API_KEY` 环境变量，或在
-`config.yaml` 中添加以下内容:
+1. 打开 [Soniox 控制台](https://console.soniox.com)，注册账号并登录。
+2. 打开 **My First Project** 或要使用的项目，在 **API Keys** 中创建密钥。
+   参见[官方入门指南](https://soniox.com/docs/stt/get-started)。v0.19.0 使用美国(US)服务器，
+   如果可以选择区域，请使用 **US 项目**；目前尚无切换其他区域服务器的设置。
+   [区域说明](https://soniox.com/docs/data-residency)
+3. 在 [Billing overview](https://console.soniox.com/org/billing/overview/) 查看 API 余额，
+   按需充值并查看 [API 价格](https://soniox.com/pricing)。试用额度是否提供及其金额，
+   以注册时控制台显示的条件为准。
+4. 在 vrclt 的**设置 → 翻译引擎**中选择 `soniox`，将密钥粘贴到 **Soniox API 密钥**。
+   初次使用保留默认识别模型 `stt-rt-v5`、TTS 模型 `tts-rt-v2` 和音色 `Daniel`。
+5. 选择应用模式、实际麦克风和翻译语音输出设备，然后保存设置并重启。
+   虚拟麦克风连接请参照下方**首次启动设置**中的 `CABLE Input` / `CABLE Output` 说明。
+6. 仪表盘的**输出语言**是自己说话的翻译目标，**字幕语言**是阅读对方发言时使用的语言。
+   例如用中文与日语使用者交流，可选择日语输出和中文字幕。
+   **我的/对方语音语言**可保留自动检测，或选择中文/日语作为识别提示。
+
+使用环境变量 `SONIOX_API_KEY` 时，将应用中的 Soniox API 密钥栏留空，并在设置环境变量后
+完全退出应用再启动。手动配置可在 `config.yaml` 中使用以下内容；通过 GUI 设置则无需编辑文件：
 
 ```yaml
 provider: soniox
@@ -127,7 +142,7 @@ soniox:
   model: stt-rt-v5
   tts_model: tts-rt-v2
   voice: Daniel
-  keep_speaker_context: true
+  keep_speaker_context: false
 ```
 
 Soniox 提供双向语音识别和翻译；启用翻译语音时，还会使用单独的 TTS。
@@ -137,13 +152,23 @@ Soniox 提供双向语音识别和翻译；启用翻译语音时，还会使用�
 编号仅在当前识别会话中有效，不代表 VRChat 账号或真实姓名。
 所有说话人的翻译语音均使用设置中选择的同一个 TTS 音色。
 
-**保持说话人上下文**默认开启（`soniox.keep_speaker_context: true`），在静音时继续
-保持识别连接和说话人编号。Soniox 按整个连接时长计费，包括静音和 keepalive，
+**保持说话人上下文**默认关闭（`soniox.keep_speaker_context: false`）。选择 Soniox 后，
+也可在仪表盘查看和切换此选项，与设置页面共用同一个保存值。说话人分离仍保持开启。
+启用此选项后，静音时继续保持识别连接和说话人编号。Soniox 按整个连接时长计费，包括静音和 keepalive，
 仅文本模式也一样。参见[官方 keepalive 计费说明](https://soniox.com/docs/stt/rt/connection-keepalive)。
-关闭此设置后，静音达到 `audio.mic_idle_disconnect_sec` 时断开连接。
+此设置关闭时，静音达到 `audio.mic_idle_disconnect_sec` 时断开连接。
 停止或禁用管线、结束捕获的进程也会关闭连接。重新连接会开始新的说话人上下文。
 
 已通过本地模拟服务器测试，尚未验证实际付费 Soniox API 调用。
+
+**首次检查：**在目标应用中有人说话时开启**字幕**，检查仪表盘预览中的翻译字幕和
+说话人编号/颜色。让多人轮流说话便于检查说话人分离。开启**翻译**后说一个短句，检查自己的输出翻译。
+
+- 认证错误(`401`)：确认已选择 Soniox，且使用 US 项目的有效密钥。
+- 余额或预算错误(`402`)：检查控制台余额及项目/组织每月限额。
+  [官方错误说明](https://soniox.com/docs/api-reference/errors)
+- 没有字幕或声音：检查目标应用/进程、翻译/字幕开关、麦克风和输出设备，再查看**日志/关于**。
+  如果有字幕但没有翻译语音，也请检查**仅文本**设置和语音输出。
 
 ### 4. 首次启动设置
 
@@ -359,7 +384,7 @@ VRChat 模式可使用:
 | `soniox.model` | `stt-rt-v5` | 实时语音识别和翻译模型。 |
 | `soniox.tts_model` | `tts-rt-v2` | 仅在启用翻译语音时使用的 TTS 模型。 |
 | `soniox.voice` | `Daniel` | 预设语音名称或已有自定义/克隆语音 ID；不自动克隆麦克风声音。 |
-| `soniox.keep_speaker_context` | `true` | 静音时保持连接和说话人编号，期间继续计费。`false` 按 `audio.mic_idle_disconnect_sec` 断开空闲连接；重连后说话人上下文重新开始。 |
+| `soniox.keep_speaker_context` | `false` | 开启时在静音期间保持连接和说话人编号，并继续计费。关闭时按 `audio.mic_idle_disconnect_sec` 断开空闲连接；重连后说话人上下文重新开始。也可在 Soniox 仪表盘切换。 |
 | `log_level` | `INFO` | Python 日志级别。 |
 | `meta.last_version` | `""` | 当前配置已确认的最后应用版本。用于更新后的一次性重置确认。 |
 | `app.mode` | `vrchat` | 当前配置: `vrchat`、`discord` 或 `custom`。 |

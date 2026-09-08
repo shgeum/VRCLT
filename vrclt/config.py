@@ -116,8 +116,8 @@ DEFAULTS = {
         "model": "stt-rt-v5",
         "tts_model": "tts-rt-v2",        # only used when translated voice is enabled
         "voice": "Daniel",              # multilingual stock voice or cloned voice ID
-        "keep_speaker_context": True,    # retain speaker IDs through pauses; Soniox
-                                        # bills the full connected stream duration
+        "keep_speaker_context": False,   # opt in to retain speaker IDs through pauses;
+                                        # Soniox bills the full connected stream duration
     },
     "app": {
         "mode": "vrchat",              # vrchat | discord | custom

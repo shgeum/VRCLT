@@ -227,7 +227,8 @@ class SonioxConfigTests(unittest.TestCase):
         try:
             self.assertIsInstance(pipeline.session, sx.SonioxLiveTranslateSession)
             self.assertIsNone(pipeline.session._on_audio)
-            self.assertEqual(pipeline.session._idle_disconnect, 0)
+            self.assertEqual(pipeline.session._idle_disconnect,
+                             config.DEFAULTS["audio"]["mic_idle_disconnect_sec"])
             pipeline.session._consume_tokens([
                 token("hello", status="original", speaker="1"),
                 token("goodbye", status="original", speaker="2"),
@@ -241,7 +242,14 @@ class SonioxConfigTests(unittest.TestCase):
             self.assertTrue(pipeline.session._restart)
         finally:
             pipeline.detach()
-        cfg["soniox"]["keep_speaker_context"] = False
+        cfg["soniox"]["keep_speaker_context"] = True
+        with patch("vrclt.pipeline.GameAudioTap", return_value=FakeSource()):
+            pipeline = InboundPipeline(cfg, "test-soniox-key", store, state)
+        try:
+            self.assertEqual(pipeline.session._idle_disconnect, 0)
+        finally:
+            pipeline.detach()
+        del cfg["soniox"]["keep_speaker_context"]
         with patch("vrclt.pipeline.GameAudioTap", return_value=FakeSource()):
             pipeline = InboundPipeline(cfg, "test-soniox-key", store, state)
         try:

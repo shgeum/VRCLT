@@ -38,7 +38,7 @@ soniox:                      # Soniox streaming speech recognition + translation
                              # source_language is an optional recognition hint
                              # glossary source=target pairs are supported
                              # speaker diarization is enabled; IDs are session-local
-  keep_speaker_context: true # retain the session/IDs through pauses until stopped;
+  keep_speaker_context: false # opt in to retain the session/IDs through pauses;
                              # full session duration, including silence, is billed
 
 app:

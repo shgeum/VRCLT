@@ -116,9 +116,31 @@ China), vrclt can use **Alibaba Qwen3.5 LiveTranslate** instead of Gemini:
 
 ### 3c. Soniox API Key
 
-Create an API key in the [Soniox console](https://console.soniox.com), select
-`soniox` in **Settings → Translation engine**, and enter the key. You can also
-set `SONIOX_API_KEY`, or add this to `config.yaml`:
+1. Open the [Soniox Console](https://console.soniox.com), create an account, and sign in.
+2. Open **My First Project** or your chosen project, then create a key under
+   **API Keys**. See the [official setup guide](https://soniox.com/docs/stt/get-started).
+   v0.19.0 uses US endpoints, so choose a **US project** if region selection is
+   available; switching to other regional endpoints is not yet configurable.
+   See [Soniox regions](https://soniox.com/docs/data-residency).
+3. Check your API balance in [Billing overview](https://console.soniox.com/org/billing/overview/)
+   and add funds if needed. Review [API pricing](https://soniox.com/pricing);
+   any trial-credit availability and amount depend on the offer shown in your Console.
+4. In vrclt, select `soniox` under **Settings → Translation engine** and paste
+   the key into **Soniox API key**. Keep the initial defaults: recognition model
+   `stt-rt-v5`, TTS model `tts-rt-v2`, and voice `Daniel`.
+5. Choose the app mode, physical microphone, and translated voice output, then
+   click **Save settings and restart**. Follow **First launch** below for
+   `CABLE Input` / `CABLE Output` routing.
+6. On the Dashboard, **Output language** is the language your speech is translated
+   into; **Subtitle language** is the language you read others' speech in. For
+   Korean-to-Japanese conversations, for example, choose Japanese output and
+   Korean subtitles. Leave **My/Their spoken language** on automatic detection,
+   or choose Korean/Japanese as recognition hints.
+
+To use `SONIOX_API_KEY`, leave the app's Soniox API key field empty and fully
+quit/relaunch the app after setting the environment variable. For manual
+configuration, use the following `config.yaml` values. No file editing is
+needed when you use the GUI:
 
 ```yaml
 provider: soniox
@@ -127,14 +149,14 @@ soniox:
   model: stt-rt-v5
   tts_model: tts-rt-v2
   voice: Daniel
-  keep_speaker_context: true
+  keep_speaker_context: false
 ```
 
 Soniox streams speech recognition and translation for both directions. When
 translated voice is enabled, it also uses Soniox TTS. `voice` accepts a stock
 voice name or an existing custom/cloned voice ID; it does not automatically
 clone your microphone voice. Text-only pipelines do not open a TTS session.
-**My/Others' spoken language** can stay on Auto or provide an optional language
+**My/Their spoken language** can stay on Auto or provide an optional language
 hint.
 
 Speaker diarization is enabled: source text and translations stay associated
@@ -145,16 +167,32 @@ do not repeatedly rewrite chatbox text or speech. The selected TTS voice applies
 to all speakers. See [Soniox speaker diarization](https://soniox.com/docs/stt/concepts/speaker-diarization)
 and [available voices](https://soniox.com/docs/tts/concepts/voices).
 
-**Keep speaker context** is enabled by default (`soniox.keep_speaker_context:
-true`): an active recognition connection stays open through pauses to preserve
-speaker labels. Soniox bills the full connected stream, including silence and
-keepalive periods, even in text-only mode. See [Soniox keepalive billing](https://soniox.com/docs/stt/rt/connection-keepalive).
-Turn this setting off to disconnect after `audio.mic_idle_disconnect_sec` of
-silence. Stopping/disabling the pipeline or ending the captured process also
-closes its connection. Reconnecting starts a new speaker context.
+**Keep speaker context** is off by default (`soniox.keep_speaker_context:
+false`). When Soniox is selected, you can check and change it on the Dashboard
+or in Settings; both controls use the same saved value. Speaker diarization
+remains enabled. Turning this option on keeps an active recognition connection
+open through pauses to preserve speaker labels. Soniox bills the full connected
+stream, including silence and keepalive periods, even in text-only mode.
+See [Soniox keepalive billing](https://soniox.com/docs/stt/rt/connection-keepalive).
+With this setting off, the connection closes after
+`audio.mic_idle_disconnect_sec` of silence. Stopping/disabling the pipeline or
+ending the captured process also closes its connection. Reconnecting starts a
+new speaker context.
 
 This integration has local mock-server coverage; paid live Soniox calls have
 not been verified.
+
+**First check:** enable **Subtitles** while someone speaks in the captured app.
+Look for translated subtitles and speaker numbers/colors in the Dashboard's
+live preview; take turns with multiple speakers to check separation. Enable
+**Translation** and speak a short sentence to check your outgoing translation.
+
+- Authentication error (`401`): check that Soniox is selected and the key is valid for a US project.
+- Balance/budget error (`402`): check the Console balance and project/organization
+  monthly limits. See the [error reference](https://soniox.com/docs/api-reference/errors).
+- No subtitles or audio: check the captured app/process, translation/subtitle
+  switches, microphone, and output device, then inspect **Logs/About**. If text
+  works but translated voice does not, also check **Text only** and voice output.
 
 ### 4. First Launch Setup
 
@@ -206,9 +244,9 @@ directions: your voice and the inbound subtitles.
 | | Gemini Live (default) | Qwen3.5 LiveTranslate | gpt-realtime-translate | Soniox |
 | --- | --- | --- | --- | --- |
 | Provider / key | Google AI Studio (`GEMINI_API_KEY`) | Alibaba Cloud Model Studio / DashScope (`DASHSCOPE_API_KEY`) | OpenAI (`OPENAI_API_KEY`) | Soniox (`SONIOX_API_KEY`) |
-| Required setup | API key only | Engine to `qwen`, API key + endpoint (workspace ID on `intl`), **My/Others' spoken language** | Engine to `openai`, API key only | Engine to `soniox`, API key |
+| Required setup | API key only | Engine to `qwen`, API key + endpoint (workspace ID on `intl`), **My/Their spoken language** | Engine to `openai`, API key only | Engine to `soniox`, API key |
 | Works in mainland China | No | Yes (`beijing` endpoint) | No | Not verified |
-| Spoken-language detection | Automatic | **Manual** — set "My/Others' spoken language" | Automatic (the spoken-language settings are ignored) | Automatic; optional spoken-language hints |
+| Spoken-language detection | Automatic | **Manual** — set "My/Their spoken language" | Automatic (the spoken-language settings are ignored) | Automatic; optional spoken-language hints |
 | Languages | 70+ BCP-47 targets, incl. `zh-Hans`/`zh-Hant` | 29 with voice + 31 more text-only; plain `zh` only (no Simplified/Traditional split); Cantonese (`yue`) is text-only | 70+ inputs, but only **13 targets** (`en es pt fr ja ru zh de ko hi id vi it`); plain `zh` only; one target per session | 60 in vrclt; plain `zh` only; no Cantonese (`yue`) |
 | Translated voice | Replicates the speaker's voice | Replicates the speaker via server-side voice cloning (`qwen.voice_clone`, default `once`); or a fixed voice with cloning off | Adapts to the speaker automatically; no voice option | Separate TTS; stock/custom voice, default `Daniel`; no automatic cloning |
 | Barge-in (voice interrupts) | Yes | No — overlapping speech can queue audio | No — overlapping speech can queue audio | No — overlapping speech can queue audio |
@@ -276,7 +314,7 @@ Dashboard:
   hot-plugged devices
 - Translated-voice volume slider and a live mic level meter with the
   detection-threshold marker
-- My/Others' spoken language pickers: required for Qwen, optional recognition hints for Soniox; Gemini and OpenAI auto-detect
+- My/Their spoken language pickers: required for Qwen, optional recognition hints for Soniox; Gemini and OpenAI auto-detect
 - PC subtitle position, box size, and font size controls
 - Live subtitle preview
 
@@ -388,7 +426,7 @@ Top-level and app profile settings:
 | `soniox.model` | `stt-rt-v5` | Streaming speech recognition and translation model. |
 | `soniox.tts_model` | `tts-rt-v2` | TTS model, used only when translated voice is enabled. |
 | `soniox.voice` | `Daniel` | Stock voice name or an existing custom/cloned voice ID; no automatic microphone voice cloning. |
-| `soniox.keep_speaker_context` | `true` | Keeps an active recognition connection through silence to preserve speaker labels; the connected stream remains billable. `false` restores idle disconnect via `audio.mic_idle_disconnect_sec`; reconnecting resets speaker context. |
+| `soniox.keep_speaker_context` | `false` | When enabled, keeps an active recognition connection through silence to preserve speaker labels; the connected stream remains billable. When off, uses `audio.mic_idle_disconnect_sec` for idle disconnect; reconnecting resets speaker context. Also available on the Soniox Dashboard. |
 | `log_level` | `INFO` | Python logging level. |
 | `meta.last_version` | `""` | Last app version that acknowledged the current config. Used for one-time update reset prompts. |
 | `app.mode` | `vrchat` | Active profile: `vrchat`, `discord`, or `custom`. |

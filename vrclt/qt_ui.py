@@ -144,6 +144,7 @@ class _UiSignals(QtCore.QObject):
     save_done = QtCore.Signal(bool)
     mode_done = QtCore.Signal(bool)
     device_done = QtCore.Signal(bool)
+    speaker_context_done = QtCore.Signal(bool)
     reset_done = QtCore.Signal(bool)
     devices_reloaded = QtCore.Signal(bool)
     test_done = QtCore.Signal(bool, str)
@@ -173,10 +174,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self._save_thread = None
         self._mode_thread = None
         self._device_thread = None
+        self._speaker_context_thread = None
         self._reset_thread = None
         self._test_thread = None
         self._app_mode_applying = False
         self._device_applying = False
+        self._speaker_context_applying = False
         self._devices_reloading = False
         self._app_mode_buttons = {}
         self._inputs, self._outputs = _device_names()
@@ -190,6 +193,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._signals.save_done.connect(self._save_done)
         self._signals.mode_done.connect(self._mode_done)
         self._signals.device_done.connect(self._device_done)
+        self._signals.speaker_context_done.connect(self._speaker_context_done)
         self._signals.reset_done.connect(self._reset_done)
         self._signals.devices_reloaded.connect(self._devices_reloaded)
         self._signals.test_done.connect(self._test_done)
@@ -644,6 +648,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self._tip(self._speaker_badge, "speaker_diarization_tip")
         heading.addWidget(self._speaker_badge)
         root.addLayout(heading)
+        self._keep_speaker_context = QtWidgets.QCheckBox()
+        self._on_retranslate(lambda: self._keep_speaker_context.setText(
+            self._tr("f.soniox.keep_speaker_context")))
+        self._tip(self._keep_speaker_context, "f.soniox.keep_speaker_context.tip")
+        self._keep_speaker_context.toggled.connect(self._apply_speaker_context)
+        root.addWidget(self._keep_speaker_context)
         self._subtitle_view = QtWidgets.QTextEdit()
         self._subtitle_view.setObjectName("subtitleView")
         self._subtitle_view.setReadOnly(True)
@@ -1212,9 +1222,11 @@ class MainWindow(QtWidgets.QMainWindow):
         return self._tr("msg_mode_applied")
 
     def _set_dashboard_apply_enabled(self, enabled: bool) -> None:
+        enabled = enabled and not self._speaker_context_applying
         for btn in self._app_mode_buttons.values():
             btn.setEnabled(enabled)
         self._text_only.setEnabled(enabled)
+        self._keep_speaker_context.setEnabled(enabled)
         if hasattr(self, "_mic_device"):
             self._mic_device.setEnabled(enabled)
         if hasattr(self, "_voice_out_device"):
@@ -1272,9 +1284,71 @@ class MainWindow(QtWidgets.QMainWindow):
             self._text_only.setChecked(config_mod.is_text_only(self._controller.cfg))
             self._text_only.setEnabled(
                 not self._app_mode_applying
+                and not self._speaker_context_applying
                 and self._controller.cfg.get("app", {}).get("mode", "vrchat") == "vrchat")
         finally:
             self._text_only.blockSignals(blocked)
+
+    def _sync_speaker_context(self) -> None:
+        self._keep_speaker_context.setVisible(
+            config_mod.provider(self._controller.cfg) == "soniox")
+        if not self._speaker_context_applying:
+            blocked = self._keep_speaker_context.blockSignals(True)
+            try:
+                self._keep_speaker_context.setChecked(bool(_get_path(
+                    self._controller.cfg, "soniox.keep_speaker_context", False)))
+            finally:
+                self._keep_speaker_context.blockSignals(blocked)
+        self._keep_speaker_context.setEnabled(
+            not self._speaker_context_applying and not self._app_mode_applying
+            and not self._device_applying and not self._devices_reloading
+            and (self._test_thread is None or not self._test_thread.is_alive())
+            and self._btn_save.isEnabled())
+
+    def _apply_speaker_context(self, enabled: bool) -> None:
+        if (self._speaker_context_applying or self._app_mode_applying
+                or self._device_applying or self._devices_reloading
+                or (self._test_thread is not None and self._test_thread.is_alive())
+                or not self._btn_save.isEnabled()
+                or config_mod.provider(self._controller.cfg) != "soniox"):
+            self._sync_speaker_context()
+            return
+        if enabled == bool(_get_path(
+                self._controller.cfg, "soniox.keep_speaker_context", False)):
+            return
+
+        def build():
+            cfg = copy.deepcopy(self._controller.raw_cfg)
+            _set_path(cfg, "soniox.keep_speaker_context", bool(enabled))
+            config_mod.save(cfg)
+            return cfg
+
+        def busy():
+            self._speaker_context_applying = True
+            self._set_dashboard_apply_enabled(False)
+            self._btn_save.setEnabled(False)
+            self._btn_reset_config.setEnabled(False)
+            self._btn_devices.setEnabled(False)
+
+        thread = self._apply_config_async(
+            build, fail_key="msg_save_failed", busy_key="msg_save_restarting",
+            note=self._dashboard_note, done_signal=self._signals.speaker_context_done,
+            thread_name="vrclt-speaker-context-restart", on_busy=busy,
+            on_build_error=self._sync_speaker_context)
+        if thread is not None:
+            self._speaker_context_thread = thread
+
+    def _speaker_context_done(self, ok: bool) -> None:
+        self._speaker_context_applying = False
+        self._set_dashboard_apply_enabled(True)
+        self._btn_save.setEnabled(True)
+        self._btn_reset_config.setEnabled(True)
+        self._btn_devices.setEnabled(True)
+        self._sync_speaker_context()
+        # Update just this setting, preserving other unsaved form edits.
+        self._settings_form.sync_from_config(("soniox.keep_speaker_context",))
+        self._dashboard_note.setText(
+            self._tr("msg_applied") if ok else self._tr("msg_saved_start_failed"))
 
     def _set_overlay_font_size(self, value: int) -> None:
         self._controller.set_overlay_font_size(value)
@@ -1438,6 +1512,7 @@ class MainWindow(QtWidgets.QMainWindow):
         cfg = self._controller.cfg
         prov = config_mod.provider(cfg)
         self._speaker_badge.setVisible(prov == "soniox")
+        self._sync_speaker_context()
         self._engine_button.setText({
             "gemini": "Gemini Live", "qwen": "Qwen Live",
             "openai": "OpenAI", "soniox": "Soniox",

@@ -115,9 +115,25 @@ VRChat 또는 Discord가 번역 음성을 마이크처럼 받게 하려면 VB-Au
 
 ### 3c. Soniox 설정
 
-[Soniox 콘솔](https://console.soniox.com)에서 API 키를 만들고 **설정 → 번역 엔진**을
-`soniox`로 선택한 뒤 키를 입력합니다. `SONIOX_API_KEY` 환경 변수를 사용하거나
-`config.yaml`에 아래 값을 지정할 수도 있습니다.
+1. [Soniox 콘솔](https://console.soniox.com)을 열어 계정을 만들고 로그인합니다.
+2. **My First Project** 또는 사용할 프로젝트를 열고 **API Keys**에서 키를 만듭니다.
+   [공식 시작 안내](https://soniox.com/docs/stt/get-started)의 프로젝트별 키 발급 절차를 따릅니다.
+   v0.19.0은 미국(US) 서버를 사용하므로 리전을 선택할 수 있다면 **US 프로젝트**를 사용하세요.
+   다른 리전 서버로 전환하는 설정은 아직 없습니다. [리전 안내](https://soniox.com/docs/data-residency)
+3. [Billing overview](https://console.soniox.com/org/billing/overview/)에서 API 사용 잔액을
+   확인하고 필요한 경우 충전합니다. 요금은 [API 요금표](https://soniox.com/pricing)를
+   확인하세요. 무료 크레딧 유무와 금액은 가입 시 콘솔에 표시되는 조건을 기준으로 합니다.
+4. vrclt의 **설정 → 번역 엔진**에서 `soniox`를 선택하고 **Soniox API 키**에 붙여넣습니다.
+   처음에는 인식 모델 `stt-rt-v5`, TTS 모델 `tts-rt-v2`, 음성 `Daniel`을 그대로 사용합니다.
+5. 앱 모드와 실제 마이크, 번역 음성 출력 장치를 선택한 뒤 **설정 저장 및 재시작**을 누릅니다.
+   가상 마이크 연결은 아래 **첫 실행 설정**의 `CABLE Input` / `CABLE Output` 안내를 따릅니다.
+6. 대시보드의 **출력 언어**는 내 말을 번역할 언어, **자막 언어**는 상대 말을 읽을 언어입니다.
+   예를 들어 한국어로 말하며 일본어 대화를 하려면 출력은 일본어, 자막은 한국어로 둡니다.
+   **내/상대 발화 언어**는 자동 감지로 두거나 한국어/일본어를 인식 힌트로 선택합니다.
+
+환경 변수 `SONIOX_API_KEY`를 사용하려면 앱의 Soniox API 키 칸을 비워 두고,
+환경 변수 설정 후 앱을 완전히 종료했다가 다시 실행합니다. `config.yaml`을 직접 수정할 때는
+아래 값을 사용합니다. GUI에서 설정했다면 파일을 따로 편집할 필요는 없습니다.
 
 ```yaml
 provider: soniox
@@ -126,7 +142,7 @@ soniox:
   model: stt-rt-v5
   tts_model: tts-rt-v2
   voice: Daniel
-  keep_speaker_context: true
+  keep_speaker_context: false
 ```
 
 Soniox는 양방향 음성 인식·번역을 처리하며, 번역 음성을 켜면 별도의 TTS도 사용합니다.
@@ -137,15 +153,28 @@ Soniox는 양방향 음성 인식·번역을 처리하며, 번역 음성을 켜�
 이 번호는 인식 세션 안에서만 유효하며 VRChat 계정이나 실제 이름을 식별하지 않습니다.
 번역 음성은 모든 화자에게 설정한 하나의 TTS 음성을 사용합니다.
 
-**화자 구분 유지**는 기본으로 켜져 있습니다(`soniox.keep_speaker_context: true`).
-연결된 인식 세션을 침묵 중에도 유지해 화자 번호를 이어갑니다. Soniox는 텍스트 전용
-모드에서도 침묵·keepalive를 포함한 전체 연결 시간에 과금합니다.
+**무음 중 화자 구분 유지**는 기본으로 꺼져 있습니다(`soniox.keep_speaker_context: false`).
+Soniox를 선택하면 대시보드에서도 상태를 확인하고 변경할 수 있으며 설정 화면과 같은 값을 사용합니다.
+화자 분리 자체는 계속 켜져 있습니다. 이 옵션을 켜면 연결된 인식 세션을 침묵 중에도 유지해
+화자 번호를 이어갑니다. Soniox는 텍스트 전용 모드에서도 침묵·keepalive를 포함한
+전체 연결 시간에 과금합니다.
 [공식 keepalive 과금 안내](https://soniox.com/docs/stt/rt/connection-keepalive)를 참고하세요.
-이 설정을 끄면 `audio.mic_idle_disconnect_sec`만큼 침묵한 뒤 연결을 닫습니다.
+이 설정이 꺼져 있으면 `audio.mic_idle_disconnect_sec`만큼 침묵한 뒤 연결을 닫습니다.
 파이프라인 중지·비활성화 또는 캡처 대상 프로세스 종료 시에도 연결을 닫으며,
 재연결하면 화자 구분은 새 세션에서 시작합니다.
 
 로컬 모의 서버 테스트로 검증했으며, 실제 유료 Soniox API 호출은 아직 검증하지 않았습니다.
+
+**첫 동작 확인:** 대상 앱에서 상대방이 말하는 동안 **자막**을 켜고 대시보드의 실시간 자막에
+번역 자막과 화자 번호/색상이 나오는지 확인합니다. 여러 사람이 차례로 말하면 화자별 표시를
+확인하기 쉽습니다. 내 음성 번역은 **번역**을 켜고 짧게 말해 확인하세요.
+
+- 키 인증 오류(`401`): 선택한 엔진이 Soniox인지, US 프로젝트의 유효한 API 키인지 확인합니다.
+- 잔액·한도 오류(`402`): 콘솔의 잔액과 프로젝트/조직 월 예산을 확인합니다.
+  [공식 오류 안내](https://soniox.com/docs/api-reference/errors)
+- 자막이나 음성이 없음: 대상 앱/캡처 프로세스, 번역·자막 켜짐 상태, 마이크와 출력 장치를
+  확인하고 **로그/정보**의 오류를 확인합니다. 자막은 나오지만 번역 음성이 없다면
+  **텍스트 전용** 설정과 음성 출력 장치도 확인합니다.
 
 ### 4. 첫 실행 설정
 
@@ -366,7 +395,7 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 | `soniox.model` | `stt-rt-v5` | 실시간 음성 인식·번역 모델. |
 | `soniox.tts_model` | `tts-rt-v2` | 번역 음성을 켰을 때만 사용하는 TTS 모델. |
 | `soniox.voice` | `Daniel` | 기본 제공 음성 이름 또는 기존 커스텀/복제 음성 ID. 마이크 자동 복제 없음. |
-| `soniox.keep_speaker_context` | `true` | 침묵 중에도 연결을 유지해 화자 번호를 보존하며 연결 시간에 과금됩니다. `false`이면 `audio.mic_idle_disconnect_sec`에 따라 연결을 닫습니다. 재연결 시 화자 구분은 새로 시작합니다. |
+| `soniox.keep_speaker_context` | `false` | 켜면 침묵 중에도 연결을 유지해 화자 번호를 보존하며 연결 시간에 과금됩니다. 꺼져 있으면 `audio.mic_idle_disconnect_sec`에 따라 연결을 닫습니다. 재연결 시 화자 구분은 새로 시작합니다. Soniox 대시보드에서도 변경할 수 있습니다. |
 | `log_level` | `INFO` | Python 로그 레벨. |
 | `meta.last_version` | `""` | 현재 설정에서 확인한 마지막 앱 버전. 업데이트 후 1회 리셋 확인에 사용합니다. |
 | `app.mode` | `vrchat` | 활성 프로필: `vrchat`, `discord`, `custom`. |

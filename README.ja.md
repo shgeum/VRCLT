@@ -115,9 +115,25 @@ Gemini の代わりに **Alibaba Qwen3.5 LiveTranslate** を使えます。
 
 ### 3c. Soniox の設定
 
-[Soniox コンソール](https://console.soniox.com)で API キーを作成し、**設定 → 翻訳エンジン**を
-`soniox` にしてキーを入力します。`SONIOX_API_KEY` 環境変数、または以下の
-`config.yaml` 設定も使用できます。
+1. [Soniox コンソール](https://console.soniox.com)でアカウントを作成し、ログインします。
+2. **My First Project** または使用するプロジェクトを開き、**API Keys** でキーを作成します。
+   [公式の開始ガイド](https://soniox.com/docs/stt/get-started)を参照してください。
+   v0.19.0 は米国(US)サーバーを使用するため、リージョンを選べる場合は **US プロジェクト**を
+   使用します。他リージョンへの切り替え設定は未対応です。[リージョン案内](https://soniox.com/docs/data-residency)
+3. [Billing overview](https://console.soniox.com/org/billing/overview/) で API 残高を確認し、
+   必要に応じてチャージします。[API 料金表](https://soniox.com/pricing)も確認してください。
+   試用クレジットの有無や金額は、登録時のコンソールに表示される条件に従います。
+4. vrclt の **設定 → 翻訳エンジン**で `soniox` を選び、**Soniox API キー**に貼り付けます。
+   最初は認識モデル `stt-rt-v5`、TTS モデル `tts-rt-v2`、音声 `Daniel` の既定値を使います。
+5. アプリモード、実際のマイク、翻訳音声の出力先を選び、設定を保存して再起動します。
+   仮想マイクの接続は下の **初回起動設定**にある `CABLE Input` / `CABLE Output` の説明を参照してください。
+6. ダッシュボードの **出力言語**は自分の発話の翻訳先、**字幕言語**は相手の発話を読む言語です。
+   例えば日本語で話して韓国語の相手と会話するなら、出力を韓国語、字幕を日本語にします。
+   **自分/相手の発話言語**は自動検出のまま、または日本語/韓国語を認識ヒントとして指定できます。
+
+環境変数 `SONIOX_API_KEY` を使う場合は、アプリの Soniox API キー欄を空にし、
+環境変数の設定後にアプリを完全に終了して起動し直します。手動設定には以下の
+`config.yaml` を使います。GUI で設定した場合はファイル編集は不要です。
 
 ```yaml
 provider: soniox
@@ -126,7 +142,7 @@ soniox:
   model: stt-rt-v5
   tts_model: tts-rt-v2
   voice: Daniel
-  keep_speaker_context: true
+  keep_speaker_context: false
 ```
 
 Soniox は両方向の音声認識・翻訳を行い、翻訳音声が有効な場合は別の TTS も使用します。
@@ -137,15 +153,27 @@ Soniox は両方向の音声認識・翻訳を行い、翻訳音声が有効な�
 番号は認識セッション内だけで有効で、VRChat アカウントや実名を識別するものではありません。
 翻訳音声には、すべての話者で選択した同じ TTS ボイスを使用します。
 
-**話者コンテキストの維持**は既定で有効です（`soniox.keep_speaker_context: true`）。
-無音中も認識接続を維持して話者番号を引き継ぎます。Soniox はテキストのみでも、
+**話者コンテキストの維持**は既定で無効です（`soniox.keep_speaker_context: false`）。
+Soniox 選択時はダッシュボードでも確認・変更でき、設定画面と同じ値を使用します。
+話者分離自体は引き続き有効です。このオプションを有効にすると、無音中も認識接続を
+維持して話者番号を引き継ぎます。Soniox はテキストのみでも、
 無音・keepalive を含む接続時間全体に課金します。
 [公式 keepalive 課金案内](https://soniox.com/docs/stt/rt/connection-keepalive)を参照してください。
-無効にすると `audio.mic_idle_disconnect_sec` の無音後に切断します。
+無効の場合は `audio.mic_idle_disconnect_sec` の無音後に切断します。
 パイプラインの停止・無効化やキャプチャ対象プロセスの終了でも接続を閉じます。
 再接続時には新しい話者コンテキストが始まります。
 
 ローカルの模擬サーバーで検証済みですが、有料の実 Soniox API 呼び出しは未検証です。
+
+**初回確認:** 対象アプリで相手が話している間に **字幕**を有効にし、ダッシュボードの
+プレビューに翻訳字幕と話者番号/色が出ることを確認します。複数人が順番に話すと
+話者分離を確認しやすくなります。自分の翻訳は **翻訳**を有効にして短い文で確認します。
+
+- 認証エラー(`401`): Soniox が選択され、US プロジェクトの有効なキーかを確認します。
+- 残高・予算エラー(`402`): コンソールの残高とプロジェクト/組織の月間上限を確認します。
+  [公式エラー案内](https://soniox.com/docs/api-reference/errors)
+- 字幕や音声が出ない: 対象アプリ/プロセス、翻訳・字幕の有効状態、マイクと出力先、
+  **ログ/情報**を確認します。字幕だけ出る場合は、**テキストのみ**設定と音声出力も確認します。
 
 ### 4. 初回起動設定
 
@@ -368,7 +396,7 @@ VR オーバーレイを強制的に有効にするには `ui.mode: vr`、無効
 | `soniox.model` | `stt-rt-v5` | リアルタイム音声認識・翻訳モデル。 |
 | `soniox.tts_model` | `tts-rt-v2` | 翻訳音声が有効な場合だけ使用する TTS モデル。 |
 | `soniox.voice` | `Daniel` | 標準ボイス名または既存のカスタム/クローン音声 ID。マイクの自動クローンなし。 |
-| `soniox.keep_speaker_context` | `true` | 無音中も接続して話者番号を保持し、その間も課金されます。`false` は `audio.mic_idle_disconnect_sec` 後に切断。再接続時には新しい話者コンテキストになります。 |
+| `soniox.keep_speaker_context` | `false` | 有効にすると無音中も接続して話者番号を保持し、その間も課金されます。無効の場合は `audio.mic_idle_disconnect_sec` 後に切断。再接続時には新しい話者コンテキストになります。Soniox のダッシュボードでも変更できます。 |
 | `log_level` | `INFO` | Python ログレベル。 |
 | `meta.last_version` | `""` | 現在の設定で確認済みの最後のアプリバージョン。更新後の 1 回限りのリセット確認に使います。 |
 | `app.mode` | `vrchat` | 有効なプロファイル: `vrchat`、`discord`、`custom`。 |

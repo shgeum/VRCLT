@@ -6,10 +6,12 @@ Languages: [English](README.md) | [한국어](README.ko.md) | [日本語](README
 
 See [README.md](README.md).
 
-For Soniox setup (`SONIOX_API_KEY`, streaming translation, and optional TTS),
-see [Soniox API Key](README.md#3c-soniox-api-key). The updated dashboard and
+For Soniox account signup, project API keys, billing balance, app setup,
+language selection, and first-run troubleshooting, see
+[Soniox API Key](README.md#3c-soniox-api-key). The updated dashboard and
 settings navigation are described in [Native UI](README.md#native-ui).
 
-Soniox keeps speaker context through pauses by default; the connected stream
-remains billable during silence. The setup section explains how to disable
-`soniox.keep_speaker_context` to restore idle disconnect.
+Soniox's `soniox.keep_speaker_context` option is off by default and can be checked
+or changed on the Dashboard when Soniox is selected, as well as in Settings.
+Enabling it keeps the connected stream billable during silence. Speaker
+diarization remains enabled with either choice; see the setup section for details.
