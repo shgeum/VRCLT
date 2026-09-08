@@ -15,6 +15,7 @@ KEY_URLS = {
     "qwen": "https://modelstudio.console.alibabacloud.com/?tab=model#/api-key",
     "qwen_beijing": "https://bailian.console.aliyun.com/?tab=model#/api-key",
     "openai": "https://platform.openai.com/api-keys",
+    "soniox": "https://console.soniox.com/",
 }
 
 

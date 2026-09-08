@@ -1,4 +1,4 @@
-"""Language catalog for Gemini Live Translation targets."""
+"""Shared language catalog and provider-specific translation capabilities."""
 from __future__ import annotations
 
 import re
@@ -91,6 +91,8 @@ SUPPORTED_LANGUAGES: tuple[tuple[str, str], ...] = (
 # Existing configs may include non-dedicated-model fallback languages.
 EXTRA_LANGUAGE_NAMES: dict[str, str] = {
     "yue": "Cantonese",
+    "bs": "Bosnian",
+    "cy": "Welsh",
 }
 
 # Native-script hints appended to UI labels where the English name alone is
@@ -221,6 +223,26 @@ def openai_language_code(code: str) -> str:
     if code in _OPENAI_CODE_OVERRIDES:
         return _OPENAI_CODE_OVERRIDES[code]
     return code if len(code) <= 3 else code.split("-", 1)[0]
+
+
+# Soniox STT translation and TTS share this language set. Catalog script and
+# region variants map to one ISO language; the API does not promise a chosen
+# Chinese script. https://soniox.com/docs/translation/supported-languages
+SONIOX_LANGUAGES = frozenset({
+    "af", "sq", "ar", "az", "eu", "be", "bn", "bs", "bg", "ca", "zh",
+    "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "gl", "de", "el",
+    "gu", "he", "hi", "hu", "id", "it", "ja", "kn", "kk", "ko", "lv",
+    "lt", "mk", "ms", "ml", "mr", "no", "fa", "pl", "pt", "pa", "ro",
+    "ru", "sr", "sk", "sl", "es", "sw", "sv", "tl", "ta", "te", "th",
+    "tr", "uk", "ur", "vi", "cy",
+})
+
+
+def soniox_language_code(code: str) -> str:
+    """Map the shared catalog to Soniox ISO codes, including Tagalog/Bokmal."""
+    code = canonical_language_code(code)
+    code = {"fil": "tl", "nb": "no"}.get(code, code)
+    return code.split("-", 1)[0].lower()
 
 
 def language_code_from_text(text: str, fallback_codes=()) -> str:

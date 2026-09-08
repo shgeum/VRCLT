@@ -22,6 +22,7 @@ from . import i18n
 from .gemini.session import LiveTranslateSession
 from .openai.session import OpenAIRealtimeTranslateSession
 from .qwen.session import QwenLiveTranslateSession
+from .soniox.session import SonioxLiveTranslateSession
 from .languages import language_label
 from .out.osc_chatbox import Chatbox, MAX_CHARS as CHATBOX_MAX_CHARS
 from .state import AppState
@@ -51,6 +52,7 @@ PASSTHROUGH_PREBUFFER_MS = 40
 PASSTHROUGH_SLICE_MS = 10
 PASSTHROUGH_BLOCK_MS = 10
 TTS_PREBUFFER_MS = 80
+SPEAKER_PENDING_MAX_CHARS = 32 * 1024
 
 # the model sometimes emits control-token junk like "<cont>" / "{cont>" when
 # it hears non-speech (background music/noise); strip those tag-like fragments
@@ -140,6 +142,121 @@ class Segmenter:
             self._on_final(src, dst, lang or "auto")
 
 
+class _SpeakerTurn:
+    def __init__(self, speaker_id):
+        self.speaker_id = speaker_id
+        self.segment = None
+        self.finals = []
+        self.has_translation = False
+        self.closed = False
+
+
+class SpeakerSegmenter:
+    """Pair ordered speaker turns even when original text runs ahead of translation.
+
+    S1/S2/S1 is three turns, not two speaker buckets. Translation speaker
+    changes advance through the corresponding pending source turns, so both
+    interleaved and source-first streams retain their conversational order.
+    Unattributed tokens use one unknown-speaker lane; they never borrow text
+    from a known speaker.
+    """
+
+    def __init__(self, finalize_silence_sec, on_final, on_partial=None, **options):
+        self._silence = finalize_silence_sec
+        self._on_final = on_final
+        self._on_partial = on_partial
+        self._options = options
+        self._turns: list[_SpeakerTurn] = []
+        self._source_turn = None
+        self._target_turn = None
+
+    def _new_turn(self, speaker_id):
+        # A lost endpoint or malformed stream must not grow memory forever.
+        if len(self._turns) >= 64:
+            self._close(self._turns[0])
+        turn = _SpeakerTurn(speaker_id)
+        turn.segment = Segmenter(
+            self._silence,
+            lambda src, dst, lang: self._collect(turn, src, dst, lang),
+            (lambda src, dst: self._on_partial(src, dst, speaker_id))
+            if self._on_partial else None,
+            **self._options,
+        )
+        self._turns.append(turn)
+        return turn
+
+    def _collect(self, turn, src, dst, lang):
+        turn.finals.append((src, dst, lang))
+        self._emit_ready()
+
+    def _emit_ready(self):
+        while self._turns:
+            turn = self._turns[0]
+            for src, dst, lang in turn.finals:
+                self._on_final(src, dst, lang, turn.speaker_id)
+            turn.finals.clear()
+            if not turn.closed:
+                break
+            self._turns.pop(0)
+
+    def _close(self, turn):
+        turn.closed = True
+        turn.segment.flush()
+        self._emit_ready()
+
+    def _pending_text_chars(self) -> int:
+        return sum(
+            len(turn.segment._src) + len(turn.segment._dst)
+            + sum(len(src) + len(dst) for src, dst, _lang in turn.finals)
+            for turn in self._turns
+        )
+
+    def _enforce_text_limit(self) -> None:
+        # The turn count alone does not bound a never-ending source turn or
+        # completed sentences waiting behind an untranslated earlier turn.
+        # Publish the oldest turn(s), in order, rather than dropping text or
+        # letting a lost endpoint accumulate an unlimited transcript.
+        while self._turns and self._pending_text_chars() > SPEAKER_PENDING_MAX_CHARS:
+            self._close(self._turns[0])
+
+    def add_src(self, text: str, lang: str | None, speaker_id=None) -> None:
+        turn = self._source_turn
+        if turn is None or turn.closed or turn.speaker_id != speaker_id:
+            turn = self._source_turn = self._new_turn(speaker_id)
+        turn.segment.add_src(text, lang)
+        self._enforce_text_limit()
+
+    def add_dst(self, text: str, speaker_id=None) -> None:
+        turn = self._target_turn
+        if turn is None or turn.closed or turn.speaker_id != speaker_id:
+            if turn is not None and not turn.closed:
+                self._close(turn)
+            turn = next((pending for pending in self._turns
+                         if pending.speaker_id == speaker_id
+                         and not pending.has_translation and not pending.closed), None)
+            if turn is None:
+                turn = self._new_turn(speaker_id)
+            self._target_turn = turn
+        turn.has_translation = True
+        turn.segment.add_dst(text)
+        self._enforce_text_limit()
+
+    def turn_complete(self) -> None:
+        self.flush()
+
+    def tick(self) -> None:
+        for turn in list(self._turns):
+            # Keep source-only turns until the endpoint or the bounded queue
+            # limit; slower translated tokens still need their original line.
+            if turn.segment._dst:
+                turn.segment.tick()
+
+    def flush(self) -> None:
+        for turn in list(self._turns):
+            self._close(turn)
+        self._source_turn = self._target_turn = None
+
+
 class _TranslationPipeline:
     """Shared pipeline skeleton: Segmenter + Live session wiring, state
     subscription, audio-sink fan-out, and the segment flush timer.
@@ -163,7 +280,8 @@ class _TranslationPipeline:
         au = cfg["audio"]
         self.state = state
         self._audio_sinks = tuple(audio_sinks)
-        self.segmenter = Segmenter(finalize_silence_sec, self._on_final,
+        segmenter_class = SpeakerSegmenter if config_mod.provider(cfg) == "soniox" else Segmenter
+        self.segmenter = segmenter_class(finalize_silence_sec, self._on_final,
                                    self._on_partial,
                                    partial_interval_sec=partial_interval_sec,
                                    sentence_min_chars=sentence_min_chars,
@@ -185,7 +303,21 @@ class _TranslationPipeline:
             on_interrupted=self._on_interrupted,
         )
         prov = config_mod.provider(cfg)
-        if prov == "openai":
+        if prov == "soniox":
+            sx = cfg.get("soniox", {})
+            if sx.get("keep_speaker_context", True):
+                # Speaker numbering is session-local. Keep the same session
+                # across pauses, until the pipeline is disabled or stopped.
+                common["idle_disconnect_sec"] = 0
+            self.session = SonioxLiveTranslateSession(
+                model=sx.get("model", "stt-rt-v5"),
+                tts_model=sx.get("tts_model", "tts-rt-v2"),
+                voice=sx.get("voice", "Daniel"),
+                get_source_language=get_source_language,
+                speaker_metadata=True,
+                **common,
+            )
+        elif prov == "openai":
             oa = cfg.get("openai", {})
             # source transcripts are billed separately and only one side
             # displays them by default: the chatbox prints the original above
@@ -238,10 +370,10 @@ class _TranslationPipeline:
         for sink in self._audio_sinks:
             sink.interrupt()
 
-    def _on_partial(self, src: str, dst: str) -> None:
+    def _on_partial(self, src: str, dst: str, speaker_id=None) -> None:
         raise NotImplementedError
 
-    def _on_final(self, src: str, dst: str, lang: str) -> None:
+    def _on_final(self, src: str, dst: str, lang: str, speaker_id=None) -> None:
         raise NotImplementedError
 
     async def _segment_tick(self, stop: asyncio.Event) -> None:
@@ -449,12 +581,12 @@ class OutboundPipeline(_TranslationPipeline):
             self.chatbox.send(dst or src)
         return True
 
-    def _on_partial(self, src: str, dst: str) -> None:
+    def _on_partial(self, src: str, dst: str, speaker_id=None) -> None:
         if self.chatbox:
             self.chatbox.typing(True)
             self._send_chatbox_text(src, dst, partial=True)
 
-    def _on_final(self, src: str, dst: str, lang: str) -> None:
+    def _on_final(self, src: str, dst: str, lang: str, speaker_id=None) -> None:
         log.info("FINAL [%s] %s  ->  %s", lang, src, dst)
         if self.chatbox:
             self.chatbox.typing(False)
@@ -463,22 +595,42 @@ class OutboundPipeline(_TranslationPipeline):
 
     # -- main --
     async def run(self, stop: asyncio.Event) -> None:
-        self.mic.start()
-        if self.tts_player:
-            self.tts_player.start()
-        if self.passthrough:
-            self.passthrough.start()
-        if self.monitor:
-            self.monitor.start()
-        tick_task = asyncio.ensure_future(self._segment_tick(stop))
-        route_task = asyncio.ensure_future(self._route_passthrough(stop)) \
-            if self.passthrough else None
+        tick_task = route_task = None
+
+        def stop_resource(name, resource):
+            if resource is not None:
+                try:
+                    resource.stop()
+                except Exception:
+                    log.exception("outbound: could not stop %s", name)
+
         try:
+            # Startup is covered by the same cleanup as the running session:
+            # a missing output device must not leave the mic/player alive.
+            self.mic.start()
+            if self.tts_player:
+                self.tts_player.start()
+            if self.passthrough:
+                self.passthrough.start()
+            if self.monitor:
+                try:
+                    self.monitor.start()
+                except Exception as exc:
+                    log.warning("outbound: optional monitor unavailable; "
+                                "continuing primary output: %s", exc)
+                    monitor = self.monitor
+                    self.monitor = None
+                    self._audio_sinks = tuple(
+                        sink for sink in self._audio_sinks if sink is not monitor)
+                    stop_resource("disabled monitor", monitor)
+            tick_task = asyncio.ensure_future(self._segment_tick(stop))
+            route_task = asyncio.ensure_future(self._route_passthrough(stop)) \
+                if self.passthrough else None
             await self.session.run(stop)
         finally:
-            tick_task.cancel()
-            if route_task:
-                route_task.cancel()
+            for task in (tick_task, route_task):
+                if task is not None:
+                    task.cancel()
             # await the cancellations so the coroutine frames (and the
             # buffers they close over) are released now, not at some later
             # GC pass ("Task was destroyed but it is pending"). Swallow a
@@ -490,18 +642,18 @@ class OutboundPipeline(_TranslationPipeline):
                     return_exceptions=True)
             except asyncio.CancelledError:
                 pass
-            self.segmenter.flush()
-            self.mic.stop()
-            if self.tts_player:
-                self.tts_player.stop()
-            if self.passthrough:
-                self.passthrough.stop()
-            if self._passthrough_tap is not None:
-                self.mic.remove_raw_tap(self._passthrough_tap)
-            if self.monitor:
-                self.monitor.stop()
-            if self.chatbox:
-                self.chatbox.stop()
+            try:
+                self.segmenter.flush()
+            finally:
+                for name, resource in (("microphone", self.mic),
+                                       ("translated voice", self.tts_player),
+                                       ("passthrough", self.passthrough),
+                                       ("monitor", self.monitor),
+                                       ("chatbox", self.chatbox)):
+                    stop_resource(name, resource)
+                if self._passthrough_tap is not None:
+                    self.mic.remove_raw_tap(self._passthrough_tap)
+                    self._passthrough_tap = None
 
     async def _route_passthrough(self, stop: asyncio.Event) -> None:
         """Route raw mic frames to the cable when passthrough should be audible."""
@@ -554,32 +706,42 @@ class InboundPipeline(_TranslationPipeline):
             audio_sinks=(self.player,) if self.player else (),
         )
 
-    def _on_partial(self, src: str, dst: str) -> None:
-        self.store.set_partial(src, dst)
+    def _on_partial(self, src: str, dst: str, speaker_id=None) -> None:
+        self.store.set_partial(src, dst, speaker_id=speaker_id)
 
-    def _on_final(self, src: str, dst: str, lang: str) -> None:
-        log.info("INBOUND [%s] %s  ->  %s", lang, src, dst)
-        self.store.add_final(src, dst, lang)
+    def _on_final(self, src: str, dst: str, lang: str, speaker_id=None) -> None:
+        log.info("INBOUND [%s%s] %s  ->  %s", lang,
+                 f" speaker={speaker_id}" if speaker_id is not None else "", src, dst)
+        self.store.add_final(src, dst, lang, speaker_id=speaker_id)
 
     async def run(self, stop: asyncio.Event) -> None:
-        if self.player:
-            self.player.start()
-        tap_task = asyncio.ensure_future(self._tap_supervisor(stop))
-        tick_task = asyncio.ensure_future(self._segment_tick(stop))
+        tap_task = tick_task = None
         try:
+            if self.player:
+                self.player.start()
+            tap_task = asyncio.ensure_future(self._tap_supervisor(stop))
+            tick_task = asyncio.ensure_future(self._segment_tick(stop))
             await self.session.run(stop)
         finally:
-            tap_task.cancel()
-            tick_task.cancel()
+            for task in (tap_task, tick_task):
+                if task is not None:
+                    task.cancel()
             try:
-                await asyncio.gather(tap_task, tick_task, return_exceptions=True)
+                await asyncio.gather(
+                    *(t for t in (tap_task, tick_task) if t is not None),
+                    return_exceptions=True)
             except asyncio.CancelledError:
                 pass
-            self.segmenter.flush()
-            self.tap.stop()
-            self._tap_running = False
-            if self.player:
-                self.player.stop()
+            try:
+                self.segmenter.flush()
+            finally:
+                self._tap_running = False
+                for name, resource in (("capture", self.tap), ("audio", self.player)):
+                    if resource is not None:
+                        try:
+                            resource.stop()
+                        except Exception:
+                            log.exception("inbound: could not stop %s", name)
 
     async def _tap_supervisor(self, stop: asyncio.Event) -> None:
         """Start/stop the process tap as the target app launches and exits.

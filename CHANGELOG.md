@@ -7,6 +7,54 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 Release artifacts are attached to [GitHub Releases](https://github.com/shgeum/VRCLT/releases)
 as `vrclt-v<version>-windows-x64.exe` plus a `.sha256` checksum.
 
+## [0.19.0] - 2026-09-08
+
+### Added
+
+- Soniox as a fourth translation engine for both microphone translation and
+  inbound subtitles: `provider: soniox`, `soniox.api_key` or `SONIOX_API_KEY`,
+  `stt-rt-v5` speech recognition/translation, and optional `tts-rt-v2` translated
+  voice. Stock voice `Daniel` is the default; existing custom/cloned voice IDs
+  are accepted without automatically cloning microphone speech. Spoken-language
+  settings provide optional hints; text-only pipelines do not open TTS sessions.
+- Soniox settings, backend supported-language validation, API-key setup guidance, and
+  local mock-WebSocket regression coverage. Paid live Soniox calls have not
+  been verified.
+- Soniox speaker diarization keeps interleaved original/translated fragments
+  associated with their speaker. Subtitle metadata and speaker labels reach the
+  PC preview, desktop overlay, and VR overlay; legacy subtitle snapshots remain
+  compatible. Speaker numbers are local to each recognition session.
+- `soniox.keep_speaker_context` defaults to `true`, keeping active recognition
+  connections open through pauses so speaker labels persist within the session.
+  A settings checkbox and visible billing note explain the tradeoff: Soniox
+  [bills the full connected stream, including silence](https://soniox.com/docs/stt/rt/connection-keepalive).
+  Set it to `false` to use `audio.mic_idle_disconnect_sec` for idle disconnects;
+  reconnecting starts a new speaker context.
+
+### Changed
+
+- Dashboard groups the main translation, subtitle, language, and audio controls,
+  shows the active engine with a settings shortcut, and moves language-list
+  editing plus display/app options into expandable sections.
+- Settings gain category navigation and show fields for the selected engine,
+  with search available across the relevant settings.
+- Log bursts update the Qt document once per poll. Returning to the tab reads
+  at most 256 KiB, keeps 2,000 recent lines, and bounds incomplete lines to 64 KiB.
+- Reconnect delays await the stop event using a monotonic timeout, eliminating
+  200 ms polling and waking immediately when the runtime stops.
+
+### Fixed
+
+- An unavailable optional monitor output no longer aborts microphone
+  translation; primary voice output continues. Failed required audio startup
+  releases already-started capture, players, and pipeline workers.
+- CLI `--help` and `-h` exit after showing usage instead of accidentally
+  starting microphone capture and the runtime. Unknown SteamVR launch arguments
+  remain tolerated.
+- Log rotation is detected by file identity even when the new file is larger
+  than the previous read offset. Filtered results now expire with their history
+  window, and a newly created log replaces the missing-file placeholder.
+
 ## [0.18.1] - 2026-08-24
 
 ### Fixed

@@ -2,17 +2,17 @@
 
 语言: [English](README.md) | [한국어](README.ko.md) | [日本語](README.ja.md) | [中文](README.zh.md)
 
-`vrclt` 是面向 VRChat 和 Discord 的 Windows 实时翻译工具。它使用 Gemini
-Live API 翻译你的麦克风音频，通过 VB-Audio Virtual Cable 将翻译语音送入目标
+`vrclt` 是面向 VRChat 和 Discord 的 Windows 实时翻译工具。它使用所选
+翻译引擎处理你的麦克风音频，通过 VB-Audio Virtual Cable 将翻译语音送入目标
 应用的麦克风输入，并把其他人的语音显示为翻译字幕。
 
 ## 主要功能
 
 - 带有仪表板、设置、日志/关于标签页的 Windows 原生 UI
 - 托盘菜单支持打开应用、打开设置、切换翻译/字幕和退出
-- 出站翻译: 你的麦克风 -> Gemini Live -> 翻译语音 -> 目标应用麦克风
-- 入站字幕: 目标应用音频 -> Gemini Live -> 翻译字幕
-- 三种翻译引擎: Google Gemini Live（默认）、面向无法访问 Google 的地区（如中国大陆）的 Alibaba Qwen3.5 LiveTranslate，以及 OpenAI gpt-realtime-translate
+- 出站翻译: 你的麦克风 -> selected engine -> 翻译语音 -> 目标应用麦克风
+- 入站字幕: 目标应用音频 -> selected engine -> 翻译字幕
+- 四种翻译引擎: Google Gemini Live（默认）、Alibaba Qwen3.5 LiveTranslate、OpenAI gpt-realtime-translate，以及 Soniox
 - 支持 VRChat OSC 聊天框输出、角色 OSC 控制、SteamVR 字幕和手腕菜单
 - 支持 SteamVR 仪表板设置面板和随 SteamVR 自动启动（注册到启动/叠加层应用）
 - VRChat 仅文本模式: 保留原始语音直通，只向 OSC 聊天框追加翻译文本
@@ -28,7 +28,7 @@ Live API 翻译你的麦克风音频，通过 VB-Audio Virtual Cable 将翻译�
 ### 要求
 
 - 推荐 Windows 11
-- Google Gemini API 密钥 — 或用于 Qwen 引擎的阿里云百炼 (Model Studio / DashScope) API 密钥 (获取方式见下方)
+- 所选引擎的 API 密钥: Gemini、Qwen/DashScope、OpenAI 或 Soniox
 - [VB-Audio Virtual Cable](https://vb-audio.com/Cable/)
 - 使用 VR 叠加层和手腕 UI 时需要 SteamVR
 - 使用 VRChat 聊天框/角色控制功能时需要启用 VRChat OSC
@@ -114,6 +114,37 @@ API 密钥会以明文保存在该文件中。
 5. 设置 **我的语音语言** 和 **对方语音语言** — Qwen 无法自动检测语音语言
    （见下文"翻译引擎"一节）。
 
+### 3c. Soniox 设置
+
+在 [Soniox 控制台](https://console.soniox.com)创建 API 密钥，在**设置 → 翻译引擎**中
+选择 `soniox` 并输入密钥。也可以使用 `SONIOX_API_KEY` 环境变量，或在
+`config.yaml` 中添加以下内容:
+
+```yaml
+provider: soniox
+soniox:
+  api_key: ""  # 留空时使用 SONIOX_API_KEY
+  model: stt-rt-v5
+  tts_model: tts-rt-v2
+  voice: Daniel
+  keep_speaker_context: true
+```
+
+Soniox 提供双向语音识别和翻译；启用翻译语音时，还会使用单独的 TTS。
+`voice` 支持预设语音名称或已有的自定义/克隆语音 ID，不会自动克隆麦克风中的声音。
+仅文本管线不会连接 TTS。**我的/对方语音语言**可保留自动检测，也可设置为识别提示。
+说话人分离会分别保留各说话人的原文和译文，并在字幕中显示说话人编号。
+编号仅在当前识别会话中有效，不代表 VRChat 账号或真实姓名。
+所有说话人的翻译语音均使用设置中选择的同一个 TTS 音色。
+
+**保持说话人上下文**默认开启（`soniox.keep_speaker_context: true`），在静音时继续
+保持识别连接和说话人编号。Soniox 按整个连接时长计费，包括静音和 keepalive，
+仅文本模式也一样。参见[官方 keepalive 计费说明](https://soniox.com/docs/stt/rt/connection-keepalive)。
+关闭此设置后，静音达到 `audio.mic_idle_disconnect_sec` 时断开连接。
+停止或禁用管线、结束捕获的进程也会关闭连接。重新连接会开始新的说话人上下文。
+
+已通过本地模拟服务器测试，尚未验证实际付费 Soniox API 调用。
+
 ### 4. 首次启动设置
 
 1. 运行 `vrclt-v<version>-windows-x64.exe`。
@@ -153,18 +184,18 @@ API 密钥会以明文保存在该文件中。
 
 ## 翻译引擎
 
-vrclt 支持三种实时翻译引擎，通过 **翻译引擎** 设置（`config.yaml` 中的
+vrclt 支持四种实时翻译引擎，通过 **翻译引擎** 设置（`config.yaml` 中的
 `provider`）选择。该选择同时作用于两个方向: 你的语音和入站字幕。
 
-| | Gemini Live（默认） | Qwen3.5 LiveTranslate | gpt-realtime-translate |
-| --- | --- | --- | --- |
-| 提供方 / 密钥 | Google AI Studio (`GEMINI_API_KEY`) | 阿里云百炼 / DashScope (`DASHSCOPE_API_KEY`) | OpenAI (`OPENAI_API_KEY`) |
-| 必要设置 | 仅需 API 密钥 | 引擎设为 `qwen`、API 密钥 + 服务器（`intl` 还需工作空间 ID）、**我的/对方语音语言** | 引擎设为 `openai`，仅需 API 密钥 |
-| 中国大陆可用性 | 需要能访问 Google 服务 | 可直连 `beijing` 端点 | 需要能访问 OpenAI 服务 |
-| 语音语言检测 | 自动检测 | **手动** — 需设置"我的/对方语音语言" | 自动检测（语音语言设置会被忽略） |
-| 支持语言 | 70+ 种 BCP-47 目标语言，含 `zh-Hans`/`zh-Hant` | 29 种带语音 + 另外 31 种仅文本；中文只有 `zh`（不区分简体/繁体）；粤语（`yue`）仅文本 | 输入 70+ 种，但目标语言仅 **13 种**（`en es pt fr ja ru zh de ko hi id vi it`）；中文只有 `zh`；每个会话一种目标语言 |
-| 翻译语音 | 复刻说话者音色 | 通过服务端声音复刻还原说话者音色（`qwen.voice_clone`，默认 `once`）；关闭复刻时使用固定音色 | 自动贴合说话人音色；无音色选项 |
-| 抢话打断（barge-in） | 支持 | 不支持 — 同时说话时音频可能排队播放 | 不支持 — 同时说话时音频可能排队播放 |
+| | Gemini Live（默认） | Qwen3.5 LiveTranslate | gpt-realtime-translate | Soniox |
+| --- | --- | --- | --- | --- |
+| 提供方 / 密钥 | Google AI Studio (`GEMINI_API_KEY`) | 阿里云百炼 / DashScope (`DASHSCOPE_API_KEY`) | OpenAI (`OPENAI_API_KEY`) | Soniox (`SONIOX_API_KEY`) |
+| 必要设置 | 仅需 API 密钥 | 引擎设为 `qwen`、API 密钥 + 服务器（`intl` 还需工作空间 ID）、**我的/对方语音语言** | 引擎设为 `openai`，仅需 API 密钥 | 引擎 `soniox` + API 密钥 |
+| 中国大陆可用性 | 需要能访问 Google 服务 | 可直连 `beijing` 端点 | 需要能访问 OpenAI 服务 | 未验证 |
+| 语音语言检测 | 自动检测 | **手动** — 需设置"我的/对方语音语言" | 自动检测（语音语言设置会被忽略） | 自动检测；语音语言为可选提示 |
+| 支持语言 | 70+ 种 BCP-47 目标语言，含 `zh-Hans`/`zh-Hant` | 29 种带语音 + 另外 31 种仅文本；中文只有 `zh`（不区分简体/繁体）；粤语（`yue`）仅文本 | 输入 70+ 种，但目标语言仅 **13 种**（`en es pt fr ja ru zh de ko hi id vi it`）；中文只有 `zh`；每个会话一种目标语言 | 应用支持 60 种语言；中文使用 `zh`，不支持粤语（`yue`） |
+| 翻译语音 | 复刻说话者音色 | 通过服务端声音复刻还原说话者音色（`qwen.voice_clone`，默认 `once`）；关闭复刻时使用固定音色 | 自动贴合说话人音色；无音色选项 | 单独 TTS；默认 `Daniel` 或自定义语音；无自动克隆 |
+| 抢话打断（barge-in） | 支持 | 不支持 — 同时说话时音频可能排队播放 | 不支持 — 同时说话时音频可能排队播放 | 不支持 — 重叠语音可能排队播放 |
 
 Qwen 注意事项:
 
@@ -210,6 +241,12 @@ Qwen 注意事项:
 
 ## 原生 UI
 
+仪表板集中显示翻译、字幕、语言和音频操作，并展示当前引擎和设置快捷入口。
+语言列表编辑及显示、应用附加选项可展开使用。设置支持分类导航和搜索，
+只显示当前所选引擎的相关配置。
+日志批量更新，追赶读取最多 256 KiB，历史最多 2,000 行，未完成行最多 64 KiB。
+重连等待直接响应停止事件，不再定期轮询。
+
 仪表板:
 
 - 运行时状态和连接状态
@@ -220,13 +257,13 @@ Qwen 注意事项:
 - 输出语言和字幕语言，并可搜索添加 Gemini Live Translation 支持的 70+ 种语言
 - 麦克风输入和翻译语音输出设备选择，附输出测试音按钮；刷新设备会重启运行时并识别后插入的设备
 - 翻译语音音量滑块和带检测阈值标记的实时麦克风电平表
-- Qwen 引擎的我的/对方语音语言选择器（Gemini 下禁用，因其自动检测）
+- 我的/对方语音语言: Qwen 必填，Soniox 为可选识别提示，Gemini/OpenAI 自动检测
 - PC 字幕位置移动/重置、字幕框大小和字号
 - 实时字幕预览
 
 设置:
 
-- 翻译引擎（Gemini / Qwen）、API 密钥、模型，以及 Qwen 端点/工作空间
+- 翻译引擎（Gemini / Qwen / OpenAI / Soniox）、API 密钥、模型，以及 Qwen 端点/工作空间
 - 应用模式和目标进程
 - 麦克风、翻译语音输出、监听输出和入站音频设备
 - 默认目标语言和已保存语言列表
@@ -250,14 +287,14 @@ Qwen 注意事项:
 出站翻译:
 
 ```text
-microphone -> Gemini Live -> translated voice -> CABLE Input
+microphone -> selected engine -> translated voice -> CABLE Input
                                      target app mic <- CABLE Output
 ```
 
 入站字幕:
 
 ```text
-target app process audio -> ProcTap -> Gemini Live -> subtitles
+target app process audio -> ProcTap -> selected engine -> subtitles
 ```
 
 翻译关闭时，麦克风不会经过 Gemini，而是直接发送到 `CABLE Input`。
@@ -303,7 +340,7 @@ VRChat 模式可使用:
 
 | 键 | 默认值 | 说明 |
 | --- | --- | --- |
-| `provider` | `gemini` | 同时作用于两条管线的翻译引擎: `gemini`、`qwen` 或 `openai`。 |
+| `provider` | `gemini` | 同时作用于两条管线的翻译引擎: `gemini`、`qwen`、`openai` 或 `soniox`。 |
 | `api_key` | `""` | Gemini API 密钥。留空时可使用 `GEMINI_API_KEY` 环境变量。 |
 | `model` | `gemini-3.5-live-translate-preview` | Gemini Live 模型名。 |
 | `qwen.api_key` | `""` | DashScope API 密钥。留空时可使用 `DASHSCOPE_API_KEY` 环境变量。 |
@@ -318,6 +355,11 @@ VRChat 模式可使用:
 | `openai.transcribe_model` | `gpt-realtime-whisper` | 出站会话的原文识别 ASR。VRChat 聊天框需要它才能在翻译上方显示原文（`osc.show_source`）。留空则聊天框只显示翻译。 |
 | `openai.inbound_transcribe_model` | `""` | 入站字幕的原文识别 ASR。默认留空时只显示翻译字幕；想同时看到原文请填 `gpt-realtime-whisper` 并开启 `overlay.show_source`。两个 ASR 都会在翻译之外按分钟计费。 |
 | `openai.noise_reduction` | `near_field` | 服务端输入降噪: `near_field`（头戴麦）、`far_field`（房间麦），留空则关闭。 |
+| `soniox.api_key` | `""` | Soniox API 密钥。留空时使用 `SONIOX_API_KEY`。 |
+| `soniox.model` | `stt-rt-v5` | 实时语音识别和翻译模型。 |
+| `soniox.tts_model` | `tts-rt-v2` | 仅在启用翻译语音时使用的 TTS 模型。 |
+| `soniox.voice` | `Daniel` | 预设语音名称或已有自定义/克隆语音 ID；不自动克隆麦克风声音。 |
+| `soniox.keep_speaker_context` | `true` | 静音时保持连接和说话人编号，期间继续计费。`false` 按 `audio.mic_idle_disconnect_sec` 断开空闲连接；重连后说话人上下文重新开始。 |
 | `log_level` | `INFO` | Python 日志级别。 |
 | `meta.last_version` | `""` | 当前配置已确认的最后应用版本。用于更新后的一次性重置确认。 |
 | `app.mode` | `vrchat` | 当前配置: `vrchat`、`discord` 或 `custom`。 |
@@ -353,7 +395,7 @@ PC 热键:
 | --- | --- | --- |
 | `outbound.enabled` | `true` | 启用出站管线。 |
 | `outbound.target_language` | `ja` | 翻译你说话内容的默认 BCP-47 语言代码。可在 UI 中搜索并选择 Gemini Live Translation 支持的 70+ 种语言。 |
-| `outbound.source_language` | `""` | 我的语音语言。Qwen 必填（无自动检测；留空按英语处理）。Gemini 会忽略。 |
+| `outbound.source_language` | `""` | 我的语音语言。Qwen 必填（留空为英语），Soniox 为可选提示，Gemini/OpenAI 忽略。 |
 | `outbound.echo_target_language` | `false` | 对已经是目标语言的输入也进行复述。 |
 | `outbound.mic_device` | `""` | 麦克风设备名片段。留空时使用默认输入。 |
 | `outbound.tts_device` | `CABLE Input` | 翻译语音和原声直通的输出设备。 |
@@ -371,7 +413,7 @@ PC 热键:
 | --- | --- | --- |
 | `inbound.enabled` | `true` | 启用用于字幕的进程音频捕获。 |
 | `inbound.target_language` | `ko` | 默认字幕 BCP-47 语言代码。可在 UI 中搜索并选择 Gemini Live Translation 支持的 70+ 种语言。 |
-| `inbound.source_language` | `""` | 对方语音语言（仅 Qwen，规则与 `outbound.source_language` 相同）。 |
+| `inbound.source_language` | `""` | 对方的语音语言。各引擎规则与 `outbound.source_language` 相同。 |
 | `inbound.languages` | `[ko, en, ja]` | 仪表板和手腕菜单使用的已保存字幕语言列表。只从 UI 选择器中添加需要的语言。 |
 | `inbound.process` | `VRChat.exe` | 入站字幕要捕获的进程名。 |
 | `inbound.allow_system_audio` | `false` | 按进程捕获需要 Windows 11（内部版本 20348+）。在不支持的环境中设为 `true` 会捕获整个系统声音而非所选应用（其他应用的声音和你自己的翻译语音也会被转写）；`false` 则不启动入站。 |
@@ -474,14 +516,14 @@ dist\vrclt.exe
 创建发布产物:
 
 ```powershell
-.\scripts\package_release.ps1 -Version 0.1.0
+.\scripts\package_release.ps1 -Version 0.19.0
 ```
 
 发布脚本会生成:
 
 ```text
-release\vrclt-v0.1.0-windows-x64.exe
-release\vrclt-v0.1.0-windows-x64.exe.sha256
+release\vrclt-v0.19.0-windows-x64.exe
+release\vrclt-v0.19.0-windows-x64.exe.sha256
 ```
 
 ## 冒烟测试
@@ -490,7 +532,7 @@ release\vrclt-v0.1.0-windows-x64.exe.sha256
 .\.venv\Scripts\python.exe -m compileall vrclt
 .\.venv\Scripts\python.exe -m vrclt --help
 .\.venv\Scripts\pyinstaller.exe vrclt.spec --noconfirm
-.\scripts\package_release.ps1 -Version 0.1.0 -SkipBuild
+.\scripts\package_release.ps1 -Version 0.19.0 -SkipBuild
 ```
 
 实际运行时测试流程: 运行 exe，在原生 UI 中保存设置，确认

@@ -22,14 +22,14 @@ ERR_RED: Color = (224, 100, 80, 255)      # #e06450 - hard errors
 TEXT: Color = (240, 240, 240, 255)        # #f0f0f0 - primary text
 
 # ---- Qt desktop palette ----
-QT_BG: Color = (18, 20, 26, 255)              # #12141a
-QT_SURFACE: Color = (28, 31, 41, 255)         # #1c1f29
-QT_SURFACE_HI: Color = (42, 48, 64, 255)      # #2a3040
-QT_BORDER: Color = (48, 53, 66, 255)          # #303542
-QT_HOVER: Color = (56, 66, 89, 255)           # #384259
-QT_PRIMARY: Color = (31, 143, 77, 255)        # #1f8f4d
-QT_PRIMARY_HOVER: Color = (38, 168, 93, 255)  # #26a85d
-QT_PRIMARY_DISABLED: Color = (50, 81, 61, 255)  # #32513d
+QT_BG: Color = (18, 24, 35, 255)             # #121823
+QT_SURFACE: Color = (27, 37, 51, 255)        # #1b2533
+QT_SURFACE_HI: Color = (39, 53, 71, 255)     # #273547
+QT_BORDER: Color = (52, 68, 88, 255)         # #344458
+QT_HOVER: Color = (54, 74, 97, 255)          # #364a61
+QT_PRIMARY: Color = (54, 112, 168, 255)      # #3670a8
+QT_PRIMARY_HOVER: Color = (68, 133, 196, 255)  # #4485c4
+QT_PRIMARY_DISABLED: Color = (42, 62, 83, 255)  # #2a3e53
 QT_TEXT_DIM: Color = (154, 160, 173, 255)     # #9aa0ad
 QT_TEXT_IDLE: Color = (139, 148, 158, 255)    # #8b949e
 QT_WARN: Color = (210, 153, 34, 255)          # #d29922
@@ -49,6 +49,24 @@ VR_DRAG: Color = (70, 110, 180, 255)
 VR_WARN_AMBER: Color = (230, 168, 70, 255)
 VR_DOT_IDLE: Color = (110, 110, 110, 255)
 PENDING: Color = (130, 175, 255, 255)         # selected but not applied yet
+
+# Speaker IDs describe voices within one recognition session, not identities.
+# A fixed palette keeps a speaker consistent across desktop and VR surfaces;
+# labels carry the distinction as well, so color is never the only cue.
+SPEAKER_COLORS: tuple[Color, ...] = (
+    (125, 190, 246, 255), (238, 184, 110, 255), (140, 212, 172, 255),
+    (204, 164, 232, 255), (239, 152, 174, 255), (129, 211, 218, 255),
+)
+
+
+def speaker_color(speaker_id: str) -> Color:
+    value = str(speaker_id)
+    try:
+        index = max(0, int(value) - 1)
+    except ValueError:
+        # Python's hash is randomized between processes; use a stable mapping.
+        index = sum((i + 1) * ord(char) for i, char in enumerate(value))
+    return SPEAKER_COLORS[index % len(SPEAKER_COLORS)]
 
 
 def hex_rgb(col: Color) -> str:
@@ -98,20 +116,42 @@ def build_qss() -> str:
     }
     return """
         QMainWindow, QWidget {{ background: {bg}; color: {text}; }}
-        QTabWidget::pane {{ border: 1px solid {border}; }}
-        QTabBar::tab {{ padding: 10px 18px; background: {surface}; }}
-        QTabBar::tab:selected {{ background: {surface_hi}; }}
-        QGroupBox {{ border: 1px solid {border}; border-radius: 6px; margin-top: 10px; }}
-        QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 4px; }}
+        QTabWidget::pane {{ border: 0; border-top: 1px solid {border}; }}
+        QTabBar::tab {{ padding: 12px 24px; background: {bg}; color: {text_dim};
+                       border-bottom: 2px solid transparent; }}
+        QTabBar::tab:selected {{ color: {text}; border-bottom: 2px solid {info_title}; }}
+        QTabBar::tab:hover {{ background: {surface}; color: {text}; }}
+        QGroupBox {{ border: 1px solid {border}; border-radius: 8px;
+                     margin-top: 12px; padding: 12px 8px 8px 8px; }}
+        QGroupBox::title {{ subcontrol-origin: margin; left: 14px;
+                           padding: 0 6px; color: {text_dim}; }}
+        QGroupBox#outboundPanel {{ border-top: 2px solid {ok}; }}
+        QGroupBox#inboundPanel {{ border-top: 2px solid {info_title}; }}
         QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit {{
             background: {surface}; color: {text}; border: 1px solid {border};
-            border-radius: 4px; padding: 6px 8px; min-height: 28px;
+            border-radius: 5px; padding: 4px 8px; min-height: 26px;
         }}
         QPushButton {{
-            background: {surface_hi}; color: {text}; border: 0; border-radius: 4px;
-            padding: 8px 14px; min-height: 30px;
+            background: {surface_hi}; color: {text}; border: 1px solid transparent;
+            border-radius: 5px; padding: 6px 12px; min-height: 26px;
         }}
         QPushButton:hover {{ background: {hover}; }}
+        QPushButton:disabled, QToolButton:disabled {{ color: {text_idle}; background: {surface}; }}
+        QPushButton:focus, QToolButton:focus, QLineEdit:focus, QComboBox:focus,
+        QAbstractSpinBox:focus {{ border: 1px solid {info_title}; }}
+        QComboBox QAbstractItemView {{ background: {surface}; color: {text};
+                                     selection-background-color: {hover}; }}
+        QCheckBox {{ spacing: 8px; }}
+        QCheckBox::indicator {{ width: 16px; height: 16px; }}
+        QSlider::groove:horizontal {{ height: 4px; background: {border}; border-radius: 2px; }}
+        QSlider::sub-page:horizontal {{ background: {info_title}; border-radius: 2px; }}
+        QSlider::handle:horizontal {{ width: 14px; margin: -5px 0;
+                                      background: {text}; border-radius: 7px; }}
+        QScrollArea {{ border: 0; }}
+        QScrollBar:vertical {{ background: {bg}; width: 10px; margin: 0; }}
+        QScrollBar::handle:vertical {{ background: {border}; min-height: 32px; border-radius: 5px; }}
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
         QPushButton#primaryButton {{
             background: {primary}; color: #ffffff; font-weight: 800;
             padding: 9px 18px;
@@ -120,7 +160,17 @@ def build_qss() -> str:
         QPushButton#primaryButton:disabled {{
             background: {primary_disabled}; color: {text_dim};
         }}
-        #statusText {{ font-weight: 700; }}
+        #appWordmark {{ font-family: "Segoe UI"; font-size: 22pt; font-weight: 700; }}
+        #statusText {{ color: {text_dim}; font-size: 10pt; }}
+        #sectionTitle {{ font-weight: 600; color: {text_dim}; }}
+        #speakerBadge {{ color: {info_title}; font-size: 10pt; }}
+        QPushButton#engineButton {{ background: {surface}; border: 1px solid {border};
+                                   color: {info_title}; }}
+        QToolButton#disclosureButton {{ border: 1px solid transparent;
+            border-radius: 4px; padding: 5px 0; color: {text_dim}; text-align: left; }}
+        QToolButton#disclosureButton:hover {{ color: {text}; background: {surface}; }}
+        QTabBar#settingsCategories::tab {{ padding: 9px 14px; }}
+        #settingsSectionHint, #settingsEmpty {{ color: {text_dim}; }}
         #errorText {{ color: {err_text}; }}
         #noteText {{ color: {text_dim}; }}
         #updateBar {{
@@ -138,11 +188,11 @@ def build_qss() -> str:
         }}
         QPushButton[modeButton="true"] {{
             background: {surface}; border: 1px solid {border}; border-radius: 8px;
-            padding: 10px 14px; font-weight: 600;
+            padding: 4px 12px; font-weight: 600;
         }}
         QPushButton[modeButton="true"]:checked {{
-            background: {text}; color: {bg}; border: 2px solid {text_idle};
-            font-weight: 800;
+            background: {surface_hi}; color: {text}; border: 1px solid {info_title};
+            font-weight: 700;
         }}
         #statusDot {{ border-radius: 7px; background: {text_idle}; }}
         #statusDot[state="ok"] {{ background: {ok}; }}

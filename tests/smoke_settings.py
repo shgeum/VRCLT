@@ -92,7 +92,7 @@ def main():
     # search filter: only matching rows/groups stay visible
     form.apply_filter("wrist")
     spec, f_form, label, widget = form._rows["wrist_ui.tilt_deg"]
-    assert not label.isHidden() or not widget.isHidden() or True  # row-visible flag below
+    assert f_form.isRowVisible(widget)
     hidden_groups = [g for g, paths in form._groups if g.isHidden()]
     assert hidden_groups, "unmatched groups should hide"
     visible_groups = [g for g, paths in form._groups if not g.isHidden()]
@@ -102,7 +102,10 @@ def main():
     assert form._filter_text == "wrist"
     assert any(g.isHidden() for g, _ in form._groups)
     form.apply_filter("")
-    assert not any(g.isHidden() for g, _ in form._groups)
+    # Clearing search returns to the selected category, not the old all-fields wall.
+    visible_groups = [g for g, _ in form._groups if not g.isHidden()]
+    assert visible_groups
+    assert any(g.isHidden() for g, _ in form._groups)
 
     # focus helpers round-trip (offscreen needs the window shown + events)
     win.show()

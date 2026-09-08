@@ -1,11 +1,11 @@
 """Logs-tab panel: following tail, level filter, search, open-folder.
 
-Reads the log file incrementally by byte offset (rotation-aware: the
-RotatingFileHandler truncates at 5 MB, detected as size < offset) so the
-500 ms follow tick never re-reads the whole file.
+Reads the log file incrementally by byte offset and file identity. Catch-up
+reads and partial lines are bounded, and each follow tick updates Qt once.
 """
 from __future__ import annotations
 
+import os
 import re
 from collections import deque
 from pathlib import Path
@@ -15,6 +15,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from .widgets import NoWheelComboBox
 
 INITIAL_TAIL_BYTES = 256 * 1024
+MAX_LINE_BYTES = 64 * 1024
 MAX_LINES = 2000
 FOLLOW_INTERVAL_MS = 500
 SEARCH_DEBOUNCE_MS = 250
@@ -38,7 +39,9 @@ class LogPanel(QtWidgets.QWidget):
         self._log_file = Path(log_file)
         self._tr = tr
         self._offset = 0
+        self._file_id: tuple[int, int] | None = None
         self._carry = b""
+        self._carry_truncated = False
         self._lines: deque[tuple[int, str]] = deque(maxlen=MAX_LINES)
         self._last_rank = 20  # continuation lines inherit the previous level
 
@@ -124,15 +127,18 @@ class LogPanel(QtWidgets.QWidget):
         """Full re-read of the tail (manual refresh, rotation, first load)."""
         self._lines.clear()
         self._carry = b""
+        self._carry_truncated = False
         self._last_rank = 20
+        self._file_id = None
         try:
             with self._log_file.open("rb") as f:
-                f.seek(0, 2)
-                size = f.tell()
+                info = os.fstat(f.fileno())
+                self._file_id = (info.st_dev, info.st_ino)
+                size = info.st_size
                 start = max(0, size - INITIAL_TAIL_BYTES)
                 f.seek(start)
-                data = f.read()
-                self._offset = size
+                data = f.read(INITIAL_TAIL_BYTES)
+                self._offset = f.tell()
         except FileNotFoundError:
             self._offset = 0
             self._text.setPlainText(self._tr("msg_log_missing"))
@@ -151,54 +157,77 @@ class LogPanel(QtWidgets.QWidget):
         self.set_active(self._active)
 
     def _poll(self) -> None:
-        try:
-            size = self._log_file.stat().st_size
-        except OSError:
-            return
-        if size < self._offset:  # rotated/truncated under us
-            self.reload()
-            return
-        if size == self._offset:
-            return
+        reload_needed = False
         try:
             with self._log_file.open("rb") as f:
-                f.seek(self._offset)
-                data = f.read(size - self._offset)
-                self._offset = f.tell()
+                info = os.fstat(f.fileno())
+                # Rotation can replace the file with one already larger than
+                # our last offset. Size alone would miss that replacement.
+                reload_needed = (
+                    (info.st_dev, info.st_ino) != self._file_id
+                    or info.st_size < self._offset
+                    or info.st_size - self._offset > INITIAL_TAIL_BYTES)
+                if not reload_needed:
+                    if info.st_size == self._offset:
+                        return
+                    f.seek(self._offset)
+                    data = f.read(min(INITIAL_TAIL_BYTES,
+                                      info.st_size - self._offset))
+                    self._offset = f.tell()
         except OSError:
             return
-        for rank, line in self._ingest(data):
-            if self._passes(rank, line):
-                self._text.appendPlainText(line)
+        if reload_needed:
+            # Returning to a hidden tab should show the recent tail without
+            # parsing and laying out megabytes of accumulated history.
+            self.reload()
+            return
+        old_count = len(self._lines)
+        added = self._ingest(data)
+        if (old_count + len(added) > MAX_LINES
+                and (self._level.currentIndex() or self._search.text().strip())):
+            # Filtered-out new lines must also evict old visible matches from
+            # the same history window used by a manual refresh/filter change.
+            self._render()
+            return
+        visible = self._filtered_lines(added)
+        if visible:
+            self._text.appendPlainText("\n".join(visible))
 
     def _ingest(self, data: bytes) -> list[tuple[int, str]]:
         """Split new bytes into complete lines (keeping the trailing partial
         line as carry), append them to the ring buffer, and return them."""
-        data = self._carry + data
         if not data:
             return []
         parts = data.split(b"\n")
-        self._carry = parts.pop()
-        added = []
-        for raw in parts:
-            line = raw.decode("utf-8", errors="replace").rstrip("\r")
+        parts[0] = self._carry + parts[0]
+        first_truncated = self._carry_truncated
+        tail = parts.pop()
+        self._carry_truncated = (len(tail) > MAX_LINE_BYTES
+                                 or (not parts and first_truncated))
+        self._carry = tail[:MAX_LINE_BYTES]
+        added: deque[tuple[int, str]] = deque(maxlen=MAX_LINES)
+        for index, raw in enumerate(parts):
+            truncated = len(raw) > MAX_LINE_BYTES or (index == 0 and first_truncated)
+            line = raw[:MAX_LINE_BYTES].decode("utf-8", errors="replace").rstrip("\r")
+            if truncated:
+                line += " …"
             m = _LEVEL_RE.search(line)
             if m:
                 self._last_rank = _LEVEL_RANK[m.group(1)]
             added.append((self._last_rank, line))
         self._lines.extend(added)
-        return added
+        return list(added)
 
-    def _passes(self, rank: int, line: str) -> bool:
-        if rank < _FILTER_MIN_RANK[self._level.currentIndex()]:
-            return False
+    def _filtered_lines(self, lines) -> list[str]:
+        # Read Qt controls once per batch instead of once for every log line.
+        minimum = _FILTER_MIN_RANK[self._level.currentIndex()]
         needle = self._search.text().strip().lower()
-        return not needle or needle in line.lower()
+        return [line for rank, line in lines
+                if rank >= minimum and (not needle or needle in line.lower())]
 
     def _render(self) -> None:
         self._text.setPlainText(
-            "\n".join(line for rank, line in self._lines
-                      if self._passes(rank, line)))
+            "\n".join(self._filtered_lines(self._lines)))
         bar = self._text.verticalScrollBar()
         bar.setValue(bar.maximum())
 

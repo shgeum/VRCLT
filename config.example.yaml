@@ -2,7 +2,7 @@
 # Developer reference config. The standalone exe stores user settings in AppData.
 # In a source checkout, copy this file to config.yaml if you want local overrides.
 # Leave api_key empty to use the GEMINI_API_KEY environment variable instead.
-provider: gemini             # gemini | qwen | openai (engine for BOTH pipelines)
+provider: gemini             # gemini | qwen | openai | soniox (BOTH pipelines)
 api_key: ""                  # Gemini API key (Google AI Studio)
 model: gemini-3.5-live-translate-preview
 
@@ -29,6 +29,17 @@ openai:                      # OpenAI realtime translation (/v1/realtime/transla
                              # (both are billed per minute on top of the translation)
   noise_reduction: near_field  # near_field (headset) | far_field (room mic) | "" = off
                              # note: source_language is ignored - always auto-detected
+
+soniox:                      # Soniox streaming speech recognition + translation
+  api_key: ""                # empty -> SONIOX_API_KEY env var
+  model: stt-rt-v5
+  tts_model: tts-rt-v2        # used only when translated voice is enabled
+  voice: Daniel             # multilingual voice name or cloned voice ID
+                             # source_language is an optional recognition hint
+                             # glossary source=target pairs are supported
+                             # speaker diarization is enabled; IDs are session-local
+  keep_speaker_context: true # retain the session/IDs through pauses until stopped;
+                             # full session duration, including silence, is billed
 
 app:
   mode: vrchat                 # vrchat | discord | custom; override with: python -m vrclt run --app vrchat
@@ -81,7 +92,8 @@ outbound:                 # my voice -> others (VRChat hears the translation)
   enabled: true
   target_language: ja     # BCP-47: ja, en, ko, zh-Hans, ...
   source_language: ""     # my spoken language; REQUIRED for Qwen (no auto-detect,
-                          # "" is treated as English). Gemini ignores this.
+                          # "" is treated as English). Optional hint for Soniox;
+                          # Gemini and OpenAI auto-detect.
   echo_target_language: false
   mic_device: ""          # substring of device name; "" = default input
   tts_device: CABLE Input # VB-Cable playback side (VRChat mic = CABLE Output)
@@ -96,7 +108,7 @@ outbound:                 # my voice -> others (VRChat hears the translation)
 inbound:                  # others' voices -> me (subtitles)
   enabled: true
   target_language: ko
-  source_language: ""     # others' spoken language (Qwen only, same rules as outbound)
+  source_language: ""     # Qwen source language / optional Soniox recognition hint
   languages: [ko, en, ja] # wrist menu cycles subtitle language through these
   process: VRChat.exe
   allow_system_audio: false  # per-process capture needs Windows 11 (build 20348+);

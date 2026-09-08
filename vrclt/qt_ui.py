@@ -5,7 +5,6 @@ import copy
 import logging
 import math
 import threading
-from html import escape as html_escape
 from pathlib import Path
 
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -181,8 +180,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self._devices_reloading = False
         self._app_mode_buttons = {}
         self._inputs, self._outputs = _device_names()
+        self._refresh_pending = QtCore.QTimer(self)
+        self._refresh_pending.setSingleShot(True)
+        self._refresh_pending.setInterval(40)
+        self._refresh_pending.timeout.connect(self._refresh)
         self._signals = _UiSignals()
-        self._signals.refresh.connect(self._refresh)
+        self._signals.refresh.connect(self._queue_refresh)
         self._signals.toast.connect(self._show_toast)
         self._signals.save_done.connect(self._save_done)
         self._signals.mode_done.connect(self._mode_done)
@@ -195,8 +198,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._signals.translation_hold.connect(self._controller.set_hold_mute)
 
         self.setWindowTitle(f"VRCLT v{__version__}")
-        self.resize(980, 720)
+        self.resize(1040, 820)
+        self.setMinimumSize(780, 620)
         self._tabs = QtWidgets.QTabWidget()
+        self._tabs.setDocumentMode(True)
         self.setCentralWidget(self._tabs)
 
         self._build_dashboard()
@@ -269,6 +274,10 @@ class MainWindow(QtWidgets.QMainWindow):
             return self._tr("err_openai_api_key_empty")
         if error == "API key must be an OpenAI API key, not a URL.":
             return self._tr("err_openai_api_key_url")
+        if error == "Soniox API key is empty.":
+            return self._tr("err_soniox_api_key_empty")
+        if error == "API key must be a Soniox API key, not a URL.":
+            return self._tr("err_soniox_api_key_url")
         return error
 
     def _on_retranslate(self, fn) -> None:
@@ -292,35 +301,57 @@ class MainWindow(QtWidgets.QMainWindow):
     def _build_dashboard(self) -> None:
         page = QtWidgets.QWidget()
         root = QtWidgets.QVBoxLayout(page)
-        root.setContentsMargins(18, 18, 18, 18)
-        root.setSpacing(12)
+        root.setContentsMargins(24, 20, 24, 20)
+        root.setSpacing(14)
 
         self._build_dash_header(root)
         c = self._build_dash_controls()
         root.addWidget(self._build_dash_mode_group(c))
         root.addLayout(self._build_dash_pipe_groups(c))
         root.addWidget(self._build_dash_audio_group(c))
-        root.addWidget(self._build_dash_display_group())
-        root.addWidget(self._build_dash_app_group())
         self._build_dash_subtitles(root)
-        self._tab_dashboard_idx = self._tabs.addTab(page, self._tr("tab_dashboard"))
+        options = QtWidgets.QWidget()
+        options_layout = QtWidgets.QVBoxLayout(options)
+        options_layout.setContentsMargins(0, 0, 0, 0)
+        options_layout.addWidget(self._build_dash_display_group())
+        options_layout.addWidget(self._build_dash_app_group())
+        self._dashboard_options = self._disclosure("dash_more_options", options)
+        root.addWidget(self._dashboard_options)
+        # Small screens and expanded options stay reachable without forcing
+        # the entire window taller than the available desktop.
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        scroll.setWidget(page)
+        self._dashboard_scroll = scroll
+        self._tab_dashboard_idx = self._tabs.addTab(scroll, self._tr("tab_dashboard"))
         self._on_retranslate(lambda: self._tabs.setTabText(
             self._tab_dashboard_idx, self._tr("tab_dashboard")))
 
     def _build_dash_header(self, root: QtWidgets.QVBoxLayout) -> None:
         """Status row + restart, error label, update/setup banners, toast."""
         top = QtWidgets.QHBoxLayout()
+        brand = QtWidgets.QLabel("VRCLT")
+        brand.setObjectName("appWordmark")
+        top.addWidget(brand)
+        top.addSpacing(12)
         self._status_dot = QtWidgets.QLabel()
         self._status_dot.setObjectName("statusDot")
         self._status_dot.setFixedSize(14, 14)
         self._status_text = QtWidgets.QLabel(self._tr("status_stopped"))
         self._status_text.setObjectName("statusText")
+        self._status_text.setWordWrap(True)
         self._error_text = QtWidgets.QLabel("")
         self._error_text.setObjectName("errorText")
         self._error_text.setWordWrap(True)
         top.addWidget(self._status_dot)
         top.addWidget(self._status_text)
         top.addStretch(1)
+        self._engine_button = QtWidgets.QPushButton()
+        self._engine_button.setObjectName("engineButton")
+        self._engine_button.clicked.connect(self._show_engine_settings)
+        self._tip(self._engine_button, "dash_engine_tip")
+        top.addWidget(self._engine_button)
         self._btn_restart = QtWidgets.QPushButton(self._tr("btn_restart_runtime"))
         self._btn_restart.clicked.connect(self._restart_runtime)
         self._on_retranslate(
@@ -350,16 +381,52 @@ class MainWindow(QtWidgets.QMainWindow):
         self._toast_timer.setSingleShot(True)
         self._toast_timer.timeout.connect(self._toast.hide)
 
+    def _show_engine_settings(self) -> None:
+        self._tabs.setCurrentIndex(self._tab_settings_idx)
+        self._settings_search.clear()
+        self._settings_form.focus_field("provider")
+        field = self._settings_form._fields.get("provider")
+        if field:
+            self._settings_scroll.ensureWidgetVisible(field[0])
+
+    def _disclosure(self, key: str, content: QtWidgets.QWidget) -> QtWidgets.QWidget:
+        """Keep occasional controls available without crowding the live view."""
+        wrap = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(wrap)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        button = QtWidgets.QToolButton()
+        button.setObjectName("disclosureButton")
+        button.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        button.setArrowType(QtCore.Qt.ArrowType.RightArrow)
+        button.setCheckable(True)
+        button.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding,
+                             QtWidgets.QSizePolicy.Policy.Fixed)
+        self._on_retranslate(lambda: button.setText(self._tr(key)))
+        content.hide()
+
+        def toggle(expanded):
+            content.setVisible(expanded)
+            button.setArrowType(QtCore.Qt.ArrowType.DownArrow if expanded
+                                else QtCore.Qt.ArrowType.RightArrow)
+
+        button.toggled.connect(toggle)
+        layout.addWidget(button)
+        layout.addWidget(content)
+        return wrap
+
     def _build_dash_controls(self) -> dict:
         """Create every dashboard control widget (order preserved from the
         original monolithic builder); returns the container widgets the
         group builders lay out."""
         self._btn_trans = QtWidgets.QPushButton()
         self._btn_trans.setObjectName("transToggle")
+        self._btn_trans.setMinimumHeight(44)
         self._btn_trans.clicked.connect(
             lambda: self._controller.set_translation_on(not self._controller.state.translation_on))
         self._btn_sub = QtWidgets.QPushButton()
         self._btn_sub.setObjectName("subToggle")
+        self._btn_sub.setMinimumHeight(44)
         self._btn_sub.clicked.connect(
             lambda: self._controller.set_subtitles_on(not self._controller.state.subtitles_on))
         self._out_lang = NoWheelComboBox()
@@ -412,6 +479,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._close_action.currentIndexChanged.connect(self._pick_close_action)
         self._dashboard_note = QtWidgets.QLabel("")
         self._dashboard_note.setObjectName("noteText")
+        self._dashboard_note.setWordWrap(True)
         self._btn_overlay_move = QtWidgets.QPushButton()
         self._btn_overlay_move.setObjectName("overlayMoveBtn")
         self._btn_overlay_move.clicked.connect(self._toggle_overlay_move)
@@ -469,6 +537,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self._tip(self._btn_overlay_move, "tip_overlay_move")
         self._tip(self._close_action, "tip_close_action")
 
+        for combo in (self._out_lang, self._sub_lang, self._src_lang,
+                      self._in_src_lang, self._out_lang_add, self._sub_lang_add,
+                      self._mic_device, self._voice_out_device):
+            combo.setMinimumContentsLength(12)
+            combo.setSizeAdjustPolicy(
+                QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+
         return {
             "app_mode": app_mode_widget,
             "out_add": out_lang_add_widget,
@@ -491,32 +566,34 @@ class MainWindow(QtWidgets.QMainWindow):
     def _build_dash_pipe_groups(self, c: dict) -> QtWidgets.QHBoxLayout:
         """My speech -> others / others -> me group boxes, side by side."""
         grp_out = self._group("dash_grp_out")
+        grp_out.setObjectName("outboundPanel")
         out_lay = QtWidgets.QGridLayout(grp_out)
-        out_lay.addWidget(self._label("ctl_my_translate"), 0, 0)
-        out_lay.addWidget(self._btn_trans, 0, 1)
+        out_lay.addWidget(self._btn_trans, 0, 0, 1, 2)
         out_lay.addWidget(self._label("label_out_lang"), 1, 0)
         out_lay.addWidget(self._out_lang, 1, 1)
-        out_lay.addWidget(self._label("label_add_out_lang"), 2, 0)
-        out_lay.addWidget(c["out_add"], 2, 1)
-        out_lay.addWidget(c["src_label"], 3, 0)
-        out_lay.addWidget(self._src_lang, 3, 1)
+        out_lay.addWidget(c["src_label"], 2, 0)
+        out_lay.addWidget(self._src_lang, 2, 1)
+        self._out_language_options = self._disclosure("dash_language_options", c["out_add"])
+        out_lay.addWidget(self._out_language_options, 3, 0, 1, 2)
         out_lay.setColumnStretch(1, 1)
 
         grp_in = self._group("dash_grp_in")
+        grp_in.setObjectName("inboundPanel")
         in_lay = QtWidgets.QGridLayout(grp_in)
-        in_lay.addWidget(self._label("ctl_their_sub"), 0, 0)
-        in_lay.addWidget(self._btn_sub, 0, 1)
+        in_lay.addWidget(self._btn_sub, 0, 0, 1, 2)
         in_lay.addWidget(self._label("label_sub_lang"), 1, 0)
         in_lay.addWidget(self._sub_lang, 1, 1)
-        in_lay.addWidget(self._label("label_add_sub_lang"), 2, 0)
-        in_lay.addWidget(c["sub_add"], 2, 1)
-        in_lay.addWidget(c["in_src_label"], 3, 0)
-        in_lay.addWidget(self._in_src_lang, 3, 1)
+        in_lay.addWidget(c["in_src_label"], 2, 0)
+        in_lay.addWidget(self._in_src_lang, 2, 1)
+        self._in_language_options = self._disclosure("dash_language_options", c["sub_add"])
+        in_lay.addWidget(self._in_language_options, 3, 0, 1, 2)
+        self._source_language_labels = (c["src_label"], c["in_src_label"])
         in_lay.setColumnStretch(1, 1)
 
         pipes = QtWidgets.QHBoxLayout()
         pipes.addWidget(grp_out, 1)
         pipes.addWidget(grp_in, 1)
+        self._pipe_layout = pipes
         return pipes
 
     def _build_dash_audio_group(self, c: dict) -> QtWidgets.QGroupBox:
@@ -557,9 +634,22 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _build_dash_subtitles(self, root: QtWidgets.QVBoxLayout) -> None:
         root.addWidget(self._dashboard_note)
+        title = self._label("dash_live_preview")
+        title.setObjectName("sectionTitle")
+        heading = QtWidgets.QHBoxLayout()
+        heading.addWidget(title)
+        heading.addStretch(1)
+        self._speaker_badge = self._label("speaker_diarization_on")
+        self._speaker_badge.setObjectName("speakerBadge")
+        self._tip(self._speaker_badge, "speaker_diarization_tip")
+        heading.addWidget(self._speaker_badge)
+        root.addLayout(heading)
         self._subtitle_view = QtWidgets.QTextEdit()
         self._subtitle_view.setObjectName("subtitleView")
         self._subtitle_view.setReadOnly(True)
+        self._subtitle_view.setMinimumHeight(140)
+        self._subtitle_view.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding,
+                                         QtWidgets.QSizePolicy.Policy.Ignored)
         self._on_retranslate(lambda: self._subtitle_view.setPlaceholderText(
             self._tr("subtitle_live_placeholder")))
         self._subtitle_snapshot = None
@@ -644,7 +734,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     lambda b=btn, m=mode: b.setText(self._tr(f"app_mode_{m}")))
             btn.setCheckable(True)
             btn.setProperty("modeButton", True)
-            btn.setMinimumSize(112, 52)
+            btn.setMinimumSize(96, 38)
             btn.clicked.connect(lambda _checked=False, m=mode: self._apply_app_mode(m))
             self._app_mode_group.addButton(btn)
             self._app_mode_buttons[mode] = btn
@@ -676,6 +766,7 @@ class MainWindow(QtWidgets.QMainWindow):
         outer.addWidget(scroll, 1)
 
         buttons = QtWidgets.QHBoxLayout()
+        buttons.setContentsMargins(18, 8, 18, 16)
         self._btn_devices = QtWidgets.QPushButton(self._tr("btn_refresh_devices"))
         self._btn_devices.clicked.connect(self._reload_devices)
         self._on_retranslate(
@@ -703,6 +794,7 @@ class MainWindow(QtWidgets.QMainWindow):
             on_hotkey_capture_start=self._hotkeys.stop,
             on_hotkey_capture_end=lambda: self._sync_hotkeys(force=True))
         self._settings_search.textChanged.connect(self._settings_form.apply_filter)
+        self._settings_form.filter_reset_requested.connect(self._settings_search.clear)
         self._populate_settings()
         self._tab_settings_idx = self._tabs.addTab(page, self._tr("tab_settings"))
         self._on_retranslate(lambda: self._tabs.setTabText(
@@ -934,17 +1026,19 @@ class MainWindow(QtWidgets.QMainWindow):
                 fields = ", ".join(self._tr(err.label_key) for err in e.errors)
                 raise ValueError(
                     self._tr("msg_invalid_field").format(fields=fields))
-            key_error = config_mod.api_key_validation_error(cfg.get("api_key", ""))
+            prov = config_mod.provider(cfg)
+            key_path = "api_key" if prov == "gemini" else f"{prov}.api_key"
+            key_error = config_mod.api_key_validation_error(
+                _get_path(cfg, key_path, ""), provider_label={
+                    "gemini": "Gemini", "qwen": "DashScope",
+                    "openai": "OpenAI", "soniox": "Soniox",
+                }[prov])
             if key_error:
-                raise ValueError(self._tr("err_api_key_url"))
-            qwen_key_error = config_mod.api_key_validation_error(
-                cfg.get("qwen", {}).get("api_key", ""), provider_label="DashScope")
-            if qwen_key_error:
-                raise ValueError(self._tr("err_qwen_api_key_url"))
-            openai_key_error = config_mod.api_key_validation_error(
-                cfg.get("openai", {}).get("api_key", ""), provider_label="OpenAI")
-            if openai_key_error:
-                raise ValueError(self._tr("err_openai_api_key_url"))
+                self._settings_form.focus_field(key_path)
+                self._settings_scroll.ensureWidgetVisible(
+                    self._settings_form._fields[key_path][0])
+                error_key = "err_api_key_url" if prov == "gemini" else f"err_{prov}_api_key_url"
+                raise ValueError(self._tr(error_key))
             qw = cfg.get("qwen", {})
             if config_mod.provider(cfg) == "qwen" \
                     and str(qw.get("endpoint", "intl") or "intl").strip() != "beijing" \
@@ -1301,7 +1395,15 @@ class MainWindow(QtWidgets.QMainWindow):
         return language_code_from_text(label, codes)
 
     # ---------------- refresh ----------------
+    def _queue_refresh(self) -> None:
+        # A burst of streaming tokens can notify several subscribers at once.
+        # Render the latest state once per frame, keeping the regular timer as
+        # a fallback for changes that don't emit controller notifications.
+        if not self._refresh_pending.isActive():
+            self._refresh_pending.start(40 if self.isVisible() else 1000)
+
     def _refresh(self) -> None:
+        self._refresh_pending.stop()
         st = self._controller.state
         if st.ui_lang != self._last_ui_lang:
             self._last_ui_lang = st.ui_lang
@@ -1331,9 +1433,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self._status_text.setText(
             f"{i18n.tr(st.ui_lang, status_key)} | {i18n.tr(st.ui_lang, conn_key)}")
         self._error_text.setText(self._error_label(detail))
+        self._error_text.setVisible(bool(detail))
 
         cfg = self._controller.cfg
         prov = config_mod.provider(cfg)
+        self._speaker_badge.setVisible(prov == "soniox")
+        self._engine_button.setText({
+            "gemini": "Gemini Live", "qwen": "Qwen Live",
+            "openai": "OpenAI", "soniox": "Soniox",
+        }.get(prov, prov))
         self._setup_banner.sync(
             prov, bool(config_mod.api_key_for(cfg, prov)),
             str(cfg.get("qwen", {}).get("endpoint", "intl") or "intl").strip())
@@ -1382,11 +1490,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sync_combo(self._sub_lang, [
             language_label(c) for c in self._controller.cfg.get("inbound", {}).get("languages", ["ko"])
         ], language_label(st.inbound_language))
-        is_qwen = self._controller.get_provider() == "qwen"
+        has_source_hint = prov in ("qwen", "soniox")
+        for label in self._source_language_labels:
+            label.setVisible(has_source_hint)
         for combo, code in ((self._src_lang, st.source_language),
                             (self._in_src_lang, st.inbound_source_language)):
-            if combo.isEnabled() != is_qwen:
-                combo.setEnabled(is_qwen)
+            combo.setVisible(has_source_hint)
+            if combo.isEnabled() != has_source_hint:
+                combo.setEnabled(has_source_hint)
             if not combo.hasFocus() and \
                     code_from_language_combo(combo, []) != code:
                 blocked = combo.blockSignals(True)
@@ -1397,21 +1508,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sync_combo(self._ui_lang, [i18n.UI_LANG_LABELS[c] for c in i18n.LANGS],
                          i18n.UI_LANG_LABELS.get(st.ui_lang, st.ui_lang))
         self._sync_dashboard_devices()
-        self._sync_steamvr_autolaunch()
+        if self.isVisible() and self._tabs.currentIndex() == self._tab_settings_idx:
+            self._sync_steamvr_autolaunch()
+        self._dashboard_note.setVisible(bool(self._dashboard_note.text()))
 
-        finals, partial = self._controller.subtitles_snapshot()
-        snapshot = (tuple(finals), tuple(partial))
+        from .ui.subtitle_text import subtitle_snapshot, subtitle_html
+        finals, partial = subtitle_snapshot(self._controller)
+        snapshot = (tuple(finals), partial, st.ui_lang)
         if snapshot != self._subtitle_snapshot:
             self._subtitle_snapshot = snapshot
-            dim = theme.hex_rgb(theme.QT_TEXT_DIM)
-            rows = [f"<div>{html_escape(dst or src)}</div>"
-                    for src, dst, _lang in finals]
-            p_src, p_dst = partial
-            if p_dst or p_src:
-                rows.append(f'<div style="color:{dim}; font-style:italic;">'
-                            f"{html_escape(p_dst or p_src)}</div>")
-            if rows:
-                self._subtitle_view.setHtml("".join(rows))
+            markup = subtitle_html(finals, partial, self._tr)
+            if markup:
+                self._subtitle_view.setHtml(markup)
                 bar = self._subtitle_view.verticalScrollBar()
                 bar.setValue(bar.maximum())
             else:
@@ -1478,6 +1586,26 @@ class MainWindow(QtWidgets.QMainWindow):
             combo.blockSignals(blocked)
 
     # ---------------- window/tray lifecycle ----------------
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if hasattr(self, "_pipe_layout"):
+            self._pipe_layout.setDirection(
+                QtWidgets.QBoxLayout.Direction.TopToBottom if self.width() < 900
+                else QtWidgets.QBoxLayout.Direction.LeftToRight)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if hasattr(self, "_timer"):
+            self._timer.setInterval(250)
+            self._queue_refresh()
+
+    def hideEvent(self, event) -> None:
+        super().hideEvent(event)
+        if hasattr(self, "_timer"):
+            self._timer.setInterval(1000)
+            self._meter_timer.stop()
+            self._log_panel.set_active(False)
+
     def _show_main(self) -> None:
         self.showNormal()
         self.raise_()

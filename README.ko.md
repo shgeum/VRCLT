@@ -2,7 +2,7 @@
 
 언어: [English](README.md) | [한국어](README.ko.md) | [日本語](README.ja.md) | [中文](README.zh.md)
 
-`vrclt`는 VRChat과 Discord용 Windows 실시간 번역 도구입니다. Gemini Live API로
+`vrclt`는 VRChat과 Discord용 Windows 실시간 번역 도구입니다. 선택한 번역 엔진으로
 내 마이크를 번역하고, 번역 음성을 VB-Audio Virtual Cable을 통해 대상 앱의
 마이크 입력으로 보내며, 상대방 음성은 번역 자막으로 표시합니다.
 
@@ -10,9 +10,9 @@
 
 - 대시보드, 설정, 로그/정보 탭을 가진 Windows 자체 UI
 - 창 열기, 설정 열기, 번역/자막 토글, 종료를 제공하는 트레이 메뉴
-- 아웃바운드 번역: 내 마이크 -> Gemini Live -> 번역 음성 -> 대상 앱 마이크
-- 인바운드 자막: 대상 앱 오디오 -> Gemini Live -> 번역 자막
-- 세 가지 번역 엔진: Google Gemini Live(기본), Google을 사용할 수 없는 지역(예: 중국 본토)을 위한 Alibaba Qwen3.5 LiveTranslate, 그리고 OpenAI gpt-realtime-translate
+- 아웃바운드 번역: 내 마이크 -> selected engine -> 번역 음성 -> 대상 앱 마이크
+- 인바운드 자막: 대상 앱 오디오 -> selected engine -> 번역 자막
+- 네 가지 번역 엔진: Google Gemini Live(기본), Alibaba Qwen3.5 LiveTranslate, OpenAI gpt-realtime-translate, Soniox
 - VRChat OSC 챗박스, 아바타 OSC 제어, SteamVR 자막, 손목 메뉴 지원
 - SteamVR 대시보드 설정 패널과 SteamVR 자동 시작(시작/오버레이 앱 등록) 지원
 - 원래 목소리는 그대로 보내고 OSC 챗박스 번역 텍스트만 추가하는 VRChat 텍스트 전용 모드
@@ -28,7 +28,7 @@
 ### 요구사항
 
 - Windows 11 권장
-- Google Gemini API 키 — 또는 Qwen 엔진용 Alibaba Cloud Model Studio (DashScope) API 키 (아래 발급 방법 참고)
+- 선택한 엔진의 API 키: Gemini, Qwen/DashScope, OpenAI 또는 Soniox
 - [VB-Audio Virtual Cable](https://vb-audio.com/Cable/)
 - VR 오버레이와 손목 UI를 사용할 경우 SteamVR
 - VRChat 챗박스/아바타 제어를 사용할 경우 VRChat OSC 활성화
@@ -83,7 +83,7 @@ VRChat 또는 Discord가 번역 음성을 마이크처럼 받게 하려면 VB-Au
 5. 생성된 API 키(`AIza...`로 시작하는 문자열)를 복사합니다.
    - 키는 한 번만 표시되므로 안전한 곳에 보관합니다.
 6. 복사한 키를 `vrclt` 설정 탭의 **API 키** 항목에 붙여넣거나,
-   `config.yaml`의 `gemini.api_key` 값으로 설정합니다.
+   `config.yaml`의 `api_key` 값으로 설정합니다.
 
 > **참고**: Gemini API는 무료 티어(분당 요청 수 제한)가 있어 개인 사용에는 충분합니다.
 > API 키는 타인에게 공유하지 않습니다. `config.yaml`에 평문으로 저장되므로 파일을 공개 저장소에 올리지 마세요.
@@ -112,6 +112,40 @@ VRChat 또는 Discord가 번역 음성을 마이크처럼 받게 하려면 VB-Au
    참고: [Obtain the workspace ID](https://www.alibabacloud.com/help/en/model-studio/obtain-api-key-app-id-and-workspace-id)
 5. **내 발화 언어**와 **상대 발화 언어**를 설정합니다 — Qwen은 발화 언어를
    자동 감지하지 못합니다(아래 "번역 엔진" 섹션 참고).
+
+### 3c. Soniox 설정
+
+[Soniox 콘솔](https://console.soniox.com)에서 API 키를 만들고 **설정 → 번역 엔진**을
+`soniox`로 선택한 뒤 키를 입력합니다. `SONIOX_API_KEY` 환경 변수를 사용하거나
+`config.yaml`에 아래 값을 지정할 수도 있습니다.
+
+```yaml
+provider: soniox
+soniox:
+  api_key: ""  # 비어 있으면 SONIOX_API_KEY 사용
+  model: stt-rt-v5
+  tts_model: tts-rt-v2
+  voice: Daniel
+  keep_speaker_context: true
+```
+
+Soniox는 양방향 음성 인식·번역을 처리하며, 번역 음성을 켜면 별도의 TTS도 사용합니다.
+`voice`에는 기본 제공 음성 이름이나 기존 커스텀/복제 음성 ID를 넣습니다.
+마이크 목소리를 자동 복제하지 않으며, 텍스트 전용 파이프라인은 TTS에 연결하지 않습니다.
+**내/상대 발화 언어**는 자동 감지로 두거나 인식 힌트로 지정할 수 있습니다.
+화자 분리로 상대방의 원문과 번역을 화자별로 유지하고 자막에 화자 번호를 표시합니다.
+이 번호는 인식 세션 안에서만 유효하며 VRChat 계정이나 실제 이름을 식별하지 않습니다.
+번역 음성은 모든 화자에게 설정한 하나의 TTS 음성을 사용합니다.
+
+**화자 구분 유지**는 기본으로 켜져 있습니다(`soniox.keep_speaker_context: true`).
+연결된 인식 세션을 침묵 중에도 유지해 화자 번호를 이어갑니다. Soniox는 텍스트 전용
+모드에서도 침묵·keepalive를 포함한 전체 연결 시간에 과금합니다.
+[공식 keepalive 과금 안내](https://soniox.com/docs/stt/rt/connection-keepalive)를 참고하세요.
+이 설정을 끄면 `audio.mic_idle_disconnect_sec`만큼 침묵한 뒤 연결을 닫습니다.
+파이프라인 중지·비활성화 또는 캡처 대상 프로세스 종료 시에도 연결을 닫으며,
+재연결하면 화자 구분은 새 세션에서 시작합니다.
+
+로컬 모의 서버 테스트로 검증했으며, 실제 유료 Soniox API 호출은 아직 검증하지 않았습니다.
 
 ### 4. 첫 실행 설정
 
@@ -153,19 +187,19 @@ VRChat 또는 Discord가 번역 음성을 마이크처럼 받게 하려면 VB-Au
 
 ## 번역 엔진
 
-vrclt는 세 가지 실시간 번역 엔진을 지원하며, **번역 엔진** 설정(`config.yaml`의
+vrclt는 네 가지 실시간 번역 엔진을 지원하며, **번역 엔진** 설정(`config.yaml`의
 `provider`)으로 선택합니다. 선택한 엔진은 내 음성과 인바운드 자막 양쪽 방향에
 모두 적용됩니다.
 
-| | Gemini Live (기본) | Qwen3.5 LiveTranslate | gpt-realtime-translate |
-| --- | --- | --- | --- |
-| 제공자 / 키 | Google AI Studio (`GEMINI_API_KEY`) | Alibaba Cloud Model Studio / DashScope (`DASHSCOPE_API_KEY`) | OpenAI (`OPENAI_API_KEY`) |
-| 필요한 설정 | API 키만 입력 | 엔진을 `qwen`으로, API 키 + 서버(`intl`은 워크스페이스 ID까지), **내/상대 발화 언어** | 엔진을 `openai`로, API 키만 입력 |
-| 중국 본토에서 사용 | 불가 | 가능 (`beijing` 엔드포인트) | 불가 |
-| 발화 언어 감지 | 자동 감지 | **수동** — "내/상대 발화 언어"를 설정해야 함 | 자동 감지 (발화 언어 설정은 무시됨) |
-| 지원 언어 | `zh-Hans`/`zh-Hant`를 포함한 70개 이상 BCP-47 도착어 | 음성 지원 29개 + 텍스트 전용 31개; 중국어는 `zh` 하나뿐(간체/번체 구분 없음); 광둥어(`yue`)는 텍스트 전용 | 입력은 70개 이상이지만 도착어는 **13개뿐**(`en es pt fr ja ru zh de ko hi id vi it`); 중국어는 `zh` 하나; 세션당 도착어 1개 |
-| 번역 음성 | 화자 목소리 재현 | 서버 측 음성 복제로 화자 목소리 재현 (`qwen.voice_clone`, 기본 `once`); 복제를 끄면 고정 음성 | 화자 목소리를 자동으로 따라감; 음성 선택 옵션 없음 |
-| 끼어들기(barge-in) | 지원 | 미지원 — 발화가 겹치면 오디오가 줄지어 재생될 수 있음 | 미지원 — 발화가 겹치면 오디오가 줄지어 재생될 수 있음 |
+| | Gemini Live (기본) | Qwen3.5 LiveTranslate | gpt-realtime-translate | Soniox |
+| --- | --- | --- | --- | --- |
+| 제공자 / 키 | Google AI Studio (`GEMINI_API_KEY`) | Alibaba Cloud Model Studio / DashScope (`DASHSCOPE_API_KEY`) | OpenAI (`OPENAI_API_KEY`) | Soniox (`SONIOX_API_KEY`) |
+| 필요한 설정 | API 키만 입력 | 엔진을 `qwen`으로, API 키 + 서버(`intl`은 워크스페이스 ID까지), **내/상대 발화 언어** | 엔진을 `openai`로, API 키만 입력 | 엔진 `soniox` + API 키 |
+| 중국 본토에서 사용 | 불가 | 가능 (`beijing` 엔드포인트) | 불가 | 미검증 |
+| 발화 언어 감지 | 자동 감지 | **수동** — "내/상대 발화 언어"를 설정해야 함 | 자동 감지 (발화 언어 설정은 무시됨) | 자동 감지; 발화 언어는 선택적 힌트 |
+| 지원 언어 | `zh-Hans`/`zh-Hant`를 포함한 70개 이상 BCP-47 도착어 | 음성 지원 29개 + 텍스트 전용 31개; 중국어는 `zh` 하나뿐(간체/번체 구분 없음); 광둥어(`yue`)는 텍스트 전용 | 입력은 70개 이상이지만 도착어는 **13개뿐**(`en es pt fr ja ru zh de ko hi id vi it`); 중국어는 `zh` 하나; 세션당 도착어 1개 | 앱 지원 60개; 중국어는 `zh`, 광둥어(`yue`) 미지원 |
+| 번역 음성 | 화자 목소리 재현 | 서버 측 음성 복제로 화자 목소리 재현 (`qwen.voice_clone`, 기본 `once`); 복제를 끄면 고정 음성 | 화자 목소리를 자동으로 따라감; 음성 선택 옵션 없음 | 별도 TTS; 기본 `Daniel` 또는 커스텀 음성; 자동 복제 없음 |
+| 끼어들기(barge-in) | 지원 | 미지원 — 발화가 겹치면 오디오가 줄지어 재생될 수 있음 | 미지원 — 발화가 겹치면 오디오가 줄지어 재생될 수 있음 | 미지원 — 발화가 겹치면 오디오가 줄지어 재생될 수 있음 |
 
 Qwen 참고 사항:
 
@@ -199,7 +233,7 @@ Qwen 참고 사항:
 ```
 
 VRChat에서 텍스트 전용으로 쓰려면 대시보드 또는 설정의 **텍스트 전용**을
-켭니다. 원래 마이크 음성은 VRChat으로 그대로 passthrough되고, Gemini 번역 결과는
+켭니다. 원래 마이크 음성은 VRChat으로 그대로 passthrough되고, 선택한 엔진의 번역 결과는
 번역 음성 없이 OSC 챗박스 텍스트로만 전송됩니다.
 
 Discord Canary 또는 PTB를 사용한다면 설정 또는 `app.profiles.discord.process`에서
@@ -213,6 +247,12 @@ Windows 오디오 세션을 가진 프로세스가 나열되며, 지금 소리�
 
 ## 자체 UI
 
+대시보드는 번역·자막·언어·오디오 조작을 모으고, 현재 엔진과 설정 바로가기를 보여줍니다.
+언어 목록 편집과 화면·앱 부가 옵션은 펼쳐서 사용할 수 있습니다. 설정은 카테고리로
+탐색하며 선택한 엔진의 항목만 표시하고, 검색으로 필요한 항목을 찾습니다.
+로그는 한 번에 갱신하고 따라잡기 읽기를 256 KiB, 기록을 2,000줄, 미완성 줄을
+64 KiB로 제한합니다. 재연결 대기는 주기적 확인 없이 중지 이벤트에 바로 반응합니다.
+
 대시보드:
 
 - 런타임 상태와 연결 상태
@@ -223,13 +263,13 @@ Windows 오디오 세션을 가진 프로세스가 나열되며, 지금 소리�
 - 출력 언어와 자막 언어, Gemini Live Translation 70개 이상 지원 언어 검색/추가
 - 마이크 입력과 번역 음성 출력 장치 선택, 출력 테스트 사운드 버튼 포함; 장치 새로고침은 런타임을 재시작하며 나중에 꽂은 장치도 인식합니다
 - 번역 음성 볼륨 슬라이더와 감지 임계값 표시가 있는 실시간 마이크 레벨 미터
-- Qwen 엔진용 내/상대 발화 언어 선택기(자동 감지하는 Gemini에서는 비활성화)
+- 내/상대 발화 언어: Qwen은 필수, Soniox는 선택적 인식 힌트, Gemini/OpenAI는 자동 감지
 - PC 자막 위치 이동/리셋, 상자 크기, 글자 크기 조절
 - 실시간 자막 미리보기
 
 설정:
 
-- 번역 엔진(Gemini / Qwen), API 키, 모델, Qwen 엔드포인트/워크스페이스
+- 번역 엔진(Gemini / Qwen / OpenAI / Soniox), API 키, 모델, Qwen 엔드포인트/워크스페이스
 - 앱 모드와 대상 프로세스
 - 마이크, 번역 음성 출력, 모니터 출력, 인바운드 오디오 장치
 - 기본 도착어와 저장된 언어 목록
@@ -253,14 +293,14 @@ Windows 오디오 세션을 가진 프로세스가 나열되며, 지금 소리�
 아웃바운드 번역:
 
 ```text
-microphone -> Gemini Live -> translated voice -> CABLE Input
+microphone -> selected engine -> translated voice -> CABLE Input
                                      target app mic <- CABLE Output
 ```
 
 인바운드 자막:
 
 ```text
-target app process audio -> ProcTap -> Gemini Live -> subtitles
+target app process audio -> ProcTap -> selected engine -> subtitles
 ```
 
 번역이 OFF이면 마이크는 Gemini를 거치지 않고 `CABLE Input`으로 바로 전달됩니다.
@@ -307,7 +347,7 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 
 | 키 | 기본값 | 설명 |
 | --- | --- | --- |
-| `provider` | `gemini` | 두 파이프라인 모두에 적용되는 번역 엔진: `gemini`, `qwen` 또는 `openai`. |
+| `provider` | `gemini` | 두 파이프라인 모두에 적용되는 번역 엔진: `gemini`, `qwen`, `openai`, `soniox`. |
 | `api_key` | `""` | Gemini API 키. 비어 있으면 `GEMINI_API_KEY` 환경 변수를 사용할 수 있습니다. |
 | `model` | `gemini-3.5-live-translate-preview` | Gemini Live 모델 이름. |
 | `qwen.api_key` | `""` | DashScope API 키. 비어 있으면 `DASHSCOPE_API_KEY` 환경 변수를 사용할 수 있습니다. |
@@ -322,6 +362,11 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 | `openai.transcribe_model` | `gpt-realtime-whisper` | 아웃바운드 세션의 원문 인식 ASR. VRChat 챗박스가 원문을 번역문 위에 표시하려면 필요합니다(`osc.show_source`). 비우면 챗박스에 번역문만 나옵니다. |
 | `openai.inbound_transcribe_model` | `""` | 인바운드 자막의 원문 인식 ASR. 기본값인 빈 값이면 번역 자막만 나옵니다. 원문도 보려면 `gpt-realtime-whisper`와 `overlay.show_source`를 함께 켜세요. 두 ASR 모두 번역 요금에 더해 분당 과금됩니다. |
 | `openai.noise_reduction` | `near_field` | 서버 입력 잡음 억제: `near_field`(헤드셋), `far_field`(룸 마이크), 비우면 사용 안 함. |
+| `soniox.api_key` | `""` | Soniox API 키. 비어 있으면 `SONIOX_API_KEY` 사용. |
+| `soniox.model` | `stt-rt-v5` | 실시간 음성 인식·번역 모델. |
+| `soniox.tts_model` | `tts-rt-v2` | 번역 음성을 켰을 때만 사용하는 TTS 모델. |
+| `soniox.voice` | `Daniel` | 기본 제공 음성 이름 또는 기존 커스텀/복제 음성 ID. 마이크 자동 복제 없음. |
+| `soniox.keep_speaker_context` | `true` | 침묵 중에도 연결을 유지해 화자 번호를 보존하며 연결 시간에 과금됩니다. `false`이면 `audio.mic_idle_disconnect_sec`에 따라 연결을 닫습니다. 재연결 시 화자 구분은 새로 시작합니다. |
 | `log_level` | `INFO` | Python 로그 레벨. |
 | `meta.last_version` | `""` | 현재 설정에서 확인한 마지막 앱 버전. 업데이트 후 1회 리셋 확인에 사용합니다. |
 | `app.mode` | `vrchat` | 활성 프로필: `vrchat`, `discord`, `custom`. |
@@ -357,7 +402,7 @@ PC 핫키:
 | --- | --- | --- |
 | `outbound.enabled` | `true` | 아웃바운드 파이프라인을 켭니다. |
 | `outbound.target_language` | `ja` | 내 말 번역의 기본 BCP-47 언어 코드. UI에서 Gemini Live Translation 70개 이상 지원 언어를 검색해 선택할 수 있습니다. |
-| `outbound.source_language` | `""` | 내 발화 언어. Qwen에서 필수(자동 감지 없음; 비어 있으면 영어). Gemini는 무시합니다. |
+| `outbound.source_language` | `""` | 내 발화 언어. Qwen은 필수(공란은 영어), Soniox는 선택적 힌트, Gemini/OpenAI는 무시. |
 | `outbound.echo_target_language` | `false` | 이미 대상 언어인 입력도 따라 말합니다. |
 | `outbound.mic_device` | `""` | 마이크 장치 이름 일부. 비어 있으면 기본 입력을 사용합니다. |
 | `outbound.tts_device` | `CABLE Input` | 번역 음성과 원음 전달을 내보낼 출력 장치. |
@@ -375,7 +420,7 @@ PC 핫키:
 | --- | --- | --- |
 | `inbound.enabled` | `true` | 자막용 프로세스 오디오 캡처를 켭니다. |
 | `inbound.target_language` | `ko` | 기본 자막 BCP-47 언어 코드. UI에서 Gemini Live Translation 70개 이상 지원 언어를 검색해 선택할 수 있습니다. |
-| `inbound.source_language` | `""` | 상대 발화 언어(Qwen 전용, `outbound.source_language`와 같은 규칙). |
+| `inbound.source_language` | `""` | 상대 발화 언어. 엔진별 규칙은 `outbound.source_language`와 동일. |
 | `inbound.languages` | `[ko, en, ja]` | 대시보드와 손목 메뉴에서 사용할 저장된 자막 언어 목록. UI 선택기에서 필요한 언어만 추가합니다. |
 | `inbound.process` | `VRChat.exe` | 인바운드 자막용으로 캡처할 프로세스 이름. |
 | `inbound.allow_system_audio` | `false` | 프로세스 단위 캡처는 Windows 11(빌드 20348+)이 필요합니다. 지원되지 않는 환경에서 `true`면 선택한 앱 대신 시스템 전체 소리를 캡처합니다(다른 앱 소리와 내 번역 음성까지 자막이 됩니다). `false`면 인바운드를 시작하지 않습니다. |
@@ -478,14 +523,14 @@ dist\vrclt.exe
 릴리스 산출물 생성:
 
 ```powershell
-.\scripts\package_release.ps1 -Version 0.1.0
+.\scripts\package_release.ps1 -Version 0.19.0
 ```
 
 릴리스 스크립트 결과:
 
 ```text
-release\vrclt-v0.1.0-windows-x64.exe
-release\vrclt-v0.1.0-windows-x64.exe.sha256
+release\vrclt-v0.19.0-windows-x64.exe
+release\vrclt-v0.19.0-windows-x64.exe.sha256
 ```
 
 ## 스모크 테스트
@@ -494,7 +539,7 @@ release\vrclt-v0.1.0-windows-x64.exe.sha256
 .\.venv\Scripts\python.exe -m compileall vrclt
 .\.venv\Scripts\python.exe -m vrclt --help
 .\.venv\Scripts\pyinstaller.exe vrclt.spec --noconfirm
-.\scripts\package_release.ps1 -Version 0.1.0 -SkipBuild
+.\scripts\package_release.ps1 -Version 0.19.0 -SkipBuild
 ```
 
 실제 런타임 테스트는 exe 실행, 자체 UI에서 설정 저장,

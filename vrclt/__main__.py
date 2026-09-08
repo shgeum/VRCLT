@@ -43,7 +43,11 @@ def main() -> None:
     argv = sys.argv[1:] or ["run"]
     try:
         args, unknown = parser.parse_known_args(argv)
-    except SystemExit:
+    except SystemExit as exc:
+        # argparse exits successfully after --help/-h. Only tolerate parse
+        # failures from launcher-added arguments; help must never start audio.
+        if exc.code == 0:
+            raise
         args = argparse.Namespace(cmd="run", app=None)
         unknown = argv
     sys.exit(cmd_run(args, ignored_args=unknown))

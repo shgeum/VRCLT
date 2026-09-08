@@ -3,16 +3,16 @@
 言語: [English](README.md) | [한국어](README.ko.md) | [日本語](README.ja.md) | [中文](README.zh.md)
 
 `vrclt` は VRChat と Discord 向けの Windows リアルタイム翻訳ツールです。
-Gemini Live API で自分のマイク音声を翻訳し、翻訳音声を VB-Audio Virtual
+選択した翻訳エンジンで自分のマイク音声を翻訳し、翻訳音声を VB-Audio Virtual
 Cable 経由で対象アプリのマイク入力へ送り、相手の発話は翻訳字幕として表示します。
 
 ## 主な機能
 
 - ダッシュボード、設定、ログ/情報タブを備えた Windows ネイティブ UI
 - アプリを開く、設定を開く、翻訳/字幕の切り替え、終了ができるトレイメニュー
-- 送信側翻訳: 自分のマイク -> Gemini Live -> 翻訳音声 -> 対象アプリのマイク
-- 受信側字幕: 対象アプリの音声 -> Gemini Live -> 翻訳字幕
-- 2 つの翻訳エンジン: Google Gemini Live（既定）と、Google を利用できない地域（例: 中国本土）向けの Alibaba Qwen3.5 LiveTranslate
+- 送信側翻訳: 自分のマイク -> selected engine -> 翻訳音声 -> 対象アプリのマイク
+- 受信側字幕: 対象アプリの音声 -> selected engine -> 翻訳字幕
+- 4 つの翻訳エンジン: Google Gemini Live（既定）、Alibaba Qwen3.5 LiveTranslate、OpenAI gpt-realtime-translate、Soniox
 - VRChat OSC チャットボックス、アバター OSC 制御、SteamVR 字幕、手首メニュー対応
 - SteamVR ダッシュボード設定パネルと SteamVR 自動起動（スタートアップ/オーバーレイアプリ登録）対応
 - 元の声をそのまま通し、OSC チャットボックスに翻訳テキストだけを追加する VRChat テキストのみモード
@@ -28,7 +28,7 @@ Cable 経由で対象アプリのマイク入力へ送り、相手の発話は�
 ### 要件
 
 - Windows 11 推奨
-- Google Gemini API キー — または Qwen エンジン用の Alibaba Cloud Model Studio (DashScope) API キー (取得方法は下記)
+- 選択したエンジンの API キー: Gemini、Qwen/DashScope、OpenAI、Soniox
 - [VB-Audio Virtual Cable](https://vb-audio.com/Cable/)
 - VR オーバーレイと手首 UI を使う場合は SteamVR
 - VRChat チャットボックス/アバター制御を使う場合は VRChat OSC を有効化
@@ -113,6 +113,40 @@ Gemini の代わりに **Alibaba Qwen3.5 LiveTranslate** を使えます。
 5. **自分の発話言語** と **相手の発話言語** を設定します — Qwen は発話言語を
    自動検出できません（下の「翻訳エンジン」セクションを参照）。
 
+### 3c. Soniox の設定
+
+[Soniox コンソール](https://console.soniox.com)で API キーを作成し、**設定 → 翻訳エンジン**を
+`soniox` にしてキーを入力します。`SONIOX_API_KEY` 環境変数、または以下の
+`config.yaml` 設定も使用できます。
+
+```yaml
+provider: soniox
+soniox:
+  api_key: ""  # 空なら SONIOX_API_KEY を使用
+  model: stt-rt-v5
+  tts_model: tts-rt-v2
+  voice: Daniel
+  keep_speaker_context: true
+```
+
+Soniox は両方向の音声認識・翻訳を行い、翻訳音声が有効な場合は別の TTS も使用します。
+`voice` は標準ボイス名または既存のカスタム/クローン音声 ID です。マイク音声を自動で
+クローンしません。テキストのみのパイプラインでは TTS に接続しません。
+**自分/相手の発話言語**は自動検出のままでも、任意の認識ヒントとして指定しても使えます。
+話者分離により原文と翻訳を話者ごとに保持し、字幕に話者番号を表示します。
+番号は認識セッション内だけで有効で、VRChat アカウントや実名を識別するものではありません。
+翻訳音声には、すべての話者で選択した同じ TTS ボイスを使用します。
+
+**話者コンテキストの維持**は既定で有効です（`soniox.keep_speaker_context: true`）。
+無音中も認識接続を維持して話者番号を引き継ぎます。Soniox はテキストのみでも、
+無音・keepalive を含む接続時間全体に課金します。
+[公式 keepalive 課金案内](https://soniox.com/docs/stt/rt/connection-keepalive)を参照してください。
+無効にすると `audio.mic_idle_disconnect_sec` の無音後に切断します。
+パイプラインの停止・無効化やキャプチャ対象プロセスの終了でも接続を閉じます。
+再接続時には新しい話者コンテキストが始まります。
+
+ローカルの模擬サーバーで検証済みですが、有料の実 Soniox API 呼び出しは未検証です。
+
 ### 4. 初回起動設定
 
 1. `vrclt-v<version>-windows-x64.exe` を実行します。
@@ -153,19 +187,19 @@ Gemini の代わりに **Alibaba Qwen3.5 LiveTranslate** を使えます。
 
 ## 翻訳エンジン
 
-vrclt は 3 つのリアルタイム翻訳エンジンに対応し、**翻訳エンジン** 設定
+vrclt は 4 つのリアルタイム翻訳エンジンに対応し、**翻訳エンジン** 設定
 （`config.yaml` の `provider`）で選択します。選択したエンジンは、自分の音声と
 受信側字幕の両方向に適用されます。
 
-| | Gemini Live（既定） | Qwen3.5 LiveTranslate | gpt-realtime-translate |
-| --- | --- | --- | --- |
-| プロバイダー / キー | Google AI Studio (`GEMINI_API_KEY`) | Alibaba Cloud Model Studio / DashScope (`DASHSCOPE_API_KEY`) | OpenAI (`OPENAI_API_KEY`) |
-| 必要な設定 | API キーのみ | エンジンを `qwen` に、API キー + サーバー（`intl` はワークスペース ID も）、**自分/相手の発話言語** | エンジンを `openai` に、API キーのみ |
-| 中国本土での利用 | 不可 | 可（`beijing` エンドポイント） | 不可 |
-| 発話言語の検出 | 自動検出 | **手動** — 「自分/相手の発話言語」を設定 | 自動検出（発話言語の設定は無視されます） |
-| 対応言語 | `zh-Hans`/`zh-Hant` を含む 70 以上の BCP-47 対象言語 | 音声付き 29 + テキストのみ 31; 中国語は `zh` のみ（簡体字/繁体字の区別なし）; 広東語（`yue`）はテキストのみ | 入力は 70 以上だが対象言語は **13 のみ**（`en es pt fr ja ru zh de ko hi id vi it`）; 中国語は `zh` のみ; セッションごとに 1 言語 |
-| 翻訳音声 | 話者の声を再現 | サーバー側の音声クローンで話者の声を再現（`qwen.voice_clone`、既定 `once`）。クローンをオフにすると固定の声 | 話者の声に自動で合わせます。ボイス選択はありません |
-| 割り込み（barge-in） | 対応 | 非対応 — 発話が重なると音声がキューに溜まることがあります | 非対応 — 発話が重なると音声がキューに溜まることがあります |
+| | Gemini Live（既定） | Qwen3.5 LiveTranslate | gpt-realtime-translate | Soniox |
+| --- | --- | --- | --- | --- |
+| プロバイダー / キー | Google AI Studio (`GEMINI_API_KEY`) | Alibaba Cloud Model Studio / DashScope (`DASHSCOPE_API_KEY`) | OpenAI (`OPENAI_API_KEY`) | Soniox (`SONIOX_API_KEY`) |
+| 必要な設定 | API キーのみ | エンジンを `qwen` に、API キー + サーバー（`intl` はワークスペース ID も）、**自分/相手の発話言語** | エンジンを `openai` に、API キーのみ | エンジン `soniox` + API キー |
+| 中国本土での利用 | 不可 | 可（`beijing` エンドポイント） | 不可 | 未検証 |
+| 発話言語の検出 | 自動検出 | **手動** — 「自分/相手の発話言語」を設定 | 自動検出（発話言語の設定は無視されます） | 自動検出。発話言語は任意のヒント |
+| 対応言語 | `zh-Hans`/`zh-Hant` を含む 70 以上の BCP-47 対象言語 | 音声付き 29 + テキストのみ 31; 中国語は `zh` のみ（簡体字/繁体字の区別なし）; 広東語（`yue`）はテキストのみ | 入力は 70 以上だが対象言語は **13 のみ**（`en es pt fr ja ru zh de ko hi id vi it`）; 中国語は `zh` のみ; セッションごとに 1 言語 | アプリ対応 60 言語。中国語は `zh`、広東語（`yue`）は非対応 |
+| 翻訳音声 | 話者の声を再現 | サーバー側の音声クローンで話者の声を再現（`qwen.voice_clone`、既定 `once`）。クローンをオフにすると固定の声 | 話者の声に自動で合わせます。ボイス選択はありません | 別の TTS。既定 `Daniel` またはカスタム音声。自動クローンなし |
+| 割り込み（barge-in） | 対応 | 非対応 — 発話が重なると音声がキューに溜まることがあります | 非対応 — 発話が重なると音声がキューに溜まることがあります | 非対応 — 発話が重なると音声がキューに溜まることがあります |
 
 Qwen の注意点:
 
@@ -213,6 +247,12 @@ Discord Canary または PTB を使う場合は、設定または `app.profiles.
 
 ## ネイティブ UI
 
+ダッシュボードは翻訳・字幕・言語・オーディオ操作をまとめ、現在のエンジンと設定への
+ショートカットを表示します。言語リスト編集と表示・アプリの追加オプションは展開して使えます。
+設定はカテゴリ別に移動でき、選択中のエンジンの項目だけを表示し、検索も利用できます。
+ログはまとめて更新し、追いつき読み込みを 256 KiB、履歴を 2,000 行、未完了行を
+64 KiB に制限します。再接続待機は定期ポーリングを使わず、停止イベントにすぐ反応します。
+
 ダッシュボード:
 
 - ランタイム状態と接続状態
@@ -223,13 +263,13 @@ Discord Canary または PTB を使う場合は、設定または `app.profiles.
 - 出力言語と字幕言語、Gemini Live Translation の 70 以上の対応言語を検索して追加
 - マイク入力と翻訳音声出力デバイスの選択、出力テストトーンボタン付き。デバイス更新はランタイムを再起動し、後から挿したデバイスも認識します
 - 翻訳音声の音量スライダーと、検出しきい値マーカー付きリアルタイムマイクレベルメーター
-- Qwen エンジン用の自分/相手の発話言語ピッカー（自動検出する Gemini では無効）
+- 自分/相手の発話言語: Qwen は必須、Soniox は任意の認識ヒント、Gemini/OpenAI は自動検出
 - PC 字幕の位置移動/リセット、ボックスサイズ、文字サイズ
 - リアルタイム字幕プレビュー
 
 設定:
 
-- 翻訳エンジン（Gemini / Qwen）、API キー、モデル、Qwen のエンドポイント/ワークスペース
+- 翻訳エンジン（Gemini / Qwen / OpenAI / Soniox）、API キー、モデル、Qwen のエンドポイント/ワークスペース
 - アプリモードと対象プロセス
 - マイク、翻訳音声出力、モニター出力、受信側音声デバイス
 - 既定の対象言語と保存済み言語リスト
@@ -253,14 +293,14 @@ Discord Canary または PTB を使う場合は、設定または `app.profiles.
 送信側翻訳:
 
 ```text
-microphone -> Gemini Live -> translated voice -> CABLE Input
+microphone -> selected engine -> translated voice -> CABLE Input
                                      target app mic <- CABLE Output
 ```
 
 受信側字幕:
 
 ```text
-target app process audio -> ProcTap -> Gemini Live -> subtitles
+target app process audio -> ProcTap -> selected engine -> subtitles
 ```
 
 翻訳が OFF の場合、マイクは Gemini を通らず `CABLE Input` へ直接送られます。
@@ -309,7 +349,7 @@ VR オーバーレイを強制的に有効にするには `ui.mode: vr`、無効
 
 | キー | 既定値 | 説明 |
 | --- | --- | --- |
-| `provider` | `gemini` | 両方向のパイプラインに適用される翻訳エンジン: `gemini`、`qwen` または `openai`。 |
+| `provider` | `gemini` | 両方向のパイプラインに適用される翻訳エンジン: `gemini`、`qwen`、`openai`、`soniox`。 |
 | `api_key` | `""` | Gemini API キー。空の場合は `GEMINI_API_KEY` 環境変数を使えます。 |
 | `model` | `gemini-3.5-live-translate-preview` | Gemini Live モデル名。 |
 | `qwen.api_key` | `""` | DashScope API キー。空の場合は `DASHSCOPE_API_KEY` 環境変数を使えます。 |
@@ -324,6 +364,11 @@ VR オーバーレイを強制的に有効にするには `ui.mode: vr`、無効
 | `openai.transcribe_model` | `gpt-realtime-whisper` | 送信側セッションの原文認識ASR。VRChatチャットボックスが原文を翻訳の上に表示するために必要です（`osc.show_source`）。空欄ならチャットボックスは翻訳のみになります。 |
 | `openai.inbound_transcribe_model` | `""` | 受信側字幕の原文認識ASR。既定の空欄では翻訳字幕のみです。原文も表示するには `gpt-realtime-whisper` と `overlay.show_source` を有効にします。どちらのASRも翻訳に加えて分単位で課金されます。 |
 | `openai.noise_reduction` | `near_field` | サーバー側の入力ノイズ抑制: `near_field`（ヘッドセット）、`far_field`（室内マイク）、空で無効。 |
+| `soniox.api_key` | `""` | Soniox API キー。空なら `SONIOX_API_KEY` を使用。 |
+| `soniox.model` | `stt-rt-v5` | リアルタイム音声認識・翻訳モデル。 |
+| `soniox.tts_model` | `tts-rt-v2` | 翻訳音声が有効な場合だけ使用する TTS モデル。 |
+| `soniox.voice` | `Daniel` | 標準ボイス名または既存のカスタム/クローン音声 ID。マイクの自動クローンなし。 |
+| `soniox.keep_speaker_context` | `true` | 無音中も接続して話者番号を保持し、その間も課金されます。`false` は `audio.mic_idle_disconnect_sec` 後に切断。再接続時には新しい話者コンテキストになります。 |
 | `log_level` | `INFO` | Python ログレベル。 |
 | `meta.last_version` | `""` | 現在の設定で確認済みの最後のアプリバージョン。更新後の 1 回限りのリセット確認に使います。 |
 | `app.mode` | `vrchat` | 有効なプロファイル: `vrchat`、`discord`、`custom`。 |
@@ -359,7 +404,7 @@ PC ホットキー:
 | --- | --- | --- |
 | `outbound.enabled` | `true` | 送信側パイプラインを有効にします。 |
 | `outbound.target_language` | `ja` | 自分の発話を翻訳する既定の BCP-47 言語コード。UI で Gemini Live Translation の 70 以上の対応言語を検索して選択できます。 |
-| `outbound.source_language` | `""` | 自分の発話言語。Qwen では必須（自動検出なし。空なら英語）。Gemini では無視されます。 |
+| `outbound.source_language` | `""` | 自分の発話言語。Qwen は必須（空なら英語）、Soniox は任意のヒント、Gemini/OpenAI は無視。 |
 | `outbound.echo_target_language` | `false` | すでに対象言語の入力も復唱します。 |
 | `outbound.mic_device` | `""` | マイクデバイス名の一部。空なら既定入力を使います。 |
 | `outbound.tts_device` | `CABLE Input` | 翻訳音声と原音送出の出力デバイス。 |
@@ -377,7 +422,7 @@ PC ホットキー:
 | --- | --- | --- |
 | `inbound.enabled` | `true` | 字幕用のプロセス音声キャプチャを有効にします。 |
 | `inbound.target_language` | `ko` | 既定の字幕 BCP-47 言語コード。UI で Gemini Live Translation の 70 以上の対応言語を検索して選択できます。 |
-| `inbound.source_language` | `""` | 相手の発話言語（Qwen のみ。`outbound.source_language` と同じルール）。 |
+| `inbound.source_language` | `""` | 相手の発話言語。エンジン別のルールは `outbound.source_language` と同じ。 |
 | `inbound.languages` | `[ko, en, ja]` | ダッシュボードと手首メニューで使う保存済み字幕言語リスト。UI の選択リストから必要な言語だけ追加します。 |
 | `inbound.process` | `VRChat.exe` | 受信側字幕用にキャプチャするプロセス名。 |
 | `inbound.allow_system_audio` | `false` | プロセス単位のキャプチャは Windows 11（ビルド 20348+）が必要です。利用できない環境で `true` にすると、選択したアプリではなくシステム全体の音声を取り込みます（他アプリの音や自分の翻訳音声も字幕化されます）。`false` なら受信側は開始しません。 |
@@ -480,14 +525,14 @@ dist\vrclt.exe
 リリース成果物を作成:
 
 ```powershell
-.\scripts\package_release.ps1 -Version 0.1.0
+.\scripts\package_release.ps1 -Version 0.19.0
 ```
 
 リリーススクリプトの結果:
 
 ```text
-release\vrclt-v0.1.0-windows-x64.exe
-release\vrclt-v0.1.0-windows-x64.exe.sha256
+release\vrclt-v0.19.0-windows-x64.exe
+release\vrclt-v0.19.0-windows-x64.exe.sha256
 ```
 
 ## スモークテスト
@@ -496,7 +541,7 @@ release\vrclt-v0.1.0-windows-x64.exe.sha256
 .\.venv\Scripts\python.exe -m compileall vrclt
 .\.venv\Scripts\python.exe -m vrclt --help
 .\.venv\Scripts\pyinstaller.exe vrclt.spec --noconfirm
-.\scripts\package_release.ps1 -Version 0.1.0 -SkipBuild
+.\scripts\package_release.ps1 -Version 0.19.0 -SkipBuild
 ```
 
 実際のランタイムテストは、exe を起動し、ネイティブ UI で設定を保存し、

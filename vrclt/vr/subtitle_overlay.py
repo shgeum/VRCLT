@@ -26,7 +26,8 @@ from ..config import (
 from ..i18n import tr
 from ..resources import bundled_font, resolve_font_path
 from ..state import AppState
-from ..subtitles import SubtitleStore
+from ..subtitles import SubtitleLine, SubtitleStore
+from ..ui.theme import speaker_color
 from .font_fallback import load_fallback_font
 from .panel_common import (
     COL_SUB_ON,
@@ -417,10 +418,10 @@ class SubtitlePanel:
 
     def _render_state(self):
         edit = self._state.edit_mode
-        finals, partial = ([], ("", ""))
+        finals, partial = ([], SubtitleLine("", ""))
         if self._state.subtitles_on:
-            finals, partial = self._store.snapshot()
-        text_content = bool(finals or partial[0] or partial[1])
+            finals, partial = self._store.snapshot_with_speakers()
+        text_content = bool(finals or partial.src or partial.dst)
         # armed-but-silent: subtitles are ON but nothing is being said -
         # show a small pill instead of hiding entirely (zero feedback)
         armed_phase = None
@@ -438,7 +439,7 @@ class SubtitlePanel:
         # the phase int + hovered resize corner are part of the signature so
         # the existing 1 Hz recheck drives their (rare) re-renders
         sig = ((tuple(finals), partial, edit, self._tex_h, armed_phase,
-                self._hover_corner if edit else None)
+                self._hover_corner if edit else None, self._state.ui_lang)
                if has_content else None)
         return has_content, sig, finals, partial, edit, armed_phase
 
@@ -653,29 +654,55 @@ class SubtitlePanel:
         if edit:
             self._draw_resize_handle(d)
 
-        rows: list[tuple[str, tuple, object]] = []
-        for src, dst, _lang in finals:
-            if self._show_source and src:
-                rows.append((src, COL_SRC, self._font_small))
-            rows.append((dst or src, COL_FINAL, self._font))
-        p_src, p_dst = partial
-        if p_dst or p_src:
-            rows.append(((p_dst or p_src), COL_PARTIAL, self._font))
+        rows: list[tuple[str, tuple, object, str | None]] = []
+        for line in finals:
+            if self._show_source and line.src:
+                rows.append((line.src, COL_SRC, self._font_small, line.speaker_id))
+            rows.append((line.dst or line.src, COL_FINAL, self._font, line.speaker_id))
+        if partial.dst or partial.src:
+            rows.append((partial.dst or partial.src, COL_PARTIAL,
+                         self._font, partial.speaker_id))
         if edit and not rows:
-            rows.append((tr(self._state.ui_lang, "sub_placeholder"), COL_PARTIAL, self._font))
+            rows.append((tr(self._state.ui_lang, "sub_placeholder"),
+                         COL_PARTIAL, self._font, None))
 
-        wrapped: list[tuple[str, tuple, object]] = []
-        for text, color, font in rows:
-            for line in self._wrap_chars(d, text, font, TEX_W - 56):
-                wrapped.append((line, color, font))
+        # A compact speaker column keeps identity separate from spoken text.
+        # Using the same width for every speaker avoids moving the text on turns.
+        labels = {
+            speaker: tr(self._state.ui_lang, "speaker_label").format(speaker=speaker)
+            for _text, _color, _font, speaker in rows if speaker is not None
+        }
+        gutter = (min(240, max(int(self._font_small.textlength(d, label))
+                              for label in labels.values()) + 24) if labels else 0)
+        wrapped: list[tuple[str, tuple, object, str | None]] = []
+        for text, color, font, speaker in rows:
+            width = TEX_W - 56 - (gutter if speaker is not None else 0)
+            for line in self._wrap_chars(d, text, font, width):
+                wrapped.append((line, color, font, speaker))
         line_h = int(self._font.line_height(d) * 1.3)
         max_rows = max(1, (tex_h - 28) // line_h)
         wrapped = wrapped[-max_rows:]
 
         y = top + tex_h - 16 - len(wrapped) * line_h
-        for line, color, font in wrapped:
-            font.draw(d, (TEX_W // 2, y + line_h // 2), line, fill=color,
-                      anchor="mm", stroke_width=2, stroke_fill=STROKE)
+        previous_speaker = None
+        for line, color, font, speaker in wrapped:
+            mid_y = y + line_h // 2
+            if speaker is not None:
+                # Recompute after cropping: even if the beginning of a long
+                # utterance scrolled away, its first visible line keeps a label.
+                if speaker != previous_speaker:
+                    label = labels[speaker]
+                    while self._font_small.textlength(d, label) > gutter - 16 and len(label) > 1:
+                        label = label[:-2] + "…"
+                    self._font_small.draw(d, (28, mid_y), label,
+                                          fill=speaker_color(speaker), anchor="lm",
+                                          stroke_width=1, stroke_fill=STROKE)
+                font.draw(d, (28 + gutter, mid_y), line, fill=color,
+                          anchor="lm", stroke_width=2, stroke_fill=STROKE)
+            else:
+                font.draw(d, (TEX_W // 2, mid_y), line, fill=color,
+                          anchor="mm", stroke_width=2, stroke_fill=STROKE)
+            previous_speaker = speaker
             y += line_h
         return img
 

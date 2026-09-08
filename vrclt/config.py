@@ -16,7 +16,7 @@ log = logging.getLogger(__name__)
 
 APP_MODES = ("vrchat", "discord", "custom")
 CLOSE_ACTIONS = ("tray", "exit")
-PROVIDERS = ("gemini", "qwen", "openai")
+PROVIDERS = ("gemini", "qwen", "openai", "soniox")
 QWEN_ENDPOINTS = ("intl", "beijing")
 QWEN_VOICE_CLONE_MODES = ("once", "always", "off")
 # source-transcript ASR inside a gpt-realtime-translate session; "" = no
@@ -40,6 +40,7 @@ RESET_PRESERVE_PATHS = (
     ("qwen", "workspace_id"),
     ("qwen", "base_url"),
     ("openai", "api_key"),
+    ("soniox", "api_key"),
     ("outbound", "source_language"),
     ("inbound", "source_language"),
     ("control", "languages"),
@@ -74,7 +75,7 @@ else:
     CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
 
 DEFAULTS = {
-    "provider": "gemini",               # gemini | qwen (applies to both pipelines)
+    "provider": "gemini",               # gemini | qwen | openai | soniox
     "api_key": "",                      # empty -> use GEMINI_API_KEY env var
     "model": "gemini-3.5-live-translate-preview",
     "qwen": {                           # Alibaba DashScope realtime translation
@@ -109,6 +110,14 @@ DEFAULTS = {
         "inbound_transcribe_model": "",               # subtitles: translation only
         "noise_reduction": "near_field",  # near_field (headset/close mic) |
                                         # far_field (room mic) | "" = off
+    },
+    "soniox": {                         # streaming STT + translation, optional TTS
+        "api_key": "",                  # empty -> use SONIOX_API_KEY env var
+        "model": "stt-rt-v5",
+        "tts_model": "tts-rt-v2",        # only used when translated voice is enabled
+        "voice": "Daniel",              # multilingual stock voice or cloned voice ID
+        "keep_speaker_context": True,    # retain speaker IDs through pauses; Soniox
+                                        # bills the full connected stream duration
     },
     "app": {
         "mode": "vrchat",              # vrchat | discord | custom
@@ -163,7 +172,8 @@ DEFAULTS = {
         "enabled": True,
         "target_language": "ja",        # BCP-47
         "source_language": "",          # my spoken language; Qwen cannot auto-detect
-                                        # ("" -> server default en); Gemini ignores this
+                                        # ("" -> server default en); Soniox uses a hint;
+                                        # Gemini and OpenAI auto-detect
         "echo_target_language": False,
         "mic_device": "",               # substring; empty = default input device
         # translated voice -> loopback device -> target app mic
@@ -180,7 +190,7 @@ DEFAULTS = {
     "inbound": {                        # pipeline B: others' voices -> me (subtitles)
         "enabled": True,
         "target_language": "ko",
-        "source_language": "",          # others' spoken language (Qwen only, see outbound)
+        "source_language": "",          # source setting for Qwen / optional Soniox hint
         "languages": ["ko", "en", "ja", "zh-Hans", "zh-Hant"],  # wrist menu cycles subtitles through these
         "process": platform_support.process_name("VRChat"),
         # per-process capture needs Windows 11 (build 20348+). Where it is
@@ -521,11 +531,18 @@ def openai_api_key(cfg: dict) -> str:
     return (oa.get("api_key") or os.environ.get("OPENAI_API_KEY", "")).strip()
 
 
+def soniox_api_key(cfg: dict) -> str:
+    sx = cfg.get("soniox") or {}
+    return (sx.get("api_key") or os.environ.get("SONIOX_API_KEY", "")).strip()
+
+
 def api_key_for(cfg: dict, prov: str) -> str:
     if prov == "qwen":
         return qwen_api_key(cfg)
     if prov == "openai":
         return openai_api_key(cfg)
+    if prov == "soniox":
+        return soniox_api_key(cfg)
     return api_key(cfg)
 
 

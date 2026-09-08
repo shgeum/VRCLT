@@ -62,19 +62,19 @@ STRINGS = {
         "zh": "绿色 = 超过语音门限。标记线为当前检测阈值（游戏声音播放时会提高）。"},
     "dash_voice_volume": {"ko": "음성 볼륨", "en": "Voice volume",
                           "ja": "音声音量", "zh": "语音音量"},
-    "label_src_lang": {"ko": "내 언어 (Qwen)", "en": "My language (Qwen)",
-                       "ja": "自分の言語 (Qwen)", "zh": "我的语言 (Qwen)"},
-    "label_in_src_lang": {"ko": "상대 언어 (Qwen)", "en": "Their language (Qwen)",
-                          "ja": "相手の言語 (Qwen)", "zh": "对方语言 (Qwen)"},
+    "label_src_lang": {"ko": "내 발화 언어", "en": "My spoken language",
+                       "ja": "自分の発話言語", "zh": "我的语音语言"},
+    "label_in_src_lang": {"ko": "상대 발화 언어", "en": "Their spoken language",
+                          "ja": "相手の発話言語", "zh": "对方语音语言"},
     "tip_src_lang": {
-        "ko": "발화 언어 지정 (Qwen 전용 — 자동 감지가 없습니다. 비우면 영어로 간주). "
-              "Gemini 사용 시에는 자동 감지되므로 무시됩니다.",
-        "en": "Spoken language for Qwen - it cannot auto-detect (empty = assumes "
-              "English). Ignored while using Gemini (auto-detected).",
-        "ja": "発話言語の指定 (Qwen専用 — 自動検出なし。空欄は英語扱い)。"
-              "Gemini使用時は自動検出のため無視されます。",
-        "zh": "指定语音语言（仅 Qwen — 无法自动检测，留空则视为英语）。"
-              "使用 Gemini 时自动检测，此设置被忽略。"},
+        "ko": "Qwen은 발화 언어 지정이 필요합니다 (비우면 영어). Soniox에서는 선택 사항인 "
+              "언어 힌트이며, 비우면 자동 감지합니다. Gemini는 자동 감지합니다.",
+        "en": "Qwen requires a spoken language (empty = English). Soniox uses this as an "
+              "optional language hint; leave empty to auto-detect. Gemini auto-detects.",
+        "ja": "Qwenは発話言語の指定が必要です（空欄は英語）。Sonioxでは任意の言語ヒントで、"
+              "空欄なら自動検出します。Geminiは自動検出します。",
+        "zh": "Qwen 需要指定语音语言（留空为英语）。Soniox 将此用作可选语言提示，"
+              "留空时自动检测。Gemini 自动检测。"},
     "ph_src_auto": {"ko": "언어 검색 (비우면 자동/영어)", "en": "Search language (empty = auto/en)",
                     "ja": "言語を検索 (空欄 = 自動/英語)", "zh": "搜索语言（留空 = 自动/英语）"},
     "dash_src_out": {"ko": "내 발화 언어", "en": "My spoken language",
@@ -149,7 +149,8 @@ STRINGS = {
     "label_add_sub_lang": {"ko": "자막 언어 추가", "en": "Add subtitle language",
                            "ja": "字幕言語を追加", "zh": "添加字幕语言"},
     "btn_add": {"ko": "추가", "en": "Add", "ja": "追加", "zh": "添加"},
-    "grp_api": {"ko": "기본 / API", "en": "General / API", "ja": "基本 / API", "zh": "基本 / API"},
+    "grp_api": {"ko": "번역 엔진", "en": "Translation engine", "ja": "翻訳エンジン", "zh": "翻译引擎"},
+    "grp_app": {"ko": "앱 연결", "en": "App connection", "ja": "アプリ接続", "zh": "应用连接"},
     "grp_lang": {"ko": "언어", "en": "Languages", "ja": "言語", "zh": "语言"},
     "grp_ui": {"ko": "UI", "en": "UI", "ja": "UI", "zh": "UI"},
     "grp_hotkeys": {"ko": "PC 핫키", "en": "PC hotkeys", "ja": "PCホットキー", "zh": "PC 热键"},
@@ -331,10 +332,61 @@ STRINGS = {
                                  "zh": "OpenAI API 密钥为空。"},
     "default_device": {"ko": "(기본)", "en": "(default)", "ja": "(既定)", "zh": "(默认)"},
     # ---- settings field labels ----
-    "f.provider": {"ko": "번역 엔진 (gemini | qwen | openai)",
-                   "en": "Translation engine (gemini | qwen | openai)",
-                   "ja": "翻訳エンジン (gemini | qwen | openai)",
-                   "zh": "翻译引擎 (gemini | qwen | openai)"},
+    "f.provider": {"ko": "사용할 엔진", "en": "Engine",
+                   "ja": "使用するエンジン", "zh": "使用的引擎"},
+    "f.soniox.api_key": {"ko": "Soniox API 키", "en": "Soniox API key",
+                         "ja": "Soniox APIキー", "zh": "Soniox API 密钥"},
+    "f.soniox.model": {"ko": "Soniox 음성 인식 모델", "en": "Soniox speech recognition model",
+                       "ja": "Soniox音声認識モデル", "zh": "Soniox 语音识别模型"},
+    "f.soniox.tts_model": {"ko": "Soniox 음성 합성 모델", "en": "Soniox speech synthesis model",
+                           "ja": "Soniox音声合成モデル", "zh": "Soniox 语音合成模型"},
+    "f.soniox.voice": {"ko": "Soniox 음성", "en": "Soniox voice",
+                       "ja": "Soniox音声", "zh": "Soniox 声音"},
+    "f.soniox.keep_speaker_context": {
+        "ko": "무음 중 화자 구분 유지", "en": "Keep speaker context during silence",
+        "ja": "無音中も話者情報を維持", "zh": "静音时保留说话人信息"},
+    "f.soniox.keep_speaker_context.tip": {
+        "ko": "잠시 대화가 없어도 연결을 유지해 화자 번호를 보존합니다. Soniox는 무음을 포함한 "
+              "전체 연결 시간에 과금합니다. 끄면 오디오 설정의 무음 연결 종료 시간을 사용합니다.",
+        "en": "Keep the connection open during pauses to preserve speaker numbers. Soniox bills "
+              "the entire connection duration, including silence. Turn off to use the audio idle-disconnect timeout.",
+        "ja": "会話が途切れても接続を維持し、話者番号を保持します。Sonioxは無音を含む接続時間全体に"
+              "課金します。オフにすると音声設定の無音時切断タイムアウトを使用します。",
+        "zh": "暂停对话时保持连接以保留说话人编号。Soniox 按包括静音在内的完整连接时长计费。"
+              "关闭后使用音频设置中的静音断开超时。"},
+    "soniox_context_billing_note": {
+        "ko": "화자 구분 유지가 켜지면 무음 중에도 연결 시간에 과금됩니다.",
+        "en": "Keeping speaker context also bills connection time during silence.",
+        "ja": "話者情報の維持をオンにすると、無音中の接続時間も課金対象になります。",
+        "zh": "启用说话人信息保留后，静音期间的连接时间也会计费。"},
+    "f.soniox.api_key.tip": {
+        "ko": "console.soniox.com에서 발급합니다. 비워두면 SONIOX_API_KEY 환경변수를 사용합니다.",
+        "en": "Create a key at console.soniox.com. If empty, uses the SONIOX_API_KEY environment variable.",
+        "ja": "console.soniox.comで発行します。空欄の場合はSONIOX_API_KEY環境変数を使用します。",
+        "zh": "在 console.soniox.com 创建密钥。留空时使用 SONIOX_API_KEY 环境变量。"},
+    "f.soniox.model.tip": {
+        "ko": "실시간 음성 인식과 번역에 사용할 Soniox 모델입니다.",
+        "en": "Soniox model used for real-time speech recognition and translation.",
+        "ja": "リアルタイム音声認識と翻訳に使用するSonioxモデルです。",
+        "zh": "用于实时语音识别和翻译的 Soniox 模型。"},
+    "f.soniox.tts_model.tip": {
+        "ko": "번역 음성을 생성할 모델입니다. 텍스트 전용 모드에서는 사용하지 않습니다.",
+        "en": "Model used to speak translations. Unused in text-only mode.",
+        "ja": "翻訳音声を生成するモデルです。テキスト専用モードでは使用しません。",
+        "zh": "用于生成翻译语音的模型。仅文本模式下不使用。"},
+    "f.soniox.voice.tip": {
+        "ko": "번역 음성에 사용할 Soniox 음성 이름 또는 ID입니다.",
+        "en": "Soniox voice name or ID used for translated speech.",
+        "ja": "翻訳音声に使用するSonioxの音声名またはIDです。",
+        "zh": "翻译语音使用的 Soniox 声音名称或 ID。"},
+    "err_soniox_api_key_empty": {
+        "ko": "Soniox API 키가 비어 있습니다.", "en": "Soniox API key is empty.",
+        "ja": "Soniox APIキーが空です。", "zh": "Soniox API 密钥为空。"},
+    "err_soniox_api_key_url": {
+        "ko": "API 키에는 URL이 아니라 Soniox API 키를 입력해야 합니다.",
+        "en": "Enter a Soniox API key, not a URL.",
+        "ja": "URLではなくSoniox APIキーを入力してください。",
+        "zh": "请输入 Soniox API 密钥，而不是 URL。"},
     "f.api_key": {"ko": "Gemini API 키", "en": "Gemini API key",
                   "ja": "Gemini APIキー", "zh": "Gemini API 密钥"},
     "f.model": {"ko": "Gemini 모델", "en": "Gemini model",
@@ -387,14 +439,14 @@ STRINGS = {
                                       "ja": "カスタムキャプチャプロセス", "zh": "自定义捕获进程"},
     "f.outbound.target_language": {"ko": "기본 출력 언어", "en": "Default output language",
                                    "ja": "既定の出力言語", "zh": "默认输出语言"},
-    "f.outbound.source_language": {"ko": "내 발화 언어 (Qwen 필수)",
-                                   "en": "My spoken language (Qwen: required)",
-                                   "ja": "自分の発話言語 (Qwen: 必須)",
-                                   "zh": "我的语音语言（Qwen 必填）"},
-    "f.inbound.source_language": {"ko": "상대 발화 언어 (Qwen 필수)",
-                                  "en": "Others' spoken language (Qwen: required)",
-                                  "ja": "相手の発話言語 (Qwen: 必須)",
-                                  "zh": "对方语音语言（Qwen 必填）"},
+    "f.outbound.source_language": {"ko": "내 발화 언어",
+                                   "en": "My spoken language",
+                                   "ja": "自分の発話言語",
+                                   "zh": "我的语音语言"},
+    "f.inbound.source_language": {"ko": "상대 발화 언어",
+                                  "en": "Others' spoken language",
+                                  "ja": "相手の発話言語",
+                                  "zh": "对方语音语言"},
     "f.control.languages": {"ko": "출력 언어 목록", "en": "Output language list",
                             "ja": "出力言語リスト", "zh": "输出语言列表"},
     "f.inbound.target_language": {"ko": "기본 자막 언어", "en": "Default subtitle language",
@@ -726,15 +778,14 @@ STRINGS = {
         "zh": "选择关闭窗口时是隐藏到托盘还是退出。"},
     # ---- settings field tooltips (f.<path>.tip; optional — shown when present) ----
     "f.provider.tip": {
-        "ko": "gemini: 발화 언어 자동 감지, Google AI Studio 키 사용. "
-              "qwen: 음성 복제 지원, 발화 언어 지정 필수, DashScope 키 사용.",
-        "en": "gemini: auto-detects spoken language, uses a Google AI Studio key. "
-              "qwen: supports voice cloning, requires fixed spoken languages, uses a "
-              "DashScope key.",
-        "ja": "gemini: 発話言語を自動検出、Google AI Studioのキーを使用。"
-              "qwen: 音声クローン対応、発話言語の指定が必須、DashScopeのキーを使用。",
-        "zh": "gemini：自动检测语音语言，使用 Google AI Studio 密钥。"
-              "qwen：支持声音复刻，需指定语音语言，使用 DashScope 密钥。"},
+        "ko": "Gemini, Qwen, OpenAI, Soniox 중에서 선택합니다. 선택한 엔진의 API 키와 "
+              "모델 설정만 표시됩니다. Qwen은 발화 언어 지정이 필요합니다.",
+        "en": "Choose Gemini, Qwen, OpenAI, or Soniox. Only the selected engine's API "
+              "key and models are shown. Qwen requires a spoken language.",
+        "ja": "Gemini、Qwen、OpenAI、Sonioxから選択します。選択したエンジンのAPIキーと"
+              "モデル設定のみ表示します。Qwenは発話言語の指定が必要です。",
+        "zh": "选择 Gemini、Qwen、OpenAI 或 Soniox。仅显示所选引擎的 API 密钥和模型设置。"
+              "Qwen 需要指定语音语言。"},
     "f.api_key.tip": {
         "ko": "Google AI Studio(aistudio.google.com/apikey)에서 발급. "
               "비워두면 GEMINI_API_KEY 환경변수를 사용합니다.",
@@ -861,19 +912,23 @@ STRINGS = {
         "zh": "自定义模式下捕获的应用。打开列表时会优先显示当前正在播放音频的应用。"
               "留空 = 保持当前捕获目标。"},
     "f.outbound.source_language.tip": {
-        "ko": "Qwen 전용 — 자동 감지가 없어 내가 말하는 언어를 지정해야 합니다. "
-              "비우면 영어로 간주, Gemini는 무시.",
-        "en": "Qwen only — it cannot auto-detect, so set the language you speak. "
-              "Empty = assumes English; ignored by Gemini.",
-        "ja": "Qwen専用 — 自動検出がないため自分が話す言語を指定します。"
-              "空欄は英語扱い、Geminiでは無視。",
-        "zh": "仅 Qwen——无法自动检测，需指定你说的语言。留空视为英语；Gemini 忽略此项。"},
+        "ko": "내가 말하는 언어입니다. Qwen은 지정 필수 (비우면 영어), Soniox는 선택 사항인 "
+              "언어 힌트입니다 (비우면 자동 감지). Gemini는 무시합니다.",
+        "en": "The language you speak. Required for Qwen (empty = English); optional "
+              "language hint for Soniox (empty = auto-detect). Ignored by Gemini.",
+        "ja": "自分が話す言語です。Qwenは必須（空欄は英語）、Sonioxは任意のヒント"
+              "（空欄は自動検出）です。Geminiでは無視します。",
+        "zh": "你说的语言。Qwen 必填（留空为英语），Soniox 为可选语言提示"
+              "（留空自动检测）。Gemini 忽略此项。"},
     "f.inbound.source_language.tip": {
-        "ko": "Qwen 전용 — 상대가 말하는 언어를 지정합니다. 비우면 영어로 간주, Gemini는 무시.",
-        "en": "Qwen only — the language others speak. Empty = assumes English; "
-              "ignored by Gemini.",
-        "ja": "Qwen専用 — 相手が話す言語を指定します。空欄は英語扱い、Geminiでは無視。",
-        "zh": "仅 Qwen——对方说的语言。留空视为英语；Gemini 忽略此项。"},
+        "ko": "상대가 말하는 언어입니다. Qwen은 지정 필수 (비우면 영어), Soniox는 선택 사항인 "
+              "언어 힌트입니다 (비우면 자동 감지). Gemini는 무시합니다.",
+        "en": "The language others speak. Required for Qwen (empty = English); optional "
+              "language hint for Soniox (empty = auto-detect). Ignored by Gemini.",
+        "ja": "相手が話す言語です。Qwenは必須（空欄は英語）、Sonioxは任意のヒント"
+              "（空欄は自動検出）です。Geminiでは無視します。",
+        "zh": "对方说的语言。Qwen 必填（留空为英语），Soniox 为可选语言提示"
+              "（留空自动检测）。Gemini 忽略此项。"},
     "f.control.languages.tip": {
         "ko": "출력 언어 드롭다운/손목 UI/OSC 순환에 표시될 언어 목록 "
               "(쉼표로 구분한 언어 코드, 예: en, ja, zh-Hans).",
@@ -974,8 +1029,52 @@ STRINGS = {
         "ja": "不正な値があります: {fields}",
         "zh": "存在无效值：{fields}"},
     "settings_search_ph": {
-        "ko": "설정 검색...", "en": "Search settings...",
-        "ja": "設定を検索...", "zh": "搜索设置..."},
+        "ko": "모든 분류에서 설정 검색…", "en": "Search all settings…",
+        "ja": "すべての設定を検索…", "zh": "搜索所有设置…"},
+    "settings_categories": {"ko": "설정 분류", "en": "Settings categories",
+                            "ja": "設定カテゴリ", "zh": "设置分类"},
+    "settings_cat_translation": {"ko": "번역·언어", "en": "Translation",
+                                 "ja": "翻訳・言語", "zh": "翻译与语言"},
+    "settings_cat_devices": {"ko": "오디오 장치", "en": "Audio devices",
+                             "ja": "音声デバイス", "zh": "音频设备"},
+    "settings_cat_audio": {"ko": "음성 감지", "en": "Speech detection",
+                           "ja": "音声検出", "zh": "语音检测"},
+    "settings_cat_interface": {"ko": "앱·단축키", "en": "App & shortcuts",
+                               "ja": "アプリ・キー", "zh": "应用与快捷键"},
+    "settings_cat_vr": {"ko": "VR 연동", "en": "VR integration",
+                        "ja": "VR連携", "zh": "VR 集成"},
+    "settings_category_hint": {
+        "ko": "필요한 분류를 선택하세요. API 설정은 현재 선택한 {provider} 엔진만 표시합니다.",
+        "en": "Choose a category. API settings are shown for the selected {provider} engine.",
+        "ja": "カテゴリを選択してください。API設定は選択した{provider}のみ表示します。",
+        "zh": "选择分类。API 设置仅显示当前选择的 {provider} 引擎。"},
+    "settings_search_hint": {
+        "ko": "모든 분류에서 검색 중 · 현재 엔진: {provider}. 검색을 지우면 분류로 돌아갑니다.",
+        "en": "Searching all categories · engine: {provider}. Clear search to return to categories.",
+        "ja": "すべてのカテゴリを検索中 · エンジン：{provider}。検索を消すとカテゴリに戻ります。",
+        "zh": "正在搜索所有分类 · 当前引擎：{provider}。清除搜索以返回分类。"},
+    "settings_no_results": {
+        "ko": "일치하는 설정이 없습니다. 다른 검색어를 입력하거나 검색을 지워보세요.",
+        "en": "No matching settings. Try another term or clear the search.",
+        "ja": "一致する設定がありません。別の語で検索するか、検索を消してください。",
+        "zh": "没有匹配的设置。请尝试其他关键词或清除搜索。"},
+    "dash_language_options": {"ko": "언어 목록 편집", "en": "Language options",
+                              "ja": "言語リストを編集", "zh": "编辑语言列表"},
+    "dash_more_options": {"ko": "자막·앱 옵션", "en": "Subtitle & app options",
+                          "ja": "字幕・アプリの設定", "zh": "字幕与应用选项"},
+    "dash_live_preview": {"ko": "실시간 자막", "en": "Live subtitles",
+                          "ja": "リアルタイム字幕", "zh": "实时字幕"},
+    "speaker_label": {"ko": "화자 {speaker}", "en": "Speaker {speaker}",
+                      "ja": "話者 {speaker}", "zh": "说话人 {speaker}"},
+    "speaker_diarization_on": {"ko": "화자 분리 켜짐", "en": "Speaker separation on",
+                               "ja": "話者分離オン", "zh": "说话人分离已开启"},
+    "speaker_diarization_tip": {
+        "ko": "음성으로 구분한 화자 번호입니다. 재연결하면 번호가 바뀔 수 있습니다.",
+        "en": "Numbers distinguish voices in this connection. They may change after reconnecting.",
+        "ja": "この接続内で声を区別する番号です。再接続すると番号が変わることがあります。",
+        "zh": "编号用于区分当前连接中的声音。重新连接后编号可能会改变。"},
+    "dash_engine_tip": {"ko": "번역 엔진 설정 열기", "en": "Open translation engine settings",
+                        "ja": "翻訳エンジンの設定を開く", "zh": "打开翻译引擎设置"},
     # ---- additional field tooltips ----
     "f.outbound.tts_gain.tip": {
         "ko": "번역 음성 볼륨 (0.0–2.0). 대시보드 슬라이더와 같은 값입니다.",

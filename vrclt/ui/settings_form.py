@@ -41,6 +41,9 @@ def clear_layout(layout) -> None:
         widget = item.widget()
         child = item.layout()
         if widget is not None:
+            # Deferred deletion can survive until the next event-loop turn;
+            # hide now so rebuilt forms never paint over the replacement.
+            widget.hide()
             widget.deleteLater()
         elif child is not None:
             clear_layout(child)
@@ -85,12 +88,15 @@ class SettingsValidationError(ValueError):
         self.errors = errors
 
 
-class SettingsForm:
+class SettingsForm(QtCore.QObject):
     """Owns the settings scroll body: field registry, construction, config
     sync, and readback into a config dict."""
 
+    filter_reset_requested = QtCore.Signal()
+
     def __init__(self, controller, tr, layout: QtWidgets.QVBoxLayout, *,
                  get_devices, on_hotkey_capture_start, on_hotkey_capture_end):
+        super().__init__(layout.parentWidget())
         self._controller = controller
         self._tr = tr
         self._layout = layout
@@ -105,6 +111,13 @@ class SettingsForm:
         self._outputs: list[str] = [""]
         self._chk_autolaunch: QtWidgets.QCheckBox | None = None
         self._filter_text = ""
+        self._category_index = 0
+        self._category_tabs = None
+        self._section_hint = None
+        self._empty_label = None
+        self._group_keys: dict[str, str] = {}
+        self._autolaunch_row = None
+        self._provider_note = None
 
     # ---------------- construction ----------------
     def populate(self) -> None:
@@ -112,20 +125,49 @@ class SettingsForm:
         self._fields.clear()
         self._rows.clear()
         self._groups = []
+        self._group_keys = {}
+        self._autolaunch_row = None
+        self._provider_note = None
+        self._chk_autolaunch = None
         self._invalid_widgets = []
         self._inputs, self._outputs = self._get_devices()
         cfg = self._controller.raw_cfg
+        self._category_tabs = QtWidgets.QTabBar()
+        self._category_tabs.setObjectName("settingsCategories")
+        self._category_tabs.setAccessibleName(self._tr("settings_categories"))
+        self._category_tabs.setExpanding(True)
+        self._category_tabs.setDrawBase(False)
+        for title_key, _groups in settings_schema.CATEGORIES:
+            self._category_tabs.addTab(self._tr(title_key))
+        self._category_tabs.setCurrentIndex(self._category_index)
+        self._category_tabs.currentChanged.connect(self._select_category)
+        self._layout.addWidget(self._category_tabs)
+        self._section_hint = QtWidgets.QLabel()
+        self._section_hint.setObjectName("settingsSectionHint")
+        self._section_hint.setWordWrap(True)
+        self._layout.addWidget(self._section_hint)
         for title_key, specs in settings_schema.GROUPS:
             group, form = self._add_group(title_key, specs, cfg)
             if title_key == "grp_steamvr":
                 self._add_steamvr_autolaunch(form)
+        self._empty_label = QtWidgets.QLabel(self._tr("settings_no_results"))
+        self._empty_label.setObjectName("settingsEmpty")
+        self._empty_label.setWordWrap(True)
+        self._empty_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self._empty_label.setMinimumHeight(100)
+        self._layout.addWidget(self._empty_label)
         self._layout.addStretch(1)
-        if self._filter_text:  # rebuilds (save/language change) keep the filter
-            self.apply_filter(self._filter_text)
+        self._fields["provider"][0].currentTextChanged.connect(
+            lambda _value: self.apply_filter(self._filter_text))
+        self.apply_filter(self._filter_text)
 
     def _add_group(self, title_key: str, specs, cfg: dict):
         group = QtWidgets.QGroupBox(self._tr(title_key))
         form = QtWidgets.QFormLayout(group)
+        form.setContentsMargins(18, 20, 18, 16)
+        form.setHorizontalSpacing(24)
+        form.setVerticalSpacing(12)
+        form.setRowWrapPolicy(QtWidgets.QFormLayout.RowWrapPolicy.WrapLongRows)
         form.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         paths = []
         for spec in specs:
@@ -134,9 +176,18 @@ class SettingsForm:
             form.addRow(self._tr(spec.label_key), widget)
             label = form.labelForField(widget)
             self._rows[spec.path] = (spec, form, label, widget)
+            self._group_keys[spec.path] = title_key
+            widget.setAccessibleName(self._tr(spec.label_key))
+            if label is not None:
+                label.setWordWrap(True)
             paths.append(spec.path)
             self._apply_tip(label, widget, spec)
             self._install_reset_menu(label, widget, spec)
+        if title_key == "grp_api":
+            self._provider_note = QtWidgets.QLabel(self._tr("soniox_context_billing_note"))
+            self._provider_note.setObjectName("settingsSectionHint")
+            self._provider_note.setWordWrap(True)
+            form.addRow(self._provider_note)
         self._layout.addWidget(group)
         self._groups.append((group, paths))
         return group, form
@@ -194,6 +245,8 @@ class SettingsForm:
         self._chk_autolaunch = QtWidgets.QCheckBox()
         self._chk_autolaunch.clicked.connect(self._controller.set_steamvr_auto_launch)
         form.addRow(self._tr("f.steamvr.auto_launch"), self._chk_autolaunch)
+        self._chk_autolaunch.setAccessibleName(self._tr("f.steamvr.auto_launch"))
+        self._autolaunch_row = (form, self._chk_autolaunch)
         self.sync_steamvr_autolaunch()
 
     def _make_field(self, spec: FieldSpec, value):
@@ -358,6 +411,7 @@ class SettingsForm:
                 continue
             self._set_field_widget_value(
                 widget, spec, config_mod.get_path(self._controller.raw_cfg, path))
+        self.apply_filter(self._filter_text)
 
     def _set_field_widget_value(self, widget, spec: FieldSpec, value) -> None:
         kind = spec.kind
@@ -386,6 +440,8 @@ class SettingsForm:
                 widget.setText("" if value is None else str(value))
         finally:
             widget.blockSignals(blocked)
+        if kind == "provider":
+            self.apply_filter(self._filter_text)
 
     def _field_value(self, widget, spec: FieldSpec):
         kind = spec.kind
@@ -453,24 +509,82 @@ class SettingsForm:
             self._invalid_widgets.append(widget)
             if first is None:
                 first = widget
+                self._reveal_field(path)
         return first
 
     # ---------------- search filter / focus helpers ----------------
     def apply_filter(self, text: str) -> None:
-        """Show only rows whose translated label or config path contains the
-        needle; groups with no visible rows hide entirely."""
+        """Search across categories while keeping inactive engines tucked away."""
         self._filter_text = text
-        needle = text.strip().lower()
+        needle = text.strip().casefold()
+        provider = self._fields["provider"][0].currentText()
+        active_groups = settings_schema.CATEGORIES[self._category_index][1]
+        self._category_tabs.setEnabled(not bool(needle))
+        hint_key = "settings_search_hint" if needle else "settings_category_hint"
+        self._section_hint.setText(self._tr(hint_key).format(provider=provider.title()))
         visible_paths = set()
         for path, (spec, form, _label, widget) in self._rows.items():
-            visible = (not needle
-                       or needle in path.lower()
-                       or needle in self._tr(spec.label_key).lower())
+            title_key = self._group_keys[path]
+            engine = settings_schema.field_provider(path)
+            relevant = engine is None or engine == provider
+            matches = (needle in path.casefold()
+                       or needle in self._tr(spec.label_key).casefold()
+                       or needle in self._tr(title_key).casefold())
+            visible = relevant and (matches if needle else title_key in active_groups)
             form.setRowVisible(widget, visible)
             if visible:
                 visible_paths.add(path)
+        # SteamVR owns this live value, so it is deliberately outside the saved
+        # field registry. It still follows the same search/category rules.
+        autolaunch_visible = False
+        if self._autolaunch_row is not None:
+            form, widget = self._autolaunch_row
+            autolaunch_visible = (
+                needle in "steamvr.auto_launch"
+                or needle in self._tr("f.steamvr.auto_launch").casefold()
+                or needle in self._tr("grp_steamvr").casefold()
+            ) if needle else "grp_steamvr" in active_groups
+            form.setRowVisible(widget, autolaunch_visible)
         for group, paths in self._groups:
-            group.setVisible(not needle or any(p in visible_paths for p in paths))
+            visible = any(p in visible_paths for p in paths)
+            if paths and self._group_keys[paths[0]] == "grp_steamvr":
+                visible = visible or autolaunch_visible
+            group.setVisible(visible)
+        if self._provider_note is not None:
+            self._provider_note.setVisible(provider == "soniox" and any(
+                self._group_keys[path] == "grp_api" for path in visible_paths))
+        self._empty_label.setVisible(not visible_paths and not autolaunch_visible)
+
+    def _select_category(self, index: int) -> None:
+        if index < 0:
+            return
+        self._category_index = index
+        self.apply_filter(self._filter_text)
+        # A long VR/audio section must not leave the next short section scrolled
+        # past its first controls.
+        parent = self._layout.parentWidget()
+        while parent is not None:
+            if isinstance(parent, QtWidgets.QScrollArea):
+                parent.verticalScrollBar().setValue(0)
+                break
+            parent = parent.parentWidget()
+
+    def _reveal_field(self, path: str) -> None:
+        title_key = self._group_keys.get(path)
+        if title_key is None:
+            return
+        _spec, form, _label, widget = self._rows[path]
+        if form.isRowVisible(widget):
+            return
+        if self._filter_text:
+            self._filter_text = ""
+            self.filter_reset_requested.emit()
+        for index, (_key, groups) in enumerate(settings_schema.CATEGORIES):
+            if title_key in groups:
+                self._category_index = index
+                self._category_tabs.setCurrentIndex(index)
+                break
+        self.apply_filter(self._filter_text)
 
     def focused_field_path(self) -> str | None:
         focus = QtWidgets.QApplication.focusWidget()
@@ -484,6 +598,7 @@ class SettingsForm:
     def focus_field(self, path: str | None) -> None:
         row = self._rows.get(path) if path else None
         if row is not None:
+            self._reveal_field(path)
             row[3].setFocus()
 
     def first_invalid_widget(self):

@@ -11,6 +11,7 @@ from . import config as config_mod
 from . import i18n
 from .app_controller import resolve_ui_mode
 from .ui import theme
+from .ui.subtitle_text import subtitle_html, subtitle_snapshot
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ class DesktopSubtitleOverlay(QtWidgets.QWidget):
         self._press_global = QtCore.QPoint()
         self._press_geometry = QtCore.QRect()
         self._input_edit: bool | None = None
+        self._style_signature = None
 
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
@@ -44,7 +46,7 @@ class DesktopSubtitleOverlay(QtWidgets.QWidget):
         self._label.setAlignment(
             QtCore.Qt.AlignmentFlag.AlignHCenter | QtCore.Qt.AlignmentFlag.AlignVCenter)
         self._label.setWordWrap(True)
-        self._label.setTextFormat(QtCore.Qt.TextFormat.PlainText)
+        self._label.setTextFormat(QtCore.Qt.TextFormat.RichText)
         self._label.setMinimumSize(MIN_WIDTH, MIN_HEIGHT)
         self._label.setMouseTracking(True)
         self._label.installEventFilter(self)
@@ -117,20 +119,10 @@ class DesktopSubtitleOverlay(QtWidgets.QWidget):
     def _subtitle_text(self) -> str:
         cfg = self._controller.cfg.get("overlay", {})
         show_source = bool(cfg.get("show_source", False))
-        finals, partial = self._controller.subtitles_snapshot()
-        rows: list[str] = []
-        for src, dst, _lang in finals:
-            if show_source and src and dst:
-                rows.append(f"{src}\n{dst}")
-            else:
-                rows.append(dst or src)
-        p_src, p_dst = partial
-        if p_src or p_dst:
-            if show_source and p_src and p_dst:
-                rows.append(f"{p_src}\n{p_dst}")
-            else:
-                rows.append(p_dst or p_src)
-        return "\n".join(row for row in rows if row)
+        finals, partial = subtitle_snapshot(self._controller)
+        return subtitle_html(finals, partial,
+                             lambda key: i18n.tr(self._controller.state.ui_lang, key),
+                             show_source=show_source)
 
     def _apply_style(self, edit: bool) -> None:
         overlay_cfg = self._controller.cfg.get("overlay", {})
@@ -140,6 +132,10 @@ class DesktopSubtitleOverlay(QtWidgets.QWidget):
             font_size = 27
         font_size = max(config_mod.OVERLAY_FONT_MIN,
                         min(config_mod.OVERLAY_FONT_MAX, font_size))
+        signature = (edit, font_size, self.font().toString())
+        if signature == self._style_signature:
+            return
+        self._style_signature = signature
         font = QtGui.QFont(self.font())
         font.setPixelSize(font_size)
         font.setWeight(QtGui.QFont.Weight.Bold)

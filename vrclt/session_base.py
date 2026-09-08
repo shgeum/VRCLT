@@ -8,7 +8,6 @@ symbols they (and app_controller) share so neither provider imports the
 other.
 """
 import asyncio
-import time
 
 RECONNECT_MIN_BACKOFF = 2.0
 RECONNECT_MAX_BACKOFF = 30.0
@@ -28,6 +27,14 @@ class AudioSource:
 
 
 async def sleep_interruptible(duration: float, stop: asyncio.Event) -> None:
-    end = time.time() + duration
-    while time.time() < end and not stop.is_set():
-        await asyncio.sleep(0.2)
+    """Wait for a reconnect delay or shutdown without periodic wakeups.
+
+    asyncio's timeout uses the event loop's monotonic clock, so a system-clock
+    correction cannot lengthen a backoff or make it expire prematurely.
+    """
+    if duration <= 0 or stop.is_set():
+        return
+    try:
+        await asyncio.wait_for(stop.wait(), timeout=duration)
+    except asyncio.TimeoutError:
+        pass

@@ -41,7 +41,11 @@ Expected release-related source files include:
 
 - `README.md`
 - `README.ko.md`
+- `README.ja.md`
+- `README.zh.md`
+- `CHANGELOG.md`
 - `docs/RELEASING.md`
+- `docs/releases/v0.19.0.md`
 - `config.example.yaml`
 - `requirements.txt`
 - `vrclt.spec`
@@ -53,14 +57,38 @@ Run the lightweight checks first:
 
 ```powershell
 .\.venv\Scripts\python.exe -m compileall vrclt
+.\.venv\Scripts\python.exe tests\smoke_cli.py
 .\.venv\Scripts\python.exe -m vrclt --help
 ```
+
+For v0.19.0, also run the regression scripts for Soniox, speaker displays,
+settings navigation, logs, reconnect waits, audio passthrough, and startup:
+
+```powershell
+$releaseChecks = @(
+  'smoke_soniox_session.py', 'smoke_subtitle_speakers.py',
+  'smoke_speaker_ui.py', 'smoke_vr_speakers.py',
+  'smoke_settings_navigation.py', 'smoke_logpanel.py',
+  'smoke_session_wait.py', 'smoke_audio_passthrough.py',
+  'smoke_pipeline_startup.py'
+)
+foreach ($releaseCheck in $releaseChecks) {
+  & .\.venv\Scripts\python.exe (Join-Path 'tests' $releaseCheck)
+  if ($LASTEXITCODE -ne 0) { throw "Failed: $releaseCheck" }
+}
+```
+
+Record local test results separately from live-provider and physical-device
+checks. Mock Soniox sessions and rendered VR images do not establish live
+speaker-recognition accuracy or behavior on a headset.
 
 Confirm that the public CLI only exposes `run` plus the optional app override:
 
 ```text
-vrclt [{run}] [--app {vrchat,discord}]
+vrclt [-h] [--app {vrchat,discord,custom}] [{run}]
 ```
+
+Help must exit successfully without opening the GUI or starting microphone capture.
 
 Check source files for stale web stack references before tagging:
 
@@ -96,22 +124,31 @@ a non-zero status or `dist\vrclt.exe` is missing.
 
 Create the release executable and checksum:
 
+The script defaults to `vrclt.__version__`. An explicit `-Version` must match it.
+Build failures stop packaging, and `-SkipBuild` checks the version inside the
+executable before copying it. Windows file and product versions also use the
+application version from the spec.
+
 ```powershell
-.\scripts\package_release.ps1 -Version 0.1.0
+.\scripts\package_release.ps1 -Version 0.19.0
 ```
 
 If `dist\vrclt.exe` has already been built and only the release copy needs to be
 refreshed:
 
 ```powershell
-.\scripts\package_release.ps1 -Version 0.1.0 -SkipBuild
+.\scripts\package_release.ps1 -Version 0.19.0 -SkipBuild
 ```
+
+Use `-SkipBuild` only when that executable was built from the exact source being
+released. Confirm `vrclt/__init__.py`, the changelog, and the artifact name all
+use `0.19.0`.
 
 Expected output:
 
 ```text
-release\vrclt-v0.1.0-windows-x64.exe
-release\vrclt-v0.1.0-windows-x64.exe.sha256
+release\vrclt-v0.19.0-windows-x64.exe
+release\vrclt-v0.19.0-windows-x64.exe.sha256
 ```
 
 ## 5. Smoke Test The Executable
@@ -121,6 +158,18 @@ Start the built exe directly:
 ```powershell
 .\dist\vrclt.exe
 ```
+
+Repeat the launch check with the packaged release executable, which is the file
+users download:
+
+```powershell
+.\release\vrclt-v0.19.0-windows-x64.exe
+Get-FileHash .\release\vrclt-v0.19.0-windows-x64.exe -Algorithm SHA256
+Get-Content .\release\vrclt-v0.19.0-windows-x64.exe.sha256
+```
+
+The computed hash must match the checksum file. An existing process or a
+successful build alone does not prove that the application window appeared.
 
 Then verify:
 
@@ -138,6 +187,7 @@ For app-mode smoke tests:
 ```powershell
 .\dist\vrclt.exe run --app vrchat
 .\dist\vrclt.exe run --app discord
+.\dist\vrclt.exe run --app custom
 ```
 
 In `vrchat` mode, confirm OSC/chatbox, SteamVR subtitles, and wrist UI behavior
@@ -152,13 +202,13 @@ remains available.
 On a release candidate machine, verify the expected audio routing:
 
 ```text
-microphone -> Gemini Live -> CABLE Input -> target app microphone input from CABLE Output
-target app process audio -> ProcTap -> Gemini Live -> native/VR subtitles
+microphone -> selected translation engine -> CABLE Input -> target app microphone input from CABLE Output
+target app process audio -> ProcTap -> selected translation engine -> native/VR subtitles
 ```
 
 Minimum manual checks:
 
-- Gemini API key can be saved in Settings.
+- The selected engine's API key can be saved in Settings.
 - `CABLE Input` can be selected as translated voice output.
 - The target app is configured to use `CABLE Output` as its microphone input.
 - Translation ON sends translated voice to the target app.
@@ -170,22 +220,40 @@ Minimum manual checks:
 - Language changes from Dashboard apply immediately.
 - Settings that require a rebuild restart the runtime without duplicate pipelines.
 
+Soniox release checks:
+
+- Set the engine to `soniox` and configure its API key in Settings, or supply
+  `SONIOX_API_KEY` in the environment.
+- Use two speakers and confirm speaker numbers/colors, original/translated text
+  association, and turn order in the Dashboard, desktop overlay, and VR overlay.
+- Confirm **Keep speaker context** is enabled by default and the billing note is
+  visible. Active recognition connections stay billable during silence, including
+  text-only use; see [Soniox keepalive billing](https://soniox.com/docs/stt/rt/connection-keepalive).
+- With context retention off, verify idle disconnect and a new speaker context
+  after reconnecting. Speaker numbers are session-local, not persistent identities.
+- Verify text-only use and optional translated voice separately. Translated voice
+  uses the selected TTS voice; speaker labels do not imply automatic voice cloning.
+
+If these live checks or headset checks have not been performed, leave that limit
+explicit in the release notes.
+
 ## 7. Commit And Tag
 
 After validation, commit only source changes:
 
 ```powershell
 git status
-git add README.md README.ko.md README.en.md docs/RELEASING.md config.example.yaml requirements.txt vrclt.spec scripts/package_release.ps1 vrclt
+git add README.md README.ko.md README.en.md README.ja.md README.zh.md CHANGELOG.md docs/RELEASING.md docs/releases/v0.19.0.md config.example.yaml requirements.txt vrclt.spec scripts/package_release.ps1 vrclt tests
 git status
-git commit -m "chore: prepare v0.1.0 release"
+git commit -m "chore: prepare v0.19.0 release"
 ```
 
 Create and push the tag:
 
 ```powershell
-git tag v0.1.0
-git push origin main --tags
+git tag v0.19.0
+git push origin main
+git push origin v0.19.0
 ```
 
 Use a new version number if the tag already exists.
@@ -195,18 +263,18 @@ Use a new version number if the tag already exists.
 Upload these files to a GitHub Release:
 
 ```text
-release\vrclt-v0.1.0-windows-x64.exe
-release\vrclt-v0.1.0-windows-x64.exe.sha256
+release\vrclt-v0.19.0-windows-x64.exe
+release\vrclt-v0.19.0-windows-x64.exe.sha256
 ```
 
 With GitHub CLI:
 
 ```powershell
-gh release create v0.1.0 `
-  .\release\vrclt-v0.1.0-windows-x64.exe `
-  .\release\vrclt-v0.1.0-windows-x64.exe.sha256 `
-  --title "vrclt v0.1.0" `
-  --notes "Native UI release. Settings are stored in %LOCALAPPDATA%\vrclt\config.yaml."
+gh release create v0.19.0 `
+  .\release\vrclt-v0.19.0-windows-x64.exe `
+  .\release\vrclt-v0.19.0-windows-x64.exe.sha256 `
+  --title "vrclt v0.19.0" `
+  --notes-file .\docs\releases\v0.19.0.md
 ```
 
 ## 9. Release Notes Checklist
@@ -215,7 +283,12 @@ Include these points in the release body:
 
 - Windows-only single executable.
 - VB-Audio Virtual Cable is required.
-- Gemini API key is configured in the Settings tab.
+- The selected engine's API key is configured in the Settings tab.
+- Soniox speaker labels preserve turn order and are local to the current session.
+- Soniox keeps speaker context by default; the full connected recognition stream
+  is billable, including silence. The option can be disabled in Settings.
+- State whether live Soniox calls, packaged-window launch, and physical VR/audio
+  checks were completed; do not equate local mock tests with those checks.
 - User settings are stored in `%LOCALAPPDATA%\vrclt\config.yaml`.
 - The app uses a native PySide6 UI and tray menu.
 - There is no web UI or local web server.

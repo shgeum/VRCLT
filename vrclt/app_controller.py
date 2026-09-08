@@ -437,6 +437,9 @@ class AppController:
     def subtitles_snapshot(self):
         return self.store.snapshot()
 
+    def subtitles_snapshot_with_speakers(self):
+        return self.store.snapshot_with_speakers()
+
     def set_translation_on(self, value: bool) -> None:
         self.state.translation_on = value
 
@@ -838,11 +841,13 @@ class AppController:
                 self._set_status("API key required", {
                     "qwen": "Qwen (DashScope) API key is empty.",
                     "openai": "OpenAI API key is empty.",
+                    "soniox": "Soniox API key is empty.",
                 }.get(prov, "API key is empty."))
                 return False
             key_error = config_mod.api_key_validation_error(
                 key, provider_label={"qwen": "DashScope",
-                                     "openai": "OpenAI"}.get(prov, "Gemini"))
+                                     "openai": "OpenAI",
+                                     "soniox": "Soniox"}.get(prov, "Gemini"))
             if key_error:
                 self._set_status("API key invalid", key_error)
                 return False
@@ -1190,4 +1195,3 @@ class AppController:
             self.status = status
             self.last_error = error
         self._notify()
-

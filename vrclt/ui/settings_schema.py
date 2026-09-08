@@ -51,6 +51,13 @@ GROUPS: tuple = (
         F("openai.transcribe_model", "openai_transcribe"),
         F("openai.inbound_transcribe_model", "openai_transcribe"),
         F("openai.noise_reduction", "openai_noise"),
+        F("soniox.api_key", "password"),
+        F("soniox.model", "text"),
+        F("soniox.tts_model", "text"),
+        F("soniox.voice", "text"),
+        F("soniox.keep_speaker_context", "bool"),
+    )),
+    ("grp_app", (
         F("app.mode", "appmode"),
         F("app.profiles.discord.process", "audio_process"),
         F("app.profiles.custom.process", "audio_process"),
@@ -157,6 +164,26 @@ GROUPS: tuple = (
         F("steamvr.dashboard_panel", "bool"),
     )),
 )
+
+# Categories describe the task a setting serves. Searching spans categories;
+# every field remains instantiated so navigation never discards unsaved edits.
+CATEGORIES: tuple = (
+    ("settings_cat_translation", ("grp_api", "grp_lang")),
+    ("settings_cat_devices", ("grp_dev",)),
+    ("settings_cat_audio", ("grp_audio",)),
+    ("settings_cat_interface", ("grp_app", "grp_ui", "grp_hotkeys")),
+    ("settings_cat_vr", ("grp_osc_vr", "grp_overlay_wrist", "grp_steamvr")),
+)
+
+
+def field_provider(path: str) -> str | None:
+    """Engine-specific controls; shared options have no provider restriction."""
+    if path in ("api_key", "model"):
+        return "gemini"
+    for provider in ("qwen", "openai", "soniox"):
+        if path.startswith(provider + "."):
+            return provider
+    return None
 
 
 def default_for(path: str):

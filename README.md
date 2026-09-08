@@ -3,7 +3,7 @@
 Languages: [English](README.md) | [한국어](README.ko.md) | [日本語](README.ja.md) | [中文](README.zh.md)
 
 `vrclt` is a Windows live translator for VRChat and Discord. It translates your
-microphone with the Gemini Live API, plays the translated voice into the target
+microphone with your selected translation engine, plays the translated voice into the target
 app through VB-Audio Virtual Cable, and shows translated subtitles for other
 people's speech.
 
@@ -11,9 +11,9 @@ people's speech.
 
 - Native Windows UI with Dashboard, Settings, and Logs/About tabs
 - Tray menu for opening the app, opening settings, toggling translation/subtitles, and quitting
-- Outbound translation: your microphone -> Gemini Live -> translated voice -> target app mic
-- Inbound subtitles: target app audio -> Gemini Live -> translated subtitles
-- Two translation engines: Google Gemini Live (default) and Alibaba Qwen3.5 LiveTranslate for regions where Google is unavailable (e.g. mainland China)
+- Outbound translation: your microphone -> selected engine -> translated voice -> target app mic
+- Inbound subtitles: target app audio -> selected engine -> translated subtitles
+- Four translation engines: Google Gemini Live (default), Alibaba Qwen3.5 LiveTranslate, OpenAI gpt-realtime-translate, and Soniox
 - VRChat support for OSC chatbox output, avatar OSC controls, SteamVR subtitles, and the wrist menu
 - SteamVR dashboard settings panel and auto-start with SteamVR (Startup/Overlay Apps registration)
 - VRC Text Only mode for sending translated chatbox text while passing your original voice through
@@ -29,7 +29,7 @@ people's speech.
 ### Requirements
 
 - Windows 11 recommended
-- Google Gemini API key — or an Alibaba Cloud Model Studio (DashScope) API key for the Qwen engine (see instructions below)
+- An API key for your selected engine: Gemini, Qwen/DashScope, OpenAI, or Soniox
 - [VB-Audio Virtual Cable](https://vb-audio.com/Cable/)
 - SteamVR for VR overlays and wrist UI
 - VRChat OSC enabled for chatbox/avatar-control features
@@ -114,6 +114,48 @@ China), vrclt can use **Alibaba Qwen3.5 LiveTranslate** instead of Gemini:
 5. Set **My spoken language** and **Others' spoken language** — Qwen cannot
    auto-detect the spoken language (see [Translation Engines](#translation-engines)).
 
+### 3c. Soniox API Key
+
+Create an API key in the [Soniox console](https://console.soniox.com), select
+`soniox` in **Settings → Translation engine**, and enter the key. You can also
+set `SONIOX_API_KEY`, or add this to `config.yaml`:
+
+```yaml
+provider: soniox
+soniox:
+  api_key: ""  # empty uses SONIOX_API_KEY
+  model: stt-rt-v5
+  tts_model: tts-rt-v2
+  voice: Daniel
+  keep_speaker_context: true
+```
+
+Soniox streams speech recognition and translation for both directions. When
+translated voice is enabled, it also uses Soniox TTS. `voice` accepts a stock
+voice name or an existing custom/cloned voice ID; it does not automatically
+clone your microphone voice. Text-only pipelines do not open a TTS session.
+**My/Others' spoken language** can stay on Auto or provide an optional language
+hint.
+
+Speaker diarization is enabled: source text and translations stay associated
+with each speaker, and subtitles display speaker numbers. These are session-local
+labels, not VRChat account identities; a reconnect starts a new recognition
+session. Only committed tokens are published so provisional speaker assignments
+do not repeatedly rewrite chatbox text or speech. The selected TTS voice applies
+to all speakers. See [Soniox speaker diarization](https://soniox.com/docs/stt/concepts/speaker-diarization)
+and [available voices](https://soniox.com/docs/tts/concepts/voices).
+
+**Keep speaker context** is enabled by default (`soniox.keep_speaker_context:
+true`): an active recognition connection stays open through pauses to preserve
+speaker labels. Soniox bills the full connected stream, including silence and
+keepalive periods, even in text-only mode. See [Soniox keepalive billing](https://soniox.com/docs/stt/rt/connection-keepalive).
+Turn this setting off to disconnect after `audio.mic_idle_disconnect_sec` of
+silence. Stopping/disabling the pipeline or ending the captured process also
+closes its connection. Reconnecting starts a new speaker context.
+
+This integration has local mock-server coverage; paid live Soniox calls have
+not been verified.
+
 ### 4. First Launch Setup
 
 1. Run `vrclt-v<version>-windows-x64.exe`.
@@ -134,6 +176,9 @@ China), vrclt can use **Alibaba Qwen3.5 LiveTranslate** instead of Gemini:
       cannot auto-detect them — empty is treated as English. Both can be
       changed later on the Dashboard tab or the SteamVR dashboard panel.
 
+   **Using Soniox**: select `soniox` and enter your key as described in step 3c.
+   **Using OpenAI**: select `openai` and enter your OpenAI API key.
+
 3. Choose the app mode: `vrchat`, `discord`, or `custom` (then pick the app to capture in Settings).
 4. Select your physical microphone as **Mic input**.
 5. Select `CABLE Input` as **Voice output** / translated voice output.
@@ -144,7 +189,7 @@ China), vrclt can use **Alibaba Qwen3.5 LiveTranslate** instead of Gemini:
 
 - No translated voice in the target app: confirm `outbound.tts_device` is `CABLE Input` and the target app microphone is `CABLE Output`.
 - No inbound subtitles: confirm the target process name matches the running app, for example `VRChat.exe` or `Discord.exe`.
-- Runtime says API key is required: enter the key in Settings or set `GEMINI_API_KEY` (Qwen engine: `DASHSCOPE_API_KEY`).
+- Runtime says API key is required: enter the selected engine's key in Settings or set `GEMINI_API_KEY`, `DASHSCOPE_API_KEY`, `OPENAI_API_KEY`, or `SONIOX_API_KEY`.
 - Qwen key rejected or connection fails immediately: check that `qwen.endpoint` matches the key's region — `beijing` keys and `intl` keys are not interchangeable — and that the workspace ID is set when using `intl`.
 - Qwen error `Voice '...' is not supported`: the literal voice `default` only works while voice cloning is enabled. Keep `qwen.voice_clone` on, or leave **Qwen voice ID** empty for the model's default voice.
 - Qwen translates from the wrong language: set **My spoken language** / **Others' spoken language** (Settings, Dashboard, or the SteamVR panel). Qwen cannot auto-detect; empty is treated as English.
@@ -154,19 +199,19 @@ China), vrclt can use **Alibaba Qwen3.5 LiveTranslate** instead of Gemini:
 
 ## Translation Engines
 
-vrclt supports three realtime translation engines, selected by the **Translation
+vrclt supports four realtime translation engines, selected by the **Translation
 engine** setting (`provider` in `config.yaml`). The choice applies to both
 directions: your voice and the inbound subtitles.
 
-| | Gemini Live (default) | Qwen3.5 LiveTranslate | gpt-realtime-translate |
-| --- | --- | --- | --- |
-| Provider / key | Google AI Studio (`GEMINI_API_KEY`) | Alibaba Cloud Model Studio / DashScope (`DASHSCOPE_API_KEY`) | OpenAI (`OPENAI_API_KEY`) |
-| Required setup | API key only | Engine to `qwen`, API key + endpoint (workspace ID on `intl`), **My/Others' spoken language** | Engine to `openai`, API key only |
-| Works in mainland China | No | Yes (`beijing` endpoint) | No |
-| Spoken-language detection | Automatic | **Manual** — set "My/Others' spoken language" | Automatic (the spoken-language settings are ignored) |
-| Languages | 70+ BCP-47 targets, incl. `zh-Hans`/`zh-Hant` | 29 with voice + 31 more text-only; plain `zh` only (no Simplified/Traditional split); Cantonese (`yue`) is text-only | 70+ inputs, but only **13 targets** (`en es pt fr ja ru zh de ko hi id vi it`); plain `zh` only; one target per session |
-| Translated voice | Replicates the speaker's voice | Replicates the speaker via server-side voice cloning (`qwen.voice_clone`, default `once`); or a fixed voice with cloning off | Adapts to the speaker automatically; no voice option |
-| Barge-in (voice interrupts) | Yes | No — overlapping speech can queue audio | No — overlapping speech can queue audio |
+| | Gemini Live (default) | Qwen3.5 LiveTranslate | gpt-realtime-translate | Soniox |
+| --- | --- | --- | --- | --- |
+| Provider / key | Google AI Studio (`GEMINI_API_KEY`) | Alibaba Cloud Model Studio / DashScope (`DASHSCOPE_API_KEY`) | OpenAI (`OPENAI_API_KEY`) | Soniox (`SONIOX_API_KEY`) |
+| Required setup | API key only | Engine to `qwen`, API key + endpoint (workspace ID on `intl`), **My/Others' spoken language** | Engine to `openai`, API key only | Engine to `soniox`, API key |
+| Works in mainland China | No | Yes (`beijing` endpoint) | No | Not verified |
+| Spoken-language detection | Automatic | **Manual** — set "My/Others' spoken language" | Automatic (the spoken-language settings are ignored) | Automatic; optional spoken-language hints |
+| Languages | 70+ BCP-47 targets, incl. `zh-Hans`/`zh-Hant` | 29 with voice + 31 more text-only; plain `zh` only (no Simplified/Traditional split); Cantonese (`yue`) is text-only | 70+ inputs, but only **13 targets** (`en es pt fr ja ru zh de ko hi id vi it`); plain `zh` only; one target per session | 60 in vrclt; plain `zh` only; no Cantonese (`yue`) |
+| Translated voice | Replicates the speaker's voice | Replicates the speaker via server-side voice cloning (`qwen.voice_clone`, default `once`); or a fixed voice with cloning off | Adapts to the speaker automatically; no voice option | Separate TTS; stock/custom voice, default `Daniel`; no automatic cloning |
+| Barge-in (voice interrupts) | Yes | No — overlapping speech can queue audio | No — overlapping speech can queue audio | No — overlapping speech can queue audio |
 
 Qwen notes:
 
@@ -200,7 +245,7 @@ Choose a mode in Settings or pass it for one launch:
 ```
 
 For VRChat text-only behavior, enable **Text only** in the Dashboard or
-Settings. Your original microphone passes through to VRChat while Gemini sends
+Settings. Your original microphone passes through to VRChat while the selected engine sends
 translated text to the OSC chatbox without translated voice output.
 
 For Discord Canary or PTB, change the Discord process name in Settings or in
@@ -217,6 +262,8 @@ captured at this moment.
 
 Dashboard:
 
+- A compact status header shows the selected engine with a shortcut to its settings.
+- Main translation, subtitle, language, and audio controls stay together. Language-list editing and less-used display/app controls open in expandable sections.
 - Runtime status and connection state
 - VRChat/Discord/Custom mode toggle and VRChat text-only toggle
 - Translation ON/OFF
@@ -229,14 +276,14 @@ Dashboard:
   hot-plugged devices
 - Translated-voice volume slider and a live mic level meter with the
   detection-threshold marker
-- My/Others' spoken language pickers for the Qwen engine (disabled with
-  Gemini, which auto-detects)
+- My/Others' spoken language pickers: required for Qwen, optional recognition hints for Soniox; Gemini and OpenAI auto-detect
 - PC subtitle position, box size, and font size controls
 - Live subtitle preview
 
 Settings:
 
-- Translation engine (Gemini / Qwen), API keys, models, and the Qwen
+- Category navigation and search; only the selected engine's provider-specific settings are shown
+- Translation engine (Gemini / Qwen / OpenAI / Soniox), API keys, models, and the Qwen
   endpoint/workspace
 - App mode and target processes
 - Microphone, translated voice output, monitor output, and inbound audio device
@@ -252,6 +299,10 @@ Logs/About:
 - Current config path
 - Current log file path
 - Recent log tail
+- Log bursts update the view once per poll; catch-up reads are limited to 256 KiB, history to 2,000 lines, and incomplete lines to 64 KiB
+
+Reconnect delays wait for the stop event directly, avoiding periodic polling and
+responding immediately when the runtime stops.
 
 Closing the window hides it to the tray. Use the tray `Quit` action to stop the
 runtime and exit.
@@ -261,14 +312,14 @@ runtime and exit.
 Outbound translation:
 
 ```text
-microphone -> Gemini Live -> translated voice -> CABLE Input
+microphone -> selected engine -> translated voice -> CABLE Input
                                      target app mic <- CABLE Output
 ```
 
 Inbound subtitles:
 
 ```text
-target app process audio -> ProcTap -> Gemini Live -> subtitles
+target app process audio -> ProcTap -> selected engine -> subtitles
 ```
 
 When translation is OFF, the microphone bypasses Gemini and is sent directly to
@@ -318,7 +369,7 @@ Top-level and app profile settings:
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `provider` | `gemini` | Translation engine for both pipelines: `gemini`, `qwen` or `openai`. |
+| `provider` | `gemini` | Translation engine for both pipelines: `gemini`, `qwen`, `openai`, or `soniox`. |
 | `api_key` | `""` | Gemini API key. Empty means `GEMINI_API_KEY` can be used. |
 | `model` | `gemini-3.5-live-translate-preview` | Gemini Live model name. |
 | `qwen.api_key` | `""` | DashScope API key. Empty means `DASHSCOPE_API_KEY` can be used. |
@@ -333,6 +384,11 @@ Top-level and app profile settings:
 | `openai.transcribe_model` | `gpt-realtime-whisper` | Source ASR for the outbound session. The VRChat chatbox needs it to print the original above the translation (`osc.show_source`). Empty leaves the chatbox translation-only. |
 | `openai.inbound_transcribe_model` | `""` | Source ASR for inbound subtitles. Empty (the default) shows the translated line only; set `gpt-realtime-whisper` and `overlay.show_source` to see the original too. Both ASR settings are billed per minute on top of the translation. |
 | `openai.noise_reduction` | `near_field` | Server-side input noise reduction: `near_field` (headset), `far_field` (room mic), or empty to disable. |
+| `soniox.api_key` | `""` | Soniox API key. Empty uses `SONIOX_API_KEY`. |
+| `soniox.model` | `stt-rt-v5` | Streaming speech recognition and translation model. |
+| `soniox.tts_model` | `tts-rt-v2` | TTS model, used only when translated voice is enabled. |
+| `soniox.voice` | `Daniel` | Stock voice name or an existing custom/cloned voice ID; no automatic microphone voice cloning. |
+| `soniox.keep_speaker_context` | `true` | Keeps an active recognition connection through silence to preserve speaker labels; the connected stream remains billable. `false` restores idle disconnect via `audio.mic_idle_disconnect_sec`; reconnecting resets speaker context. |
 | `log_level` | `INFO` | Python logging level. |
 | `meta.last_version` | `""` | Last app version that acknowledged the current config. Used for one-time update reset prompts. |
 | `app.mode` | `vrchat` | Active profile: `vrchat`, `discord`, or `custom`. |
@@ -368,7 +424,7 @@ Outbound translation:
 | --- | --- | --- |
 | `outbound.enabled` | `true` | Enables the outbound pipeline. |
 | `outbound.target_language` | `ja` | Default BCP-47 language code for translating your speech. The UI can search the 70+ Gemini Live Translation languages. |
-| `outbound.source_language` | `""` | My spoken language. Required for Qwen (no auto-detect; empty = English). Ignored by Gemini. |
+| `outbound.source_language` | `""` | My spoken language. Required for Qwen (empty = English), optional hint for Soniox, ignored by Gemini/OpenAI. |
 | `outbound.echo_target_language` | `false` | Also repeats source audio that is already in the target language. |
 | `outbound.mic_device` | `""` | Microphone device name substring. Empty uses the default input. |
 | `outbound.tts_device` | `CABLE Input` | Output device for translated voice and passthrough audio. |
@@ -386,7 +442,7 @@ Inbound subtitles:
 | --- | --- | --- |
 | `inbound.enabled` | `true` | Enables process-audio capture for subtitles. |
 | `inbound.target_language` | `ko` | Default BCP-47 subtitle target language. The UI can search the 70+ Gemini Live Translation languages. |
-| `inbound.source_language` | `""` | Others' spoken language (Qwen only, same rules as `outbound.source_language`). |
+| `inbound.source_language` | `""` | Others' spoken language; same provider rules as `outbound.source_language`. |
 | `inbound.languages` | `[ko, en, ja]` | Saved subtitle language list used by the Dashboard and wrist menu. Add only the languages you need from the UI picker. |
 | `inbound.process` | `VRChat.exe` | Process name captured for inbound subtitles. |
 | `inbound.allow_system_audio` | `false` | Per-process capture requires Windows 11 (build 20348+). Where it is unavailable, `true` captures the whole desktop instead of the selected app (other apps and your own translated voice get subtitled); `false` keeps inbound from starting. |
@@ -490,14 +546,14 @@ dist\vrclt.exe
 Create release artifacts:
 
 ```powershell
-.\scripts\package_release.ps1 -Version 0.1.0
+.\scripts\package_release.ps1 -Version 0.19.0
 ```
 
 The release script creates:
 
 ```text
-release\vrclt-v0.1.0-windows-x64.exe
-release\vrclt-v0.1.0-windows-x64.exe.sha256
+release\vrclt-v0.19.0-windows-x64.exe
+release\vrclt-v0.19.0-windows-x64.exe.sha256
 ```
 
 ## Smoke Tests
@@ -506,7 +562,7 @@ release\vrclt-v0.1.0-windows-x64.exe.sha256
 .\.venv\Scripts\python.exe -m compileall vrclt
 .\.venv\Scripts\python.exe -m vrclt --help
 .\.venv\Scripts\pyinstaller.exe vrclt.spec --noconfirm
-.\scripts\package_release.ps1 -Version 0.1.0 -SkipBuild
+.\scripts\package_release.ps1 -Version 0.19.0 -SkipBuild
 ```
 
 For a real runtime test, run the exe, save settings in the native UI, confirm
