@@ -24,6 +24,11 @@ as `vrclt-v<version>-windows-x64.exe` plus a `.sha256` checksum.
 - English, Korean, Japanese, and Chinese README instructions describe the VR
   controls and use the v0.19.1 release filenames.
 
+### Fixed
+
+- Desktop Dashboard buttons and language fields retain clear spacing when the
+  window is resized. The Soniox silence timeout stays on one line.
+
 ## [0.19.0] - 2026-09-08
 
 ### Added

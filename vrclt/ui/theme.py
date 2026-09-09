@@ -198,6 +198,7 @@ def build_qss() -> str:
         #statusDot[state="ok"] {{ background: {ok}; }}
         #statusDot[state="err"] {{ background: {err}; }}
         #statusDot[state="warn"] {{ background: {warn}; }}
+        QPushButton#transToggle, QPushButton#subToggle {{ min-height: 30px; }}
         QPushButton#transToggle[on="true"] {{ background: {ok}; }}
         QPushButton#transToggle[on="false"] {{ background: {trans_off}; }}
         QPushButton#subToggle[on="true"] {{ background: {sub_blue}; }}

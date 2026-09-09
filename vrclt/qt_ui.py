@@ -307,6 +307,7 @@ class MainWindow(QtWidgets.QMainWindow):
         root = QtWidgets.QVBoxLayout(page)
         root.setContentsMargins(24, 20, 24, 20)
         root.setSpacing(14)
+        root.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetMinimumSize)
 
         self._build_dash_header(root)
         c = self._build_dash_controls()
@@ -425,12 +426,10 @@ class MainWindow(QtWidgets.QMainWindow):
         group builders lay out."""
         self._btn_trans = QtWidgets.QPushButton()
         self._btn_trans.setObjectName("transToggle")
-        self._btn_trans.setMinimumHeight(44)
         self._btn_trans.clicked.connect(
             lambda: self._controller.set_translation_on(not self._controller.state.translation_on))
         self._btn_sub = QtWidgets.QPushButton()
         self._btn_sub.setObjectName("subToggle")
-        self._btn_sub.setMinimumHeight(44)
         self._btn_sub.clicked.connect(
             lambda: self._controller.set_subtitles_on(not self._controller.state.subtitles_on))
         self._out_lang = NoWheelComboBox()
@@ -572,6 +571,9 @@ class MainWindow(QtWidgets.QMainWindow):
         grp_out = self._group("dash_grp_out")
         grp_out.setObjectName("outboundPanel")
         out_lay = QtWidgets.QGridLayout(grp_out)
+        out_lay.setHorizontalSpacing(12)
+        out_lay.setVerticalSpacing(12)
+        out_lay.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetMinimumSize)
         out_lay.addWidget(self._btn_trans, 0, 0, 1, 2)
         out_lay.addWidget(self._label("label_out_lang"), 1, 0)
         out_lay.addWidget(self._out_lang, 1, 1)
@@ -584,6 +586,9 @@ class MainWindow(QtWidgets.QMainWindow):
         grp_in = self._group("dash_grp_in")
         grp_in.setObjectName("inboundPanel")
         in_lay = QtWidgets.QGridLayout(grp_in)
+        in_lay.setHorizontalSpacing(12)
+        in_lay.setVerticalSpacing(12)
+        in_lay.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetMinimumSize)
         in_lay.addWidget(self._btn_sub, 0, 0, 1, 2)
         in_lay.addWidget(self._label("label_sub_lang"), 1, 0)
         in_lay.addWidget(self._sub_lang, 1, 1)
@@ -595,6 +600,7 @@ class MainWindow(QtWidgets.QMainWindow):
         in_lay.setColumnStretch(1, 1)
 
         pipes = QtWidgets.QHBoxLayout()
+        pipes.setSpacing(16)
         pipes.addWidget(grp_out, 1)
         pipes.addWidget(grp_in, 1)
         self._pipe_layout = pipes
@@ -602,17 +608,27 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _build_dash_audio_group(self, c: dict) -> QtWidgets.QGroupBox:
         grp_audio = self._group("dash_grp_audio")
-        audio_lay = QtWidgets.QGridLayout(grp_audio)
-        audio_lay.addWidget(self._label("label_mic_device"), 0, 0)
-        audio_lay.addWidget(self._mic_device, 0, 1)
-        audio_lay.addWidget(self._label("label_voice_out_device"), 0, 2)
-        audio_lay.addWidget(c["out_device"], 0, 3)
-        audio_lay.addWidget(c["mic_label"], 1, 0)
-        audio_lay.addWidget(self._mic_meter, 1, 1)
-        audio_lay.addWidget(self._label("label_tts_gain"), 1, 2)
-        audio_lay.addWidget(c["tts_gain"], 1, 3)
-        audio_lay.setColumnStretch(1, 1)
-        audio_lay.setColumnStretch(3, 1)
+        audio_lay = QtWidgets.QHBoxLayout(grp_audio)
+        audio_lay.setSpacing(24)
+        audio_lay.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetMinimumSize)
+        for rows in (
+            ((self._label("label_mic_device"), self._mic_device),
+             (c["mic_label"], self._mic_meter)),
+            ((self._label("label_voice_out_device"), c["out_device"]),
+             (self._label("label_tts_gain"), c["tts_gain"])),
+        ):
+            column = QtWidgets.QWidget()
+            grid = QtWidgets.QGridLayout(column)
+            grid.setContentsMargins(0, 0, 0, 0)
+            grid.setHorizontalSpacing(12)
+            grid.setVerticalSpacing(12)
+            grid.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetMinimumSize)
+            for row, (label, control) in enumerate(rows):
+                grid.addWidget(label, row, 0)
+                grid.addWidget(control, row, 1)
+            grid.setColumnStretch(1, 1)
+            audio_lay.addWidget(column, 1)
+        self._audio_layout = audio_lay
         return grp_audio
 
     def _build_dash_display_group(self) -> QtWidgets.QGroupBox:
@@ -623,17 +639,19 @@ class MainWindow(QtWidgets.QMainWindow):
         disp_lay.addStretch(1)
         disp_lay.addWidget(self._btn_overlay_move)
         disp_lay.addWidget(self._btn_overlay_reset)
+        self._display_layout = disp_lay
         return grp_display
 
     def _build_dash_app_group(self) -> QtWidgets.QGroupBox:
         grp_app = self._group("dash_grp_app")
         app_lay = QtWidgets.QHBoxLayout(grp_app)
+        app_lay.setSpacing(18)
         app_lay.addWidget(self._label("ui_lang"))
         app_lay.addWidget(self._ui_lang)
-        app_lay.addSpacing(18)
         app_lay.addWidget(self._label("label_close_action"))
         app_lay.addWidget(self._close_action)
         app_lay.addStretch(1)
+        self._app_layout = app_lay
         return grp_app
 
     def _build_dash_subtitles(self, root: QtWidgets.QVBoxLayout) -> None:
@@ -654,12 +672,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self._tip(self._keep_speaker_context, "f.soniox.keep_speaker_context.tip")
         self._keep_speaker_context.toggled.connect(self._apply_speaker_context)
         context_row = QtWidgets.QHBoxLayout()
-        context_row.addWidget(self._keep_speaker_context)
-        context_row.addStretch(1)
+        context_row.setSpacing(16)
+        context_row.addWidget(self._keep_speaker_context, 0, QtCore.Qt.AlignmentFlag.AlignLeft)
         self._soniox_idle_hint = QtWidgets.QLabel()
         self._soniox_idle_hint.setObjectName("noteText")
-        self._soniox_idle_hint.setWordWrap(True)
-        context_row.addWidget(self._soniox_idle_hint)
+        self._soniox_idle_hint.setWordWrap(False)
+        self._soniox_idle_hint.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred,
+                                            QtWidgets.QSizePolicy.Policy.Fixed)
+        context_row.addWidget(self._soniox_idle_hint, 1)
+        self._context_layout = context_row
         root.addLayout(context_row)
         self._subtitle_view = QtWidgets.QTextEdit()
         self._subtitle_view.setObjectName("subtitleView")
@@ -1614,6 +1635,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.isVisible() and self._tabs.currentIndex() == self._tab_settings_idx:
             self._sync_steamvr_autolaunch()
         self._dashboard_note.setVisible(bool(self._dashboard_note.text()))
+        self._layout_dashboard_rows()
 
         from .ui.subtitle_text import subtitle_snapshot, subtitle_html
         finals, partial = subtitle_snapshot(self._controller)
@@ -1689,12 +1711,46 @@ class MainWindow(QtWidgets.QMainWindow):
             combo.blockSignals(blocked)
 
     # ---------------- window/tray lifecycle ----------------
+    def _layout_dashboard_rows(self) -> None:
+        """Use full rows when translated labels no longer fit side by side."""
+        if not hasattr(self, "_dashboard_scroll"):
+            return
+        page = self._dashboard_scroll.widget()
+        margins = page.layout().contentsMargins()
+        available = (self._dashboard_scroll.viewport().width()
+                     - margins.left() - margins.right())
+        changed = False
+        for layout in (self._pipe_layout, self._audio_layout, self._context_layout,
+                       self._display_layout, self._app_layout):
+            widths = []
+            for index in range(layout.count()):
+                widget = layout.itemAt(index).widget()
+                if widget is not None and not widget.isHidden():
+                    widths.append(max(widget.minimumWidth(), widget.minimumSizeHint().width()))
+            padding = layout.contentsMargins()
+            required = (sum(widths) + max(0, len(widths) - 1) * layout.spacing()
+                        + padding.left() + padding.right())
+            if layout in (self._audio_layout, self._display_layout, self._app_layout):
+                frame = layout.parentWidget().contentsMargins()
+                required += frame.left() + frame.right()
+            stacked = required > available or (layout is self._pipe_layout and self.width() < 900)
+            direction = (QtWidgets.QBoxLayout.Direction.TopToBottom if stacked
+                         else QtWidgets.QBoxLayout.Direction.LeftToRight)
+            if layout.direction() != direction:
+                layout.setDirection(direction)
+                layout.activate()
+                changed = True
+            if layout is self._context_layout:
+                self._soniox_idle_hint.setAlignment(
+                    QtCore.Qt.AlignmentFlag.AlignVCenter |
+                    (QtCore.Qt.AlignmentFlag.AlignLeft if stacked else QtCore.Qt.AlignmentFlag.AlignRight))
+        if changed:
+            page.layout().invalidate()
+            page.layout().activate()
+
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        if hasattr(self, "_pipe_layout"):
-            self._pipe_layout.setDirection(
-                QtWidgets.QBoxLayout.Direction.TopToBottom if self.width() < 900
-                else QtWidgets.QBoxLayout.Direction.LeftToRight)
+        self._layout_dashboard_rows()
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
