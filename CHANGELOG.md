@@ -14,8 +14,12 @@ as `vrclt-v<version>-windows-x64.exe` plus a `.sha256` checksum.
 - SteamVR Dashboard controls are grouped into Live, Audio, and Layout & app
   pages. Translation, subtitles, languages, and connection status stay together;
   device selection and panel positioning have dedicated pages.
-- The wrist menu separates frequent Live controls from Settings, preserving
-  runtime restart, subtitle sizing, panel positioning, and gaze/grip interactions.
+- The wrist menu uses a shorter, compact panel. Its Live page groups translation,
+  subtitles, output/subtitle languages, separate Voice/Text choices, and runtime
+  restart. Settings contains UI language, subtitle size, panel movement/reset,
+  and Soniox speaker-context retention. Gaze/grip interactions remain available.
+- The wrist panel has a shorter shape and a default width of 14 cm. Existing
+  saved widths are preserved and remain adjustable in Settings.
 - Both VR panels show Soniox's speaker-context switch and effective silence
   timeout. The SteamVR Dashboard offers spoken-language controls for Qwen and
   optional Soniox recognition hints; the wrist menu selects translation output
@@ -26,6 +30,9 @@ as `vrclt-v<version>-windows-x64.exe` plus a `.sha256` checksum.
 
 ### Fixed
 
+- Wrist widths below 16 cm now apply instead of being silently enlarged.
+- Wrist mode selection waits for completion and stays synchronized when a
+  runtime restart is already in progress or a mode change fails.
 - Desktop Dashboard buttons and language fields retain clear spacing when the
   window is resized. The Soniox silence timeout stays on one line.
 

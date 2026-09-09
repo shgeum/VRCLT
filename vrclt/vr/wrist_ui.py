@@ -19,6 +19,7 @@ import logging
 import math
 import threading
 import time
+from dataclasses import replace
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -33,9 +34,8 @@ from .button_table import (
 )
 from .font_fallback import load_fallback_font
 from .panel_common import (
-    COL_BG, COL_BTN, COL_DIM, COL_DRAG, COL_INSET, COL_OFF, COL_ON,
-    COL_SUB_ON, COL_TEXT,
-    coerce_transform, create_overlay_set, cycle, draw_fit_text, haptic,
+    COL_DRAG, COL_TEXT,
+    clip_line, coerce_transform, create_overlay_set, cycle, draw_fit_text, haptic,
     language_label, laser_base, load_saved_transform, np_to_hmd34,
     pointer_matrix, pose_to_np, ray_plane_hit, save_transform,
     setup_pointer_overlays, status_dot_color, translate,
@@ -44,7 +44,7 @@ from .render import GlTexture, flip_bounds
 
 log = logging.getLogger(__name__)
 
-TEX_W, TEX_H = 640, 648
+TEX_W, TEX_H = 640, 432
 MAX_RAY_M = 1.2
 
 GAZE_ON_DEG = 22.0
@@ -53,192 +53,227 @@ GAZE_DIST_M = 0.95
 
 TRANSFORM_PATH = APPDATA_DIR / "wrist_transform.json"
 
-# Daily controls get the full live page; occasional adjustments have their
-# own page. The same bottom navigation remains available in language pickers.
-BTN_TOGGLE = (16, 94, 306, 300)
-BTN_LANG = (322, 94, 624, 300)
-BTN_SUB_TOGGLE = (16, 320, 306, 526)
-BTN_SUB_LANG = (322, 320, 624, 526)
-BTN_NAV_LIVE = (16, 554, 306, 630)
-BTN_NAV_SETTINGS = (322, 554, 624, 630)
+# Compact watch: mode and restart stay on Live, with one row per direction.
+BTN_RESTART = (456, 16, 620, 68)
+BTN_MODE_VOICE = (20, 82, 312, 134)
+BTN_MODE_TEXT = (324, 82, 620, 134)
+BTN_TOGGLE = (20, 146, 254, 230)
+BTN_LANG = (266, 146, 620, 230)
+BTN_SUB_TOGGLE = (20, 242, 254, 326)
+BTN_SUB_LANG = (266, 242, 620, 326)
+BTN_NAV_LIVE = (20, 356, 312, 412)
+BTN_NAV_SETTINGS = (324, 356, 620, 412)
 
-BTN_UILANG = (16, 94, 306, 170)
-BTN_TEXT_ONLY = (322, 94, 624, 170)
-LBL_FONT_CAPTION = (16, 186, 306, 262)
-BTN_FONT_MINUS = (322, 186, 402, 262)
-LBL_FONT_SIZE = (414, 186, 534, 262)
-BTN_FONT_PLUS = (546, 186, 624, 262)
-BTN_EDIT = (16, 278, 210, 354)
-BTN_SUB_EDIT = (222, 278, 416, 354)
-BTN_RESET = (428, 278, 624, 354)
-BTN_SPEAKER_CONTEXT = (16, 370, 624, 446)
-BTN_RESTART = (16, 462, 624, 526)
+BTN_UILANG = (20, 82, 620, 134)
+LBL_FONT_CAPTION = (20, 146, 296, 198)
+BTN_FONT_MINUS = (308, 146, 380, 198)
+LBL_FONT_SIZE = (392, 146, 536, 198)
+BTN_FONT_PLUS = (548, 146, 620, 198)
+BTN_EDIT = (20, 210, 212, 272)
+BTN_SUB_EDIT = (224, 210, 416, 272)
+BTN_RESET = (428, 210, 620, 272)
+BTN_SPEAKER_CONTEXT = (20, 284, 620, 338)
 
-CURSOR_SIZE_M = 0.016
+CURSOR_SIZE_M = 0.012
+PICKER_CAPTION = (20, 20, 348, 68)
+PICKER_PGPREV = (360, 20, 432, 68)
+PICKER_PGNEXT = (440, 20, 512, 68)
+PICKER_CLOSE = (532, 20, 620, 68)
+PICKER_GRID = (20, 82, 620, 338)
+PICKER_COLS, PICKER_ROWS = 3, 3
+
+# Wrist-specific surfaces keep the direction colors as small status accents.
+WATCH_SURFACE = (25, 35, 49, 255)
+WATCH_INSET = (19, 28, 40, 255)
+WATCH_EDGE = (52, 68, 88, 255)
+WATCH_MINT = (112, 220, 172, 255)
+WATCH_BLUE = (132, 194, 248, 255)
+WATCH_DIM = (158, 174, 193, 255)
+WATCH_SELECTED = (37, 57, 78, 255)
 
 
-_arrow_draw = glyph_draw
-
-# language grid picker pages ("lang_out"/"lang_in"): header strip + 3x4 grid
-PICKER_CAPTION = (16, 14, 336, 66)
-PICKER_PGPREV = (352, 14, 432, 66)
-PICKER_PGNEXT = (440, 14, 520, 66)
-PICKER_CLOSE = (536, 14, 624, 66)
-PICKER_GRID = (16, 94, 624, 526)
-PICKER_COLS, PICKER_ROWS = 3, 4
+def _left_text(panel, d, box, text, *, fonts=None, fill=COL_TEXT):
+    fonts = fonts or (panel._font_small, panel._font_tiny)
+    x0, y0, x1, y1 = box
+    font = next((f for f in fonts if f.textlength(d, text) <= x1 - x0
+                 and f.line_height(d) <= y1 - y0), fonts[-1])
+    text = clip_line(d, text, font, x1 - x0)
+    font.draw(d, (x0, (y0 + y1) / 2), text, fill=fill, anchor="lm")
 
 
-def _toggle_draw(on_key: str, off_key: str, caption_key: str, is_on):
-    """The two big toggles: state line on top, pipeline caption below."""
+def _border(panel, d, w):
+    color = WATCH_BLUE if panel._engaged and panel._hover == w.name else WATCH_EDGE
+    d.rounded_rectangle(w.rect, w.radius, outline=color, width=1)
+
+
+def _label_draw(key, *, state_key=None):
     def draw(panel, d, w, lang):
+        _border(panel, d, w)
+        label = state_key(panel, lang) if state_key else tr(lang, key)
+        draw_fit_text(d, w.rect, label, fonts=panel.label_fonts(),
+                      fill=COL_TEXT if is_enabled(w, panel) else WATCH_DIM,
+                      max_lines=1, pad_x=10, pad_y=4)
+    return draw
+
+
+def _toggle_draw(title_key, caption_key, is_on, accent):
+    def draw(panel, d, w, lang):
+        _border(panel, d, w)
         x0, y0, x1, y1 = w.rect
-        cy = (y0 + y1) // 2
-        draw_fit_text(d, (x0 + 10, y0 + 36, x1 - 10, cy + 16),
-                      tr(lang, on_key if is_on(panel) else off_key),
-                      fonts=(panel._font_mid, panel._font_small, panel._font_tiny),
-                      max_lines=1, pad_x=0, pad_y=0)
-        draw_fit_text(d, (x0 + 10, cy + 18, x1 - 10, y1 - 22),
-                      tr(lang, caption_key),
-                      fonts=(panel._font_small, panel._font_tiny),
-                      max_lines=1, pad_x=0, pad_y=0, line_spacing=0)
+        on = is_on(panel)
+        color = accent if on else WATCH_DIM
+        d.rounded_rectangle((x0 + 1, y0 + 18, x0 + 4, y1 - 18), 2, fill=color)
+        _left_text(panel, d, (x0 + 16, y0 + 9, x1 - 62, y0 + 43),
+                   tr(lang, title_key), fonts=(panel._font_mid, panel._font_small))
+        panel._font_tiny.draw(d, (x1 - 32, y0 + 27), "ON" if on else "OFF",
+                              fill=color, anchor="mm")
+        _left_text(panel, d, (x0 + 16, y0 + 47, x1 - 12, y1 - 9),
+                   tr(lang, caption_key), fonts=(panel._font_tiny,), fill=WATCH_DIM)
     return draw
 
 
-def _lang_label_draw(code_of, caption_key: str):
-    """A large, tappable language choice with its output caption."""
+def _lang_label_draw(code_of, caption_key):
     def draw(panel, d, w, lang):
-        box = w.rect
-        draw_fit_text(d, (box[0] + 4, box[1] + 20, box[2] - 4, box[3] - 54),
-                      language_label(code_of(panel)),
-                      fonts=(panel._font_big, panel._font_mid,
-                             panel._font_small, panel._font_tiny),
-                      max_lines=1, pad_x=2, pad_y=2)
-        draw_fit_text(d, (box[0] + 4, box[3] - 54, box[2] - 4, box[3] - 8),
-                      tr(lang, caption_key),
-                      fonts=(panel._font_tiny,), fill=COL_DIM, max_lines=1,
-                      pad_x=2, pad_y=1, line_spacing=0)
+        _border(panel, d, w)
+        x0, y0, x1, y1 = w.rect
+        _left_text(panel, d, (x0 + 18, y0 + 8, x1 - 42, y0 + 31),
+                   tr(lang, caption_key), fonts=(panel._font_tiny,), fill=WATCH_DIM)
+        _left_text(panel, d, (x0 + 18, y0 + 35, x1 - 42, y1 - 7),
+                   language_label(code_of(panel)),
+                   fonts=(panel._font_big, panel._font_mid, panel._font_small))
+        cy = (y0 + y1) / 2
+        d.line(((x1 - 27, cy - 5), (x1 - 21, cy), (x1 - 27, cy + 5)),
+               fill=WATCH_DIM, width=2)
     return draw
 
 
-def _font_size_draw(panel, d, w, lang):
-    draw_fit_text(d, w.rect,
-                  str(int(panel._get_font_size())),
-                  fonts=(panel._font_mid,), max_lines=1, pad_x=4, pad_y=2)
+def _mode_draw(text_only):
+    def draw(panel, d, w, lang):
+        _border(panel, d, w)
+        selected = panel._state.text_only == text_only
+        active = selected and is_enabled(w, panel)
+        x0, y0, x1, y1 = w.rect
+        cy = (y0 + y1) / 2
+        d.ellipse((x0 + 18, cy - 5, x0 + 28, cy + 5),
+                  fill=WATCH_BLUE if active else None, outline=WATCH_BLUE if active else WATCH_DIM)
+        draw_fit_text(d, (x0 + 38, y0, x1 - 10, y1),
+                      tr(lang, "dash_applying" if panel._mode_pending and selected else
+                         "vr_mode_text" if text_only else "vr_mode_voice"),
+                      fonts=panel.label_fonts(),
+                      fill=COL_TEXT if active else WATCH_DIM, max_lines=1)
+    return draw
 
 
 def _ui_language_draw(panel, d, w, lang):
+    _border(panel, d, w)
     x0, y0, x1, y1 = w.rect
-    draw_fit_text(d, (x0, y0 + 7, x1, y0 + 29), tr(lang, "ui_lang"),
-                  fonts=(panel._font_tiny,), fill=COL_DIM, max_lines=1)
-    draw_fit_text(d, (x0, y0 + 31, x1, y1 - 5),
-                  UI_LANG_LABELS.get(lang, lang),
-                  fonts=(panel._font_small,), max_lines=1)
+    _left_text(panel, d, (x0 + 18, y0, x0 + 250, y1), tr(lang, "ui_lang"), fill=WATCH_DIM)
+    draw_fit_text(d, (x0 + 270, y0, x1 - 18, y1), UI_LANG_LABELS.get(lang, lang),
+                  fonts=panel.label_fonts(), max_lines=1)
 
 
 def _speaker_context_draw(panel, d, w, lang):
+    _border(panel, d, w)
     enabled, seconds = panel._get_speaker_context()
     key = ("dash_applying" if panel._speaker_context_pending else
            "dash_apply_failed" if panel._speaker_context_failed else
            "vr_speaker_context_on" if enabled else "vr_speaker_context_off")
     x0, y0, x1, y1 = w.rect
-    draw_fit_text(d, (x0 + 8, y0 + 7, x1 - 8, y0 + 39), tr(lang, key),
-                  fonts=(panel._font_small, panel._font_tiny), max_lines=1)
+    _left_text(panel, d, (x0 + 16, y0 + 3, x1 - 12, y0 + 29), tr(lang, key),
+               fill=WATCH_BLUE if enabled else COL_TEXT)
     timeout = (tr(lang, "soniox_idle_timeout_status").format(seconds=f"{seconds:g}")
                if seconds > 0 else tr(lang, "soniox_idle_timeout_disabled"))
-    draw_fit_text(d, (x0 + 8, y0 + 40, x1 - 8, y1 - 6), timeout,
-                  fonts=(panel._font_tiny,),
-                  fill=COL_TEXT if enabled else COL_DIM, max_lines=1)
+    _left_text(panel, d, (x0 + 16, y0 + 30, x1 - 12, y1 - 2), timeout,
+               fonts=(panel._font_tiny,), fill=WATCH_DIM)
 
 
-def _nav_widgets(page: str) -> tuple:
+def _nav_draw(settings):
+    def draw(panel, d, w, lang):
+        selected = (panel._page == "settings") == settings
+        draw_fit_text(d, w.rect, tr(lang, "vr_nav_settings" if settings else "vr_nav_live"),
+                      fonts=panel.label_fonts(), fill=COL_TEXT if selected else WATCH_DIM,
+                      max_lines=1)
+        if selected:
+            x0, y0, x1, y1 = w.rect
+            d.rounded_rectangle(((x0+x1)/2 - 18, y1 - 7, (x0+x1)/2 + 18, y1 - 4),
+                                2, fill=WATCH_BLUE)
+    return draw
+
+
+def _nav_widgets(page):
     return (
-        Widget("nav_live", BTN_NAV_LIVE, page=page,
-               fill=lambda p: COL_SUB_ON if p._page != "settings" else COL_BTN,
-               label=lambda p, lang: tr(lang, "vr_nav_live")),
-        Widget("nav_settings", BTN_NAV_SETTINGS, page=page,
-               fill=lambda p: COL_SUB_ON if p._page == "settings" else COL_BTN,
-               label=lambda p, lang: tr(lang, "vr_nav_settings")),
+        Widget("nav_live", BTN_NAV_LIVE, page=page, radius=14,
+               fill=lambda p: WATCH_SURFACE if p._page != "settings" else WATCH_INSET,
+               draw=_nav_draw(False)),
+        Widget("nav_settings", BTN_NAV_SETTINGS, page=page, radius=14,
+               fill=lambda p: WATCH_SURFACE if p._page == "settings" else WATCH_INSET,
+               draw=_nav_draw(True)),
     )
 
 
-def _build_widgets() -> tuple:
-    """Live-page widget table: the two speech directions and navigation."""
+def _build_widgets():
+    ready = lambda p: not (p._restart_pending or p._speaker_context_pending or p._mode_pending)
     return (
-        Widget("toggle", BTN_TOGGLE, radius=18,
-               fill=lambda p: COL_ON if p._state.translation_on else COL_OFF,
-               draw=_toggle_draw("btn_trans_on", "btn_trans_off", "my_to_other",
-                                 lambda p: p._state.translation_on)),
-        Widget("lang", BTN_LANG, radius=16,
-               fill=lambda p: COL_INSET,
-               draw=_lang_label_draw(lambda p: p._state.target_language,
-                                     "out_lang")),
-        Widget("sub_toggle", BTN_SUB_TOGGLE, radius=18,
-               fill=lambda p: COL_SUB_ON if p._state.subtitles_on else COL_BTN,
-               draw=_toggle_draw("btn_sub_on", "btn_sub_off", "other_to_sub",
-                                 lambda p: p._state.subtitles_on)),
-        Widget("sub_lang", BTN_SUB_LANG, radius=16,
-               fill=lambda p: COL_INSET,
-               draw=_lang_label_draw(lambda p: p._state.inbound_language,
-                                     "sub_lang")),
+        Widget("restart", BTN_RESTART, radius=14, enabled=ready, fill=lambda p: WATCH_SURFACE,
+               draw=_label_draw("vr_restart", state_key=lambda p, lang: tr(
+                   lang, "btn_restarting" if p._restart_pending else "vr_restart"))),
+        Widget("mode_voice", BTN_MODE_VOICE, radius=14, enabled=ready,
+               fill=lambda p: WATCH_SELECTED if not p._state.text_only else WATCH_INSET,
+               draw=_mode_draw(False)),
+        Widget("mode_text", BTN_MODE_TEXT, radius=14, enabled=ready,
+               fill=lambda p: WATCH_SELECTED if p._state.text_only else WATCH_INSET,
+               draw=_mode_draw(True)),
+        Widget("toggle", BTN_TOGGLE, radius=16,
+               fill=lambda p: (22, 42, 39, 255) if p._state.translation_on else WATCH_SURFACE,
+               draw=_toggle_draw("vr_translate", "my_to_other", lambda p: p._state.translation_on, WATCH_MINT)),
+        Widget("lang", BTN_LANG, radius=16, fill=lambda p: WATCH_SURFACE,
+               draw=_lang_label_draw(lambda p: p._state.target_language, "out_lang")),
+        Widget("sub_toggle", BTN_SUB_TOGGLE, radius=16,
+               fill=lambda p: (23, 37, 54, 255) if p._state.subtitles_on else WATCH_SURFACE,
+               draw=_toggle_draw("vr_subtitles", "other_to_sub", lambda p: p._state.subtitles_on, WATCH_BLUE)),
+        Widget("sub_lang", BTN_SUB_LANG, radius=16, fill=lambda p: WATCH_SURFACE,
+               draw=_lang_label_draw(lambda p: p._state.inbound_language, "sub_lang")),
     ) + _nav_widgets("main")
 
 
-def _build_settings_widgets(*, soniox: bool) -> tuple:
+def _build_settings_widgets(*, soniox):
     widgets = (
-        Widget("uilang", BTN_UILANG, page="settings", draw=_ui_language_draw),
-        Widget("text_only", BTN_TEXT_ONLY, page="settings",
-               enabled=lambda p: not p._speaker_context_pending,
-               fill=lambda p: COL_SUB_ON if p._state.text_only else COL_BTN,
-               label=lambda p, lang: tr(lang, "btn_text_only_on"
-                                        if p._state.text_only else "btn_text_only_off")),
-        Widget("font_caption", LBL_FONT_CAPTION, kind="label", page="settings",
-               fill=lambda p: COL_INSET,
+        Widget("uilang", BTN_UILANG, page="settings", fill=lambda p: WATCH_SURFACE, draw=_ui_language_draw),
+        Widget("font_caption", LBL_FONT_CAPTION, kind="label", page="settings", fill=lambda p: WATCH_INSET,
                label=lambda p, lang: tr(lang, "dash_font_size")),
-        Widget("font_minus", BTN_FONT_MINUS, page="settings",
-               enabled=lambda p: int(p._get_font_size()) > OVERLAY_FONT_MIN,
-               draw=_arrow_draw("−")),
-        Widget("font_size", LBL_FONT_SIZE, kind="label", page="settings",
-               fill=lambda p: COL_INSET, draw=_font_size_draw),
-        Widget("font_plus", BTN_FONT_PLUS, page="settings",
-               enabled=lambda p: int(p._get_font_size()) < OVERLAY_FONT_MAX,
-               draw=_arrow_draw("+")),
+        Widget("font_minus", BTN_FONT_MINUS, page="settings", fill=lambda p: WATCH_SURFACE,
+               enabled=lambda p: int(p._get_font_size()) > OVERLAY_FONT_MIN, draw=glyph_draw("−")),
+        Widget("font_size", LBL_FONT_SIZE, kind="label", page="settings", fill=lambda p: WATCH_INSET,
+               label=lambda p, lang: str(int(p._get_font_size()))),
+        Widget("font_plus", BTN_FONT_PLUS, page="settings", fill=lambda p: WATCH_SURFACE,
+               enabled=lambda p: int(p._get_font_size()) < OVERLAY_FONT_MAX, draw=glyph_draw("+")),
         Widget("edit", BTN_EDIT, page="settings",
-               fill=lambda p: COL_DRAG if p._state.wrist_edit_mode else COL_BTN,
-               label=lambda p, lang: tr(lang, "vr_move_wrist")),
+               fill=lambda p: WATCH_SELECTED if p._state.wrist_edit_mode else WATCH_SURFACE,
+               draw=_label_draw("vr_move_wrist")),
         Widget("sub_edit", BTN_SUB_EDIT, page="settings",
-               fill=lambda p: COL_DRAG if p._state.edit_mode else COL_BTN,
-               label=lambda p, lang: tr(lang, "vr_move_subtitles")),
-        # Retain the reset target semantics and make its active target explicit.
-        Widget("reset", BTN_RESET, page="settings",
-               fill=lambda p: COL_DRAG if p._state.edit_mode else COL_BTN,
-               label=lambda p, lang: tr(lang, "reset_sub_pos"
-                                        if p._state.edit_mode else "reset_watch_pos")),
-        Widget("restart", BTN_RESTART if soniox else BTN_SPEAKER_CONTEXT,
-               page="settings",
-               enabled=lambda p: not (p._restart_pending or p._speaker_context_pending),
-               label=lambda p, lang: tr(lang, "btn_restarting"
-                                        if p._restart_pending
-                                        else "btn_restart_runtime")),
+               fill=lambda p: WATCH_SELECTED if p._state.edit_mode else WATCH_SURFACE,
+               draw=_label_draw("vr_move_subtitles")),
+        Widget("reset", BTN_RESET, page="settings", fill=lambda p: WATCH_SURFACE,
+               draw=_label_draw("", state_key=lambda p, lang: tr(
+                   lang, "reset_sub_pos" if p._state.edit_mode else "reset_watch_pos"))),
     )
     if soniox:
-        widgets += (Widget(
-            "speaker_context", BTN_SPEAKER_CONTEXT, page="settings",
-            enabled=lambda p: not (p._speaker_context_pending or p._restart_pending),
-            fill=lambda p: COL_SUB_ON if p._get_speaker_context()[0] else COL_BTN,
-            draw=_speaker_context_draw),)
+        widgets += (Widget("speaker_context", BTN_SPEAKER_CONTEXT, page="settings", radius=14,
+                           enabled=lambda p: not (p._speaker_context_pending or p._restart_pending or p._mode_pending),
+                           fill=lambda p: WATCH_INSET, draw=_speaker_context_draw),)
     return widgets + _nav_widgets("settings")
 
 
 class WristPanel:
     def __init__(self, state: AppState, languages: list[str], *,
                  inbound_languages: list[str] | None = None,
-                 hand: str = "left", width_m: float = 0.16,
+                 hand: str = "left", width_m: float = 0.14,
                  offset=(0.0, 0.02, 0.12), tilt_deg: float = 0.0,
                  roll_deg: float | None = None,
                  transform=None,
                  pointer_tilt_deg: float = 50.0,
                  font_path: str = bundled_font("NotoSansCJKkr-Bold.otf"),
-                 on_text_only_toggle=lambda enabled: None,
+                 on_text_only_toggle=lambda enabled, on_done: on_done(False),
                  on_transform_changed=lambda matrix, reset=False: None,
                  get_status_info=lambda: (False, "status_stopped", ""),
                  on_restart=lambda: None,
@@ -268,10 +303,10 @@ class WristPanel:
         self._get_speaker_context = get_speaker_context
         self._set_speaker_context = set_speaker_context
         font_path = resolve_font_path(font_path, "NotoSansCJKkr-Bold.otf")
-        self._font_big = load_fallback_font(font_path, 54, bold=True)
-        self._font_mid = load_fallback_font(font_path, 36, bold=True)
-        self._font_small = load_fallback_font(font_path, 24, bold=True)
-        self._font_tiny = load_fallback_font(font_path, 18, bold=True)
+        self._font_big = load_fallback_font(font_path, 32, bold=True)
+        self._font_mid = load_fallback_font(font_path, 26, bold=True)
+        self._font_small = load_fallback_font(font_path, 22, bold=True)
+        self._font_tiny = load_fallback_font(font_path, 18, bold=False)
 
         self._widgets = _build_widgets()
         self._settings_widgets = {
@@ -284,6 +319,7 @@ class WristPanel:
         self._engaged = False
         self._dragging = False
         self._restart_pending = False
+        self._mode_pending = False
         self._restart_started = 0.0
         self._restart_seen_transition = False
         self._speaker_context_pending = False
@@ -297,7 +333,8 @@ class WristPanel:
             "edit": self._toggle_wrist_edit,
             "sub_edit": self._toggle_sub_edit,
             "uilang": self._cycle_ui_lang,
-            "text_only": self._toggle_text_only,
+            "mode_voice": lambda: self._set_text_only(False),
+            "mode_text": lambda: self._set_text_only(True),
             "restart": self._restart,
             "font_minus": lambda: self._bump_font(-2),
             "font_plus": lambda: self._bump_font(2),
@@ -668,25 +705,34 @@ class WristPanel:
         n_pages = lang_page_count(langs, PICKER_COLS, PICKER_ROWS)
         widgets = [
             Widget("picker_caption", PICKER_CAPTION, kind="label", page=page,
-                   fill=lambda p: (0, 0, 0, 0),
+                   fill=lambda p: WATCH_INSET,
                    label=lambda p, lang, k=("out_lang" if out else "sub_lang"):
                        tr(lang, k)),
-            Widget("picker_close", PICKER_CLOSE, page=page, draw=glyph_draw("×")),
+            Widget("picker_close", PICKER_CLOSE, page=page,
+                   fill=lambda p: WATCH_SURFACE, draw=glyph_draw("×")),
         ]
         if n_pages > 1:
             widgets.append(Widget("picker_pgprev", PICKER_PGPREV, page=page,
+                                  fill=lambda p: WATCH_SURFACE,
                                   enabled=lambda p: p._picker_idx > 0,
                                   draw=glyph_draw("◀")))
             widgets.append(Widget("picker_pgnext", PICKER_PGNEXT, page=page,
+                                  fill=lambda p: WATCH_SURFACE,
                                   enabled=lambda p, n=n_pages: p._picker_idx < n - 1,
                                   draw=glyph_draw("▶")))
-        widgets += lang_grid_widgets(
+        choices = lang_grid_widgets(
             page=page, languages=langs, page_idx=page_idx, area=PICKER_GRID,
             cols=PICKER_COLS, rows=PICKER_ROWS,
             name_prefix="pick_out" if out else "pick_in",
             current_of=(lambda p: p._state.target_language) if out
                        else (lambda p: p._state.inbound_language),
-            accent=COL_ON if out else COL_SUB_ON)
+            accent=WATCH_SELECTED)
+        for choice in choices:
+            widgets.append(replace(
+                choice, radius=14,
+                fill=lambda p, original=choice.fill: (
+                    WATCH_SELECTED if original(p) == WATCH_SELECTED else WATCH_SURFACE),
+                draw=_label_draw("", state_key=choice.label)))
         return tuple(widgets) + _nav_widgets(page)
 
     # ---------------- click handlers ----------------
@@ -714,13 +760,26 @@ class WristPanel:
     def _cycle_ui_lang(self) -> None:
         self._state.ui_lang = cycle(UI_LANGS, self._state.ui_lang, 1)
 
-    def _toggle_text_only(self) -> None:
-        if not self._speaker_context_pending:
-            self._on_text_only_toggle(not self._state.text_only)
+    def _set_text_only(self, enabled: bool) -> None:
+        if self._speaker_context_pending or self._restart_pending or self._mode_pending \
+                or self._state.text_only == enabled:
+            return
+        self._mode_pending = True
+        self._dirty.set()
+
+        def done(_ok: bool) -> None:
+            self._mode_pending = False
+            self._dirty.set()
+
+        try:
+            self._on_text_only_toggle(enabled, done)
+        except Exception:
+            log.exception("wrist panel: mode update failed")
+            done(False)
 
     def _toggle_speaker_context(self) -> None:
         if self._get_provider() != "soniox" or self._speaker_context_pending \
-                or self._restart_pending:
+                or self._restart_pending or self._mode_pending:
             return
         self._speaker_context_pending = True
         self._speaker_context_failed = False
@@ -747,7 +806,7 @@ class WristPanel:
             self._dirty.set()
 
     def _restart(self) -> None:
-        if self._restart_pending or self._speaker_context_pending:
+        if self._restart_pending or self._speaker_context_pending or self._mode_pending:
             return
         self._restart_pending = True
         self._restart_started = time.time()
@@ -792,19 +851,23 @@ class WristPanel:
         sub_edit = self._state.edit_mode
         img = Image.new("RGBA", (TEX_W, TEX_H), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
-        d.rounded_rectangle((0, 0, TEX_W - 1, TEX_H - 1), 30, fill=COL_BG,
-                            outline=COL_DRAG if (dragging or wrist_edit or sub_edit) else None,
-                            width=4)
-
+        d.rounded_rectangle((0, 0, TEX_W - 1, TEX_H - 1), 26,
+                            fill=(14, 21, 31, 248), outline=WATCH_EDGE, width=1)
+        d.rounded_rectangle((6, 6, TEX_W - 7, TEX_H - 7), 22,
+                            outline=COL_DRAG if (dragging or wrist_edit or sub_edit) else (27, 39, 54, 255),
+                            width=2)
+        d.line((20, 345, 620, 345), fill=WATCH_EDGE, width=1)
         dot = status_dot_color(connected, status_key)
         if self._page in ("main", "settings"):
-            d.ellipse((20, 24, 40, 44), fill=dot)
-            self._font_small.draw(d, (52, 34), "vrclt", fill=COL_TEXT, anchor="lm")
-            draw_fit_text(d, (166, 14, 624, 50),
-                          self._get_provider().upper(),
-                          fonts=(self._font_small,), fill=COL_DIM, max_lines=1)
-            draw_fit_text(d, (16, 51, 624, 78), tr(lang, status_key),
-                          fonts=(self._font_tiny,), fill=dot, max_lines=1)
+            self._font_small.draw(d, (24, 28), "VRCLT", fill=COL_TEXT, anchor="lm")
+            _left_text(self, d, (126, 14, 430, 42), self._get_provider().upper(),
+                       fonts=(self._font_tiny,), fill=WATCH_DIM)
+            d.ellipse((24, 51, 34, 61), fill=dot)
+            _left_text(self, d, (44, 43, 430, 69), tr(lang, status_key),
+                       fonts=(self._font_tiny,), fill=WATCH_DIM)
+            if self._page == "settings" and self._get_provider() != "soniox":
+                draw_fit_text(d, BTN_SPEAKER_CONTEXT, tr(lang, "vr_hint_position"),
+                              fonts=(self._font_tiny,), fill=WATCH_DIM, max_lines=2)
 
         draw_page(self, d, self._active_widgets(), lang, page=self._page,
                   hover=self._hover if self._engaged else None,

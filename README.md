@@ -383,7 +383,8 @@ VRChat mode can use:
 - OSC chatbox output for translated text
 - Avatar OSC parameters such as `VRCLT_Enabled` and `VRCLT_Lang`
 - SteamVR subtitle overlay for inbound subtitles
-- SteamVR wrist menu with **Live** and **Settings** pages: translation, subtitles, languages, and connection status are separated from runtime restart, subtitle sizing, and panel positioning. Gaze/grip interactions remain available
+- A compact SteamVR wrist menu with **Live** and **Settings** pages. **Live** contains translation, subtitles, output/subtitle languages, connection status, separate **Voice / Text** buttons, and runtime restart. **Settings** groups UI language, subtitle size, panel movement/reset, and Soniox speaker-context retention. Gaze/grip interactions remain available
+- The wrist menu defaults to **14 cm** wide with a shorter panel shape. Existing saved widths are preserved; adjust the wrist width in Settings to resize it. Widths below 16 cm now apply correctly
 - SteamVR Dashboard with **Live**, **Audio**, and **Layout & app** pages (open the SteamVR menu and pick the vrclt icon). **Live** groups translation, subtitles, languages, and connection/error status; **Audio** contains microphone/voice-output selection and translated-voice volume; **Layout & app** groups panel positioning and app controls. Device changes apply shortly after the last click with a runtime restart
 - The SteamVR Dashboard offers spoken-language controls for Qwen and optional recognition hints for Soniox; the wrist menu selects translation output and subtitle languages. With Soniox selected, both VR panels show **Keep speaker context** and the effective silence timeout; the switch shares the saved setting with the PC UI. Speaker diarization stays enabled when the switch is off
 - Auto-start with SteamVR: the release exe registers itself in SteamVR Settings > Startup/Overlay Apps; toggle auto-launch there or in vrclt Settings
@@ -550,7 +551,7 @@ Audio, control, UI, and wrist menu:
 | `ui.close_action` | `tray` | Window close button behavior: `tray` or `exit`. |
 | `wrist_ui.enabled` | `true` | Enables the SteamVR wrist menu. |
 | `wrist_ui.hand` | `left` | Wrist that wears the menu: `left` or `right`. |
-| `wrist_ui.width_m` | `0.16` | Wrist menu width in meters. |
+| `wrist_ui.width_m` | `0.14` | Wrist menu width in meters. |
 | `wrist_ui.offset` | `[-0.0509, -0.065, 0.0891]` | Wrist menu x,y,z offset in controller space. |
 | `wrist_ui.tilt_deg` | `185.636` | Extra tilt toward the face. |
 | `wrist_ui.roll_deg` | `-28.633` | In-plane rotation. `null` uses automatic per-hand rotation. |

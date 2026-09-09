@@ -163,7 +163,101 @@ def check_controller_bridge():
         dash.detach()
 
 
+def check_wrist_width():
+    # User-selected small sizes must reach the actual VR surface unchanged.
+    # Missing/invalid input uses the compact default; out-of-range values
+    # follow the same bounds as the Settings control.
+    assert config.DEFAULTS["wrist_ui"]["width_m"] == 0.14
+    state = AppState()
+    for cfg, expected in (
+        ({}, 0.14),
+        *(({"wrist_ui": {"width_m": value}}, expected) for value, expected in (
+            (0.10, 0.10), (0.14, 0.14), (0.16, 0.16),
+            (0.01, 0.05), (0.6, 0.5),
+            (None, 0.14), ("invalid", 0.14),
+            (float("nan"), 0.14), (float("inf"), 0.14),
+        )),
+    ):
+        panel = make_wrist_panel(cfg, state, lambda: (False, "status_stopped", ""))
+        try:
+            assert panel._width_m == expected, (cfg, panel._width_m, expected)
+            assert abs(panel._height_m - expected * wrist_ui.TEX_H / wrist_ui.TEX_W) < 1e-9
+        finally:
+            panel.detach()
+
+
+def check_text_only_lifecycle():
+    ctl = object.__new__(AppController)
+    ctl._lock = threading.RLock()
+    ctl._lifecycle_lock = threading.RLock()
+    ctl._closed = False
+    ctl._restarting = True
+    ctl.raw_cfg = copy.deepcopy(config.DEFAULTS)
+    ctl.raw_cfg["outbound"]["text_only"] = True
+    ctl.cfg = config.apply_app_profile(ctl.raw_cfg)
+    ctl.state = AppState()
+    ctl.state.text_only = True
+    notifications, done, workers = [], [], []
+    ctl._notify = lambda: notifications.append(True)
+
+    def spawn(name, fn):
+        worker = AppController._spawn(ctl, name, fn)
+        workers.append(worker)
+        return worker
+
+    def restart(cfg):
+        ctl.raw_cfg = copy.deepcopy(cfg)
+        ctl.cfg = config.apply_app_profile(cfg)
+        ctl.state.text_only = ctl.cfg["outbound"]["text_only"]
+        return True
+
+    ctl._spawn = spawn
+    ctl._restart_locked = restart
+    # A request made during an external restart waits for the lifecycle lock,
+    # then persists its selection instead of leaving only an optimistic state.
+    with patch.object(config, "save") as save:
+        with ctl._lifecycle_lock:
+            ctl.set_text_only(False, done.append)
+            save.assert_not_called()
+        workers[-1].join(timeout=3)
+        assert not workers[-1].is_alive()
+        save.assert_called_once()
+    assert done == [True] and not ctl.state.text_only
+    assert ctl.cfg["outbound"]["text_only"] is False
+
+    ctl._spawn = lambda name, fn: fn()
+    # Even a failed request for the already-selected value must restore the
+    # saved state, not blindly invert the requested value.
+    with (patch.object(config, "save", side_effect=OSError("test save failure")),
+          patch("vrclt.app_controller.log.exception")):
+        ctl.set_text_only(False, done.append)
+    assert done[-1] is False and not ctl.state.text_only
+    assert ctl.last_error == "test save failure"
+
+    ctl._closed = True
+    with patch.object(config, "save") as save:
+        ctl.set_text_only(True, done.append)
+        save.assert_not_called()
+    assert done[-1] is False and not ctl.state.text_only
+
+    # A saved selection remains authoritative when only runtime startup fails.
+    ctl._closed = False
+
+    def fail_after_save(cfg):
+        restart(cfg)
+        return False
+
+    ctl._restart_locked = fail_after_save
+    with patch.object(config, "save"):
+        ctl.set_text_only(True, done.append)
+    assert done == [True, False, False, False]
+    assert ctl.state.text_only and ctl.cfg["outbound"]["text_only"] is True
+    assert len(notifications) >= len(done)
+
+
 if __name__ == "__main__":
     check_navigation()
     check_controller_bridge()
+    check_wrist_width()
+    check_text_only_lifecycle()
     print("smoke_vr_navigation: OK")

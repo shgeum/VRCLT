@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
+import math
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -86,7 +87,8 @@ def wants_vr_renderer(cfg: dict) -> bool:
     return vr_panels_enabled(cfg)
 
 
-def make_wrist_panel(cfg, state, get_status_info, on_text_only_toggle=lambda enabled: None,
+def make_wrist_panel(cfg, state, get_status_info,
+                     on_text_only_toggle=lambda enabled, on_done: on_done(False),
                      on_transform_changed=lambda matrix, reset=False: None,
                      on_restart=lambda: None,
                      on_font_size=lambda size: None,
@@ -96,10 +98,15 @@ def make_wrist_panel(cfg, state, get_status_info, on_text_only_toggle=lambda ena
                      set_speaker_context=lambda enabled, on_done: on_done(False)):
     from .vr.wrist_ui import WristPanel
     w = cfg.get("wrist_ui", {})
+    default_width = config_mod.DEFAULTS["wrist_ui"]["width_m"]
     try:
-        width_m = max(0.16, float(w.get("width_m", 0.16) or 0.16))
-    except Exception:
-        width_m = 0.16
+        width_m = float(w.get("width_m", default_width))
+    except (TypeError, ValueError, OverflowError):
+        width_m = default_width
+    if not math.isfinite(width_m):
+        width_m = default_width
+    # Match the editable range instead of silently forcing small menus to 16 cm.
+    width_m = max(0.05, min(0.5, width_m))
     return WristPanel(
         state, cfg.get("control", {}).get("languages", ["en"]),
         inbound_languages=cfg.get("inbound", {}).get("languages", ["ko", "en"]),
@@ -751,7 +758,8 @@ class AppController:
 
         self._spawn(thread_name, apply)
 
-    def set_text_only(self, value: bool) -> None:
+    def set_text_only(self, value: bool,
+                      on_done: Callable[[bool], None] = lambda ok: None) -> None:
         value = bool(value)
         self.state.text_only = value  # optimistic; reverted on failure
 
@@ -760,10 +768,17 @@ class AppController:
                 cfg.setdefault("app", {})["mode"] = "vrchat"
             cfg.setdefault("outbound", {})["text_only"] = value
 
+        def done(ok):
+            if not ok:
+                with self._lock:
+                    self.state.text_only = bool(
+                        self.cfg.get("outbound", {}).get("text_only", False))
+            self._notify()
+            on_done(ok)
+
         self._mutate_and_restart(
             "text-only mode", mutate, thread_name="vrclt-text-only-restart",
-            force_profile=True, skip_if_restarting=True,
-            on_error=lambda e: setattr(self.state, "text_only", not value))
+            force_profile=True, on_done=done)
 
     def get_speaker_context(self) -> tuple[bool, float]:
         with self._lock:
