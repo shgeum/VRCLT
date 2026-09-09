@@ -54,10 +54,10 @@ def main():
     w3._engaged = True
     w3._hover = "toggle"
     hovered = w3._render((True, "status_running", ""), False)
-    assert list(base.getdata()) != list(hovered.getdata()), "hover render identical"
-    w3._pressed_name = "uilang"
+    assert base.tobytes() != hovered.tobytes(), "hover render identical"
+    w3._pressed_name = "toggle"
     pressed = w3._render((True, "status_running", ""), False)
-    assert list(hovered.getdata()) != list(pressed.getdata()), "pressed render identical"
+    assert hovered.tobytes() != pressed.tobytes(), "pressed render identical"
 
     # restart pending: set on click, cleared after Starting -> Running
     calls = []

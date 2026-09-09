@@ -61,7 +61,15 @@ def main():
         assert win._soniox_idle_hint.isHidden() == (provider != "soniox")
 
     # Explicit saved choices are preserved when defaults change.
+    timeout_draft = win._settings_form._fields["soniox.speaker_context_idle_sec"][0]
+    timeout_draft.setValue(120)
+    voice_draft = win._settings_form._fields["soniox.voice"][0]
+    voice_draft.setText("keep-this-draft")
+    # Simulate a VR toggle: no form rebuild/config-revision reset occurs.
     ctl.cfg["soniox"]["keep_speaker_context"] = False
+    win._refresh()
+    assert not win._settings_form._fields["soniox.keep_speaker_context"][0].isChecked()
+    assert timeout_draft.value() == 120 and voice_draft.text() == "keep-this-draft"
     win._populate_settings()
     win._refresh()
     assert not checkbox.isChecked()

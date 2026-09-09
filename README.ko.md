@@ -118,7 +118,7 @@ VRChat 또는 Discord가 번역 음성을 마이크처럼 받게 하려면 VB-Au
 1. [Soniox 콘솔](https://console.soniox.com)을 열어 계정을 만들고 로그인합니다.
 2. **My First Project** 또는 사용할 프로젝트를 열고 **API Keys**에서 키를 만듭니다.
    [공식 시작 안내](https://soniox.com/docs/stt/get-started)의 프로젝트별 키 발급 절차를 따릅니다.
-   v0.19.0은 미국(US) 서버를 사용하므로 리전을 선택할 수 있다면 **US 프로젝트**를 사용하세요.
+   v0.19.1은 미국(US) 서버를 사용하므로 리전을 선택할 수 있다면 **US 프로젝트**를 사용하세요.
    다른 리전 서버로 전환하는 설정은 아직 없습니다. [리전 안내](https://soniox.com/docs/data-residency)
 3. [Billing overview](https://console.soniox.com/org/billing/overview/)에서 API 사용 잔액을
    확인하고 필요한 경우 충전합니다. 요금은 [API 요금표](https://soniox.com/pricing)를
@@ -238,7 +238,7 @@ vrclt는 네 가지 실시간 번역 엔진을 지원하며, **번역 엔진** �
 Qwen 참고 사항:
 
 - **발화 언어 설정이 필수입니다.** 설정 탭, 대시보드 탭, 또는 SteamVR 대시보드
-  패널의 맨 아래 줄에서 설정합니다. 비어 있으면 영어로 간주합니다.
+  패널의 **대화** 페이지에서 설정합니다. 비어 있으면 영어로 간주합니다.
 - `zh-Hans`/`zh-Hant` 도착어는 둘 다 `zh`로 Qwen에 전달됩니다.
 - 선택한 도착어에 Qwen 음성 지원이 없으면 vrclt가 자동으로 세션을 텍스트 전용으로
   실행합니다(챗박스/자막은 계속 동작합니다).
@@ -352,8 +352,9 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 - 번역 텍스트 OSC 챗박스 출력
 - `VRCLT_Enabled`, `VRCLT_Lang` 같은 아바타 OSC 파라미터
 - 인바운드 자막용 SteamVR 자막 오버레이
-- VR 안에서 제어할 수 있는 SteamVR 손목 메뉴 — 런타임 재시작, 자막 글자 크기, 연결/오류 상태 표시 포함
-- SteamVR 대시보드 설정 패널 (SteamVR 메뉴를 열고 vrclt 아이콘 선택); 마이크·음성 출력 디바이스 선택 포함 — 마지막 클릭 후 잠시 뒤 런타임 재시작과 함께 적용됩니다 — 그리고 번역 음성 볼륨과 오류 상태 표시(재연결 중, API 사용량 초과, API 키 오류), Qwen 엔진용 발화 언어 줄
+- **대화 / 설정**으로 나눈 SteamVR 손목 메뉴: 번역·자막·언어·연결 상태와 런타임 재시작·자막 크기·패널 위치 설정을 구분합니다. 기존 시선·그립 조작도 유지합니다
+- **대화 / 오디오 / 위치 · 앱**으로 나눈 SteamVR 대시보드(SteamVR 메뉴에서 vrclt 아이콘 선택). **대화**에는 번역·자막·언어·연결/오류 상태, **오디오**에는 마이크·음성 출력 선택과 번역 음성 볼륨, **위치 · 앱**에는 패널 위치와 앱 제어를 모았습니다. 디바이스 변경은 마지막 클릭 후 잠시 뒤 런타임 재시작과 함께 적용됩니다
+- SteamVR 대시보드에서 Qwen의 발화 언어와 Soniox의 선택적 인식 힌트를 설정할 수 있으며, 손목 메뉴에서는 번역 출력 언어와 자막 언어를 선택합니다. Soniox를 선택하면 두 VR 패널 모두 **무음 중 화자 구분 유지**와 적용 중인 무음 종료 시간을 표시하며, PC UI와 같은 저장값을 사용합니다. 이 스위치를 꺼도 화자 분리 자체는 켜져 있습니다
 - SteamVR 자동 시작: 릴리스 exe가 SteamVR 설정 > 시작/오버레이 앱에 자동 등록되며, 자동 시작은 SteamVR 설정 또는 vrclt 설정에서 켜고 끕니다
 - 새 버전으로 업데이트한 뒤에는 새 exe를 한 번 실행해 주세요. 등록 자체는 유지되지만, 자동 시작이 가리키는 exe 경로는 첫 실행 때 새 파일로 갱신됩니다
 - VR 자막 편집 laser/cursor 표시와 모서리 크기 조절 핸들
@@ -558,14 +559,14 @@ dist\vrclt.exe
 릴리스 산출물 생성:
 
 ```powershell
-.\scripts\package_release.ps1 -Version 0.19.0
+.\scripts\package_release.ps1 -Version 0.19.1
 ```
 
 릴리스 스크립트 결과:
 
 ```text
-release\vrclt-v0.19.0-windows-x64.exe
-release\vrclt-v0.19.0-windows-x64.exe.sha256
+release\vrclt-v0.19.1-windows-x64.exe
+release\vrclt-v0.19.1-windows-x64.exe.sha256
 ```
 
 ## 스모크 테스트
@@ -574,7 +575,7 @@ release\vrclt-v0.19.0-windows-x64.exe.sha256
 .\.venv\Scripts\python.exe -m compileall vrclt
 .\.venv\Scripts\python.exe -m vrclt --help
 .\.venv\Scripts\pyinstaller.exe vrclt.spec --noconfirm
-.\scripts\package_release.ps1 -Version 0.19.0 -SkipBuild
+.\scripts\package_release.ps1 -Version 0.19.1 -SkipBuild
 ```
 
 실제 런타임 테스트는 exe 실행, 자체 UI에서 설정 저장,

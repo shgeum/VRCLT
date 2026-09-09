@@ -53,25 +53,26 @@ GAZE_DIST_M = 0.95
 
 TRANSFORM_PATH = APPDATA_DIR / "wrist_transform.json"
 
-BTN_UILANG = (108, 14, 196, 66)      # cycles the UI display language
-BTN_TEXT_ONLY = (204, 14, 336, 66)
-BTN_EDIT = (344, 14, 432, 66)
-BTN_SUB_EDIT = (440, 14, 528, 66)
-BTN_RESET = (536, 14, 624, 66)
-BTN_TOGGLE = (16, 86, 306, 302)
-BTN_PREV = (322, 86, 388, 302)
-BTN_LANG = (388, 86, 556, 302)       # label only
-BTN_NEXT = (556, 86, 624, 302)
-BTN_SUB_TOGGLE = (16, 322, 306, 538)
-BTN_SUB_PREV = (322, 322, 388, 538)
-BTN_SUB_LANG = (388, 322, 556, 538)  # label only
-BTN_SUB_NEXT = (556, 322, 624, 538)
-# bottom row: restart + subtitle font size (mirrors the dashboard panel)
-BTN_RESTART = (16, 554, 200, 630)
-BTN_FONT_MINUS = (216, 554, 296, 630)
-LBL_FONT_SIZE = (304, 554, 404, 630)   # label only
-BTN_FONT_PLUS = (412, 554, 492, 630)
-LBL_STATUS = (508, 554, 624, 630)      # label only: non-nominal status text
+# Daily controls get the full live page; occasional adjustments have their
+# own page. The same bottom navigation remains available in language pickers.
+BTN_TOGGLE = (16, 94, 306, 300)
+BTN_LANG = (322, 94, 624, 300)
+BTN_SUB_TOGGLE = (16, 320, 306, 526)
+BTN_SUB_LANG = (322, 320, 624, 526)
+BTN_NAV_LIVE = (16, 554, 306, 630)
+BTN_NAV_SETTINGS = (322, 554, 624, 630)
+
+BTN_UILANG = (16, 94, 306, 170)
+BTN_TEXT_ONLY = (322, 94, 624, 170)
+LBL_FONT_CAPTION = (16, 186, 306, 262)
+BTN_FONT_MINUS = (322, 186, 402, 262)
+LBL_FONT_SIZE = (414, 186, 534, 262)
+BTN_FONT_PLUS = (546, 186, 624, 262)
+BTN_EDIT = (16, 278, 210, 354)
+BTN_SUB_EDIT = (222, 278, 416, 354)
+BTN_RESET = (428, 278, 624, 354)
+BTN_SPEAKER_CONTEXT = (16, 370, 624, 446)
+BTN_RESTART = (16, 462, 624, 526)
 
 CURSOR_SIZE_M = 0.016
 
@@ -83,7 +84,7 @@ PICKER_CAPTION = (16, 14, 336, 66)
 PICKER_PGPREV = (352, 14, 432, 66)
 PICKER_PGNEXT = (440, 14, 520, 66)
 PICKER_CLOSE = (536, 14, 624, 66)
-PICKER_GRID = (16, 86, 624, 630)
+PICKER_GRID = (16, 94, 624, 526)
 PICKER_COLS, PICKER_ROWS = 3, 4
 
 
@@ -104,7 +105,7 @@ def _toggle_draw(on_key: str, off_key: str, caption_key: str, is_on):
 
 
 def _lang_label_draw(code_of, caption_key: str):
-    """Inset language name + dim caption (arrows are separate widgets)."""
+    """A large, tappable language choice with its output caption."""
     def draw(panel, d, w, lang):
         box = w.rect
         draw_fit_text(d, (box[0] + 4, box[1] + 20, box[2] - 4, box[3] - 54),
@@ -120,72 +121,112 @@ def _lang_label_draw(code_of, caption_key: str):
 
 
 def _font_size_draw(panel, d, w, lang):
-    box = w.rect
-    draw_fit_text(d, (box[0], box[1] + 6, box[2], box[1] + 44),
+    draw_fit_text(d, w.rect,
                   str(int(panel._get_font_size())),
-                  fonts=(panel._font_small,), max_lines=1, pad_x=4, pad_y=2)
-    draw_fit_text(d, (box[0], box[3] - 30, box[2], box[3] - 6),
-                  tr(lang, "dash_font_size"),
-                  fonts=(panel._font_tiny,), fill=COL_DIM, max_lines=1,
-                  pad_x=2, pad_y=1, line_spacing=0)
+                  fonts=(panel._font_mid,), max_lines=1, pad_x=4, pad_y=2)
+
+
+def _ui_language_draw(panel, d, w, lang):
+    x0, y0, x1, y1 = w.rect
+    draw_fit_text(d, (x0, y0 + 7, x1, y0 + 29), tr(lang, "ui_lang"),
+                  fonts=(panel._font_tiny,), fill=COL_DIM, max_lines=1)
+    draw_fit_text(d, (x0, y0 + 31, x1, y1 - 5),
+                  UI_LANG_LABELS.get(lang, lang),
+                  fonts=(panel._font_small,), max_lines=1)
+
+
+def _speaker_context_draw(panel, d, w, lang):
+    enabled, seconds = panel._get_speaker_context()
+    key = ("dash_applying" if panel._speaker_context_pending else
+           "dash_apply_failed" if panel._speaker_context_failed else
+           "vr_speaker_context_on" if enabled else "vr_speaker_context_off")
+    x0, y0, x1, y1 = w.rect
+    draw_fit_text(d, (x0 + 8, y0 + 7, x1 - 8, y0 + 39), tr(lang, key),
+                  fonts=(panel._font_small, panel._font_tiny), max_lines=1)
+    timeout = (tr(lang, "soniox_idle_timeout_status").format(seconds=f"{seconds:g}")
+               if seconds > 0 else tr(lang, "soniox_idle_timeout_disabled"))
+    draw_fit_text(d, (x0 + 8, y0 + 40, x1 - 8, y1 - 6), timeout,
+                  fonts=(panel._font_tiny,),
+                  fill=COL_TEXT if enabled else COL_DIM, max_lines=1)
+
+
+def _nav_widgets(page: str) -> tuple:
+    return (
+        Widget("nav_live", BTN_NAV_LIVE, page=page,
+               fill=lambda p: COL_SUB_ON if p._page != "settings" else COL_BTN,
+               label=lambda p, lang: tr(lang, "vr_nav_live")),
+        Widget("nav_settings", BTN_NAV_SETTINGS, page=page,
+               fill=lambda p: COL_SUB_ON if p._page == "settings" else COL_BTN,
+               label=lambda p, lang: tr(lang, "vr_nav_settings")),
+    )
 
 
 def _build_widgets() -> tuple:
-    """Main-page widget table: single source for draw AND hit-test rects."""
+    """Live-page widget table: the two speech directions and navigation."""
     return (
-        Widget("uilang", BTN_UILANG,
-               label=lambda p, lang: UI_LANG_LABELS.get(lang, lang)),
-        Widget("text_only", BTN_TEXT_ONLY,
-               fill=lambda p: COL_SUB_ON if p._state.text_only else COL_BTN,
-               label=lambda p, lang: tr(lang, "btn_text_only_on"
-                                        if p._state.text_only else "btn_text_only_off")),
-        Widget("edit", BTN_EDIT,
-               fill=lambda p: COL_DRAG if p._state.wrist_edit_mode else COL_BTN,
-               label=lambda p, lang: tr(lang, "wrist_move")),
-        Widget("sub_edit", BTN_SUB_EDIT,
-               fill=lambda p: COL_DRAG if p._state.edit_mode else COL_BTN,
-               label=lambda p, lang: tr(lang, "sub_move")),
-        # dual-purpose by design: resets whichever placement is being edited;
-        # the dynamic label + tint make the active target visible
-        Widget("reset", BTN_RESET,
-               fill=lambda p: COL_DRAG if p._state.edit_mode else COL_BTN,
-               label=lambda p, lang: tr(lang, "reset_sub_pos"
-                                        if p._state.edit_mode else "reset_watch_pos")),
         Widget("toggle", BTN_TOGGLE, radius=18,
                fill=lambda p: COL_ON if p._state.translation_on else COL_OFF,
                draw=_toggle_draw("btn_trans_on", "btn_trans_off", "my_to_other",
                                  lambda p: p._state.translation_on)),
-        Widget("prev", BTN_PREV, radius=16, draw=_arrow_draw("◀")),
-        # tapping the language name opens the grid picker page
         Widget("lang", BTN_LANG, radius=16,
                fill=lambda p: COL_INSET,
                draw=_lang_label_draw(lambda p: p._state.target_language,
                                      "out_lang")),
-        Widget("next", BTN_NEXT, radius=16, draw=_arrow_draw("▶")),
         Widget("sub_toggle", BTN_SUB_TOGGLE, radius=18,
                fill=lambda p: COL_SUB_ON if p._state.subtitles_on else COL_BTN,
                draw=_toggle_draw("btn_sub_on", "btn_sub_off", "other_to_sub",
                                  lambda p: p._state.subtitles_on)),
-        Widget("sub_prev", BTN_SUB_PREV, radius=16, draw=_arrow_draw("◀")),
         Widget("sub_lang", BTN_SUB_LANG, radius=16,
                fill=lambda p: COL_INSET,
                draw=_lang_label_draw(lambda p: p._state.inbound_language,
                                      "sub_lang")),
-        Widget("sub_next", BTN_SUB_NEXT, radius=16, draw=_arrow_draw("▶")),
-        Widget("restart", BTN_RESTART,
-               enabled=lambda p: not p._restart_pending,
+    ) + _nav_widgets("main")
+
+
+def _build_settings_widgets(*, soniox: bool) -> tuple:
+    widgets = (
+        Widget("uilang", BTN_UILANG, page="settings", draw=_ui_language_draw),
+        Widget("text_only", BTN_TEXT_ONLY, page="settings",
+               enabled=lambda p: not p._speaker_context_pending,
+               fill=lambda p: COL_SUB_ON if p._state.text_only else COL_BTN,
+               label=lambda p, lang: tr(lang, "btn_text_only_on"
+                                        if p._state.text_only else "btn_text_only_off")),
+        Widget("font_caption", LBL_FONT_CAPTION, kind="label", page="settings",
+               fill=lambda p: COL_INSET,
+               label=lambda p, lang: tr(lang, "dash_font_size")),
+        Widget("font_minus", BTN_FONT_MINUS, page="settings",
+               enabled=lambda p: int(p._get_font_size()) > OVERLAY_FONT_MIN,
+               draw=_arrow_draw("−")),
+        Widget("font_size", LBL_FONT_SIZE, kind="label", page="settings",
+               fill=lambda p: COL_INSET, draw=_font_size_draw),
+        Widget("font_plus", BTN_FONT_PLUS, page="settings",
+               enabled=lambda p: int(p._get_font_size()) < OVERLAY_FONT_MAX,
+               draw=_arrow_draw("+")),
+        Widget("edit", BTN_EDIT, page="settings",
+               fill=lambda p: COL_DRAG if p._state.wrist_edit_mode else COL_BTN,
+               label=lambda p, lang: tr(lang, "vr_move_wrist")),
+        Widget("sub_edit", BTN_SUB_EDIT, page="settings",
+               fill=lambda p: COL_DRAG if p._state.edit_mode else COL_BTN,
+               label=lambda p, lang: tr(lang, "vr_move_subtitles")),
+        # Retain the reset target semantics and make its active target explicit.
+        Widget("reset", BTN_RESET, page="settings",
+               fill=lambda p: COL_DRAG if p._state.edit_mode else COL_BTN,
+               label=lambda p, lang: tr(lang, "reset_sub_pos"
+                                        if p._state.edit_mode else "reset_watch_pos")),
+        Widget("restart", BTN_RESTART if soniox else BTN_SPEAKER_CONTEXT,
+               page="settings",
+               enabled=lambda p: not (p._restart_pending or p._speaker_context_pending),
                label=lambda p, lang: tr(lang, "btn_restarting"
                                         if p._restart_pending
                                         else "btn_restart_runtime")),
-        Widget("font_minus", BTN_FONT_MINUS,
-               enabled=lambda p: int(p._get_font_size()) > OVERLAY_FONT_MIN,
-               draw=_arrow_draw("−")),
-        Widget("font_size", LBL_FONT_SIZE, kind="label",
-               fill=lambda p: COL_INSET, draw=_font_size_draw),
-        Widget("font_plus", BTN_FONT_PLUS,
-               enabled=lambda p: int(p._get_font_size()) < OVERLAY_FONT_MAX,
-               draw=_arrow_draw("+")),
     )
+    if soniox:
+        widgets += (Widget(
+            "speaker_context", BTN_SPEAKER_CONTEXT, page="settings",
+            enabled=lambda p: not (p._speaker_context_pending or p._restart_pending),
+            fill=lambda p: COL_SUB_ON if p._get_speaker_context()[0] else COL_BTN,
+            draw=_speaker_context_draw),)
+    return widgets + _nav_widgets("settings")
 
 
 class WristPanel:
@@ -202,7 +243,10 @@ class WristPanel:
                  get_status_info=lambda: (False, "status_stopped", ""),
                  on_restart=lambda: None,
                  on_font_size=lambda size: None,
-                 get_font_size=lambda: 27):
+                 get_font_size=lambda: 27,
+                 get_provider=lambda: "gemini",
+                 get_speaker_context=lambda: (True, 60.0),
+                 set_speaker_context=lambda enabled, on_done: on_done(False)):
         self._state = state
         self._languages = languages or ["en"]
         self._inbound_languages = inbound_languages or ["ko", "en"]
@@ -220,6 +264,9 @@ class WristPanel:
         self._on_restart = on_restart
         self._on_font_size = on_font_size
         self._get_font_size = get_font_size
+        self._get_provider = get_provider
+        self._get_speaker_context = get_speaker_context
+        self._set_speaker_context = set_speaker_context
         font_path = resolve_font_path(font_path, "NotoSansCJKkr-Bold.otf")
         self._font_big = load_fallback_font(font_path, 54, bold=True)
         self._font_mid = load_fallback_font(font_path, 36, bold=True)
@@ -227,6 +274,10 @@ class WristPanel:
         self._font_tiny = load_fallback_font(font_path, 18, bold=True)
 
         self._widgets = _build_widgets()
+        self._settings_widgets = {
+            False: _build_settings_widgets(soniox=False),
+            True: _build_settings_widgets(soniox=True),
+        }
         self._page = "main"
         self._hover = None
         self._pressed_name = None
@@ -235,13 +286,14 @@ class WristPanel:
         self._restart_pending = False
         self._restart_started = 0.0
         self._restart_seen_transition = False
+        self._speaker_context_pending = False
+        self._speaker_context_failed = False
+        self._speaker_context_error_until = 0.0
+        self._speaker_context_failure_state = None
+        self._last_controls = None
         self._click_handlers = {
             "toggle": self._toggle_translation,
             "sub_toggle": self._toggle_subtitles,
-            "prev": lambda: self._cycle_out_lang(-1),
-            "next": lambda: self._cycle_out_lang(1),
-            "sub_prev": lambda: self._cycle_in_lang(-1),
-            "sub_next": lambda: self._cycle_in_lang(1),
             "edit": self._toggle_wrist_edit,
             "sub_edit": self._toggle_sub_edit,
             "uilang": self._cycle_ui_lang,
@@ -250,6 +302,9 @@ class WristPanel:
             "font_minus": lambda: self._bump_font(-2),
             "font_plus": lambda: self._bump_font(2),
             "reset": self._reset,
+            "speaker_context": self._toggle_speaker_context,
+            "nav_live": lambda: self._set_page("main"),
+            "nav_settings": lambda: self._set_page("settings"),
             "lang": lambda: self._open_picker("out"),
             "sub_lang": lambda: self._open_picker("in"),
             "picker_close": self._close_picker,
@@ -374,7 +429,15 @@ class WristPanel:
             if status != self._last_status:
                 self._last_status = status
                 self._dirty.set()
+            # These values can also change from the desktop UI without an
+            # AppState event. Refresh the visible controls at the same 1 Hz.
+            controls = (self._get_provider(), self._get_speaker_context(),
+                        int(self._get_font_size()))
+            if controls != self._last_controls:
+                self._last_controls = controls
+                self._dirty.set()
             self._update_restart_pending(status, now)
+            self._update_context_feedback(now)
         status = self._last_status or (False, "status_stopped", "")
 
         new_hover = None
@@ -543,6 +606,11 @@ class WristPanel:
                 True, (x, y))
 
     def _on_click(self, button: str) -> None:
+        widget = next((w for w in self._active_widgets()
+                       if w.name == button and w.page == self._page
+                       and w.kind == "button"), None)
+        if widget is None or not is_enabled(widget, self):
+            return
         log.info("wrist panel click: %s", button)
         if button.startswith("pick_out:"):
             self._state.target_language = button.split(":", 1)[1]
@@ -557,6 +625,12 @@ class WristPanel:
             handler()
 
     # ---------------- language grid picker ----------------
+    def _set_page(self, page: str) -> None:
+        self._page = page
+        self._hover = None
+        self._pressed_name = None
+        self._dirty.set()
+
     def _open_picker(self, kind: str) -> None:
         langs = self._languages if kind == "out" else self._inbound_languages
         current = (self._state.target_language if kind == "out"
@@ -564,15 +638,11 @@ class WristPanel:
         per_page = PICKER_COLS * PICKER_ROWS
         self._picker_idx = (langs.index(current) // per_page
                             if current in langs else 0)
-        self._page = "lang_out" if kind == "out" else "lang_in"
-        self._hover = None
-        self._dirty.set()
+        self._set_page("lang_out" if kind == "out" else "lang_in")
 
     def _close_picker(self) -> None:
-        if self._page != "main":
-            self._page = "main"
-            self._hover = None
-            self._dirty.set()
+        if self._page in ("lang_out", "lang_in"):
+            self._set_page("main")
 
     def _flip_picker_page(self, step: int) -> None:
         langs = (self._languages if self._page == "lang_out"
@@ -584,6 +654,8 @@ class WristPanel:
     def _active_widgets(self) -> tuple:
         if self._page == "main":
             return self._widgets
+        if self._page == "settings":
+            return self._settings_widgets[self._get_provider() == "soniox"]
         key = (self._page, self._picker_idx)
         cached = self._picker_cache.get(key)
         if cached is None:
@@ -615,7 +687,7 @@ class WristPanel:
             current_of=(lambda p: p._state.target_language) if out
                        else (lambda p: p._state.inbound_language),
             accent=COL_ON if out else COL_SUB_ON)
-        return tuple(widgets)
+        return tuple(widgets) + _nav_widgets(page)
 
     # ---------------- click handlers ----------------
     def _toggle_translation(self) -> None:
@@ -643,10 +715,39 @@ class WristPanel:
         self._state.ui_lang = cycle(UI_LANGS, self._state.ui_lang, 1)
 
     def _toggle_text_only(self) -> None:
-        self._on_text_only_toggle(not self._state.text_only)
+        if not self._speaker_context_pending:
+            self._on_text_only_toggle(not self._state.text_only)
+
+    def _toggle_speaker_context(self) -> None:
+        if self._get_provider() != "soniox" or self._speaker_context_pending \
+                or self._restart_pending:
+            return
+        self._speaker_context_pending = True
+        self._speaker_context_failed = False
+        self._dirty.set()
+
+        def done(ok: bool) -> None:
+            self._speaker_context_error_until = 0.0 if ok else time.time() + 5.0
+            self._speaker_context_failure_state = self._get_speaker_context()
+            self._speaker_context_pending = False
+            self._speaker_context_failed = not ok
+            self._dirty.set()
+
+        try:
+            self._set_speaker_context(not self._get_speaker_context()[0], done)
+        except Exception:
+            log.exception("wrist panel: speaker context update failed")
+            done(False)
+
+    def _update_context_feedback(self, now: float) -> None:
+        if self._speaker_context_failed and (
+                now >= self._speaker_context_error_until
+                or self._get_speaker_context() != self._speaker_context_failure_state):
+            self._speaker_context_failed = False
+            self._dirty.set()
 
     def _restart(self) -> None:
-        if self._restart_pending:
+        if self._restart_pending or self._speaker_context_pending:
             return
         self._restart_pending = True
         self._restart_started = time.time()
@@ -696,18 +797,19 @@ class WristPanel:
                             width=4)
 
         dot = status_dot_color(connected, status_key)
-        if self._page == "main":
-            d.ellipse((20, 28, 44, 52), fill=dot)
-            self._font_tiny.draw(d, (54, 40), "vrclt", fill=COL_TEXT, anchor="lm")
+        if self._page in ("main", "settings"):
+            d.ellipse((20, 24, 40, 44), fill=dot)
+            self._font_small.draw(d, (52, 34), "vrclt", fill=COL_TEXT, anchor="lm")
+            draw_fit_text(d, (166, 14, 624, 50),
+                          self._get_provider().upper(),
+                          fonts=(self._font_small,), fill=COL_DIM, max_lines=1)
+            draw_fit_text(d, (16, 51, 624, 78), tr(lang, status_key),
+                          fonts=(self._font_tiny,), fill=dot, max_lines=1)
 
         draw_page(self, d, self._active_widgets(), lang, page=self._page,
                   hover=self._hover if self._engaged else None,
                   pressed=self._pressed_name)
 
-        if self._page == "main" and status_key != "status_running":
-            draw_fit_text(d, LBL_STATUS, tr(lang, status_key),
-                          fonts=(self._font_tiny,), fill=dot, max_lines=2,
-                          pad_x=2, pad_y=2)
         return img
 
     # ---------------- transforms ----------------

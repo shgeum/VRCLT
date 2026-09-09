@@ -1297,6 +1297,17 @@ class MainWindow(QtWidgets.QMainWindow):
             self._text_only.blockSignals(blocked)
 
     def _sync_speaker_context(self) -> None:
+        sx = self._controller.cfg.get("soniox", {})
+        signature = (sx.get("keep_speaker_context", True),
+                     sx.get("speaker_context_idle_sec", 60.0))
+        previous = getattr(self, "_speaker_context_config_signature", None)
+        self._speaker_context_config_signature = signature
+        if previous is not None and signature != previous:
+            # VR can change this setting without replacing unrelated draft
+            # values the user is editing on the desktop Settings page.
+            paths = ("soniox.keep_speaker_context", "soniox.speaker_context_idle_sec")
+            self._settings_form.sync_from_config(tuple(
+                path for path, old, new in zip(paths, previous, signature) if old != new))
         self._keep_speaker_context.setVisible(
             config_mod.provider(self._controller.cfg) == "soniox")
         self._soniox_idle_hint.setVisible(

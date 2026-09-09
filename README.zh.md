@@ -118,7 +118,7 @@ API 密钥会以明文保存在该文件中。
 
 1. 打开 [Soniox 控制台](https://console.soniox.com)，注册账号并登录。
 2. 打开 **My First Project** 或要使用的项目，在 **API Keys** 中创建密钥。
-   参见[官方入门指南](https://soniox.com/docs/stt/get-started)。v0.19.0 使用美国(US)服务器，
+   参见[官方入门指南](https://soniox.com/docs/stt/get-started)。v0.19.1 使用美国(US)服务器，
    如果可以选择区域，请使用 **US 项目**；目前尚无切换其他区域服务器的设置。
    [区域说明](https://soniox.com/docs/data-residency)
 3. 在 [Billing overview](https://console.soniox.com/org/billing/overview/) 查看 API 余额，
@@ -230,7 +230,7 @@ vrclt 支持四种实时翻译引擎，通过 **翻译引擎** 设置（`config.
 Qwen 注意事项:
 
 - **必须设置语音语言。** 可在设置标签页、仪表板标签页或 SteamVR 仪表板面板的
-  底部一行设置。留空按英语处理。
+  **对话**页面设置。留空按英语处理。
 - `zh-Hans`/`zh-Hant` 目标语言发送给 Qwen 时都会作为 `zh`。
 - 如果所选目标语言没有 Qwen 语音支持，vrclt 会自动以仅文本方式运行会话
   （聊天框/字幕仍正常工作）。
@@ -341,8 +341,9 @@ VRChat 模式可使用:
 - 翻译文本的 OSC 聊天框输出
 - `VRCLT_Enabled`、`VRCLT_Lang` 等角色 OSC 参数
 - 用于入站字幕的 SteamVR 字幕叠加层
-- 可在 VR 内控制的 SteamVR 手腕菜单 — 含运行时重启、字幕字号和连接/错误状态显示
-- SteamVR 仪表板设置面板（打开 SteamVR 菜单并选择 vrclt 图标）；包含麦克风和语音输出设备选择 — 最后一次点击稍后会随运行时重启一起生效 — 以及翻译语音音量和错误状态显示（正在重连、配额用尽、API 密钥无效），还有 Qwen 引擎的语音语言一行
+- 分为**对话 / 设置**两页的 SteamVR 手腕菜单：翻译、字幕、语言和连接状态与运行时重启、字幕字号、面板位置设置分开显示。保留原有的视线与握持操作
+- 分为**对话 / 音频 / 位置与应用**三页的 SteamVR 仪表板（在 SteamVR 菜单中选择 vrclt 图标）。**对话**集中翻译、字幕、语言及连接/错误状态；**音频**包含麦克风、语音输出选择及翻译语音音量；**位置与应用**集中面板位置和应用控制。设备变更会在最后一次点击稍后随运行时重启一起生效
+- SteamVR 仪表板可设置 Qwen 的语音语言及 Soniox 的可选识别提示；手腕菜单可选择翻译输出语言和字幕语言。选择 Soniox 时，两个 VR 面板均显示**保持说话人上下文**及当前生效的静音超时时间，与 PC UI 共用保存值。关闭此开关后，说话人分离本身仍保持开启
 - 随 SteamVR 自动启动: 发布版 exe 会自动注册到 SteamVR 设置 > 启动/叠加层应用，可在 SteamVR 设置或 vrclt 设置中开关自动启动
 - 更新到新版本后请先运行一次新 exe。注册本身会保留，但自动启动指向的 exe 路径需要首次运行时才会更新为新文件
 - VR 字幕编辑 laser/cursor 显示和角落尺寸调整手柄
@@ -547,14 +548,14 @@ dist\vrclt.exe
 创建发布产物:
 
 ```powershell
-.\scripts\package_release.ps1 -Version 0.19.0
+.\scripts\package_release.ps1 -Version 0.19.1
 ```
 
 发布脚本会生成:
 
 ```text
-release\vrclt-v0.19.0-windows-x64.exe
-release\vrclt-v0.19.0-windows-x64.exe.sha256
+release\vrclt-v0.19.1-windows-x64.exe
+release\vrclt-v0.19.1-windows-x64.exe.sha256
 ```
 
 ## 冒烟测试
@@ -563,7 +564,7 @@ release\vrclt-v0.19.0-windows-x64.exe.sha256
 .\.venv\Scripts\python.exe -m compileall vrclt
 .\.venv\Scripts\python.exe -m vrclt --help
 .\.venv\Scripts\pyinstaller.exe vrclt.spec --noconfirm
-.\scripts\package_release.ps1 -Version 0.19.0 -SkipBuild
+.\scripts\package_release.ps1 -Version 0.19.1 -SkipBuild
 ```
 
 实际运行时测试流程: 运行 exe，在原生 UI 中保存设置，确认

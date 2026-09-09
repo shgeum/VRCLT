@@ -118,7 +118,7 @@ Gemini の代わりに **Alibaba Qwen3.5 LiveTranslate** を使えます。
 1. [Soniox コンソール](https://console.soniox.com)でアカウントを作成し、ログインします。
 2. **My First Project** または使用するプロジェクトを開き、**API Keys** でキーを作成します。
    [公式の開始ガイド](https://soniox.com/docs/stt/get-started)を参照してください。
-   v0.19.0 は米国(US)サーバーを使用するため、リージョンを選べる場合は **US プロジェクト**を
+   v0.19.1 は米国(US)サーバーを使用するため、リージョンを選べる場合は **US プロジェクト**を
    使用します。他リージョンへの切り替え設定は未対応です。[リージョン案内](https://soniox.com/docs/data-residency)
 3. [Billing overview](https://console.soniox.com/org/billing/overview/) で API 残高を確認し、
    必要に応じてチャージします。[API 料金表](https://soniox.com/pricing)も確認してください。
@@ -237,7 +237,7 @@ vrclt は 4 つのリアルタイム翻訳エンジンに対応し、**翻訳エ
 Qwen の注意点:
 
 - **発話言語の設定が必須です。** 設定タブ、ダッシュボードタブ、または SteamVR
-  ダッシュボードパネルの最下段で設定します。空の場合は英語として扱われます。
+  ダッシュボードの **会話** ページで設定します。空の場合は英語として扱われます。
 - `zh-Hans`/`zh-Hant` の対象言語は、どちらも `zh` として Qwen に送られます。
 - 選んだ対象言語に Qwen の音声対応がない場合、vrclt は自動でセッションを
   テキストのみで実行します（チャットボックス/字幕は動作し続けます）。
@@ -351,8 +351,9 @@ VRChat モードでは次の機能を使えます。
 - 翻訳テキストの OSC チャットボックス出力
 - `VRCLT_Enabled`、`VRCLT_Lang` などのアバター OSC パラメーター
 - 受信側字幕用の SteamVR 字幕オーバーレイ
-- VR 内で操作できる SteamVR 手首メニュー — ランタイム再起動、字幕文字サイズ、接続/エラー状態表示付き
-- SteamVR ダッシュボード設定パネル（SteamVR メニューを開いて vrclt アイコンを選択）。マイク・音声出力デバイスの選択も可能 — 最後のクリックから少し後にランタイム再起動とともに適用されます — さらに翻訳音声の音量と、エラー状態表示（再接続中、クォータ超過、API キー無効）、Qwen エンジン用の発話言語の行
+- **会話 / 設定** に分かれた SteamVR 手首メニュー。翻訳・字幕・言語・接続状態と、ランタイム再起動・字幕サイズ・パネル位置設定を分けて表示します。既存の視線・グリップ操作も引き続き利用できます
+- **会話 / 音声 / 配置・アプリ** に分かれた SteamVR ダッシュボード（SteamVR メニューで vrclt アイコンを選択）。**会話**には翻訳・字幕・言語・接続/エラー状態、**音声**にはマイク・音声出力の選択と翻訳音声の音量、**配置・アプリ**にはパネル位置とアプリの操作があります。デバイス変更は最後のクリックから少し後にランタイム再起動とともに適用されます
+- SteamVR ダッシュボードでは Qwen の発話言語と Soniox の任意の認識ヒントを設定でき、手首メニューでは翻訳の出力言語と字幕言語を選択できます。Soniox 選択時は両方の VR パネルに **話者コンテキストの維持** と適用中の無音タイムアウトが表示され、PC UI と同じ保存値を使用します。このスイッチを無効にしても話者分離自体は有効です
 - SteamVR 自動起動: リリース版 exe は SteamVR 設定 > スタートアップ/オーバーレイアプリに自動登録され、自動起動は SteamVR 設定または vrclt 設定で切り替えます
 - 新しいバージョンに更新した後は、新しい exe を一度起動してください。登録自体は維持されますが、自動起動が参照する exe パスは初回起動時に新しいファイルへ更新されます
 - VR 字幕編集 laser/cursor 表示と角ハンドルでのサイズ調整
@@ -559,14 +560,14 @@ dist\vrclt.exe
 リリース成果物を作成:
 
 ```powershell
-.\scripts\package_release.ps1 -Version 0.19.0
+.\scripts\package_release.ps1 -Version 0.19.1
 ```
 
 リリーススクリプトの結果:
 
 ```text
-release\vrclt-v0.19.0-windows-x64.exe
-release\vrclt-v0.19.0-windows-x64.exe.sha256
+release\vrclt-v0.19.1-windows-x64.exe
+release\vrclt-v0.19.1-windows-x64.exe.sha256
 ```
 
 ## スモークテスト
@@ -575,7 +576,7 @@ release\vrclt-v0.19.0-windows-x64.exe.sha256
 .\.venv\Scripts\python.exe -m compileall vrclt
 .\.venv\Scripts\python.exe -m vrclt --help
 .\.venv\Scripts\pyinstaller.exe vrclt.spec --noconfirm
-.\scripts\package_release.ps1 -Version 0.19.0 -SkipBuild
+.\scripts\package_release.ps1 -Version 0.19.1 -SkipBuild
 ```
 
 実際のランタイムテストは、exe を起動し、ネイティブ UI で設定を保存し、

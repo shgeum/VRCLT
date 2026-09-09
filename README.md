@@ -119,7 +119,7 @@ China), vrclt can use **Alibaba Qwen3.5 LiveTranslate** instead of Gemini:
 1. Open the [Soniox Console](https://console.soniox.com), create an account, and sign in.
 2. Open **My First Project** or your chosen project, then create a key under
    **API Keys**. See the [official setup guide](https://soniox.com/docs/stt/get-started).
-   v0.19.0 uses US endpoints, so choose a **US project** if region selection is
+   v0.19.1 uses US endpoints, so choose a **US project** if region selection is
    available; switching to other regional endpoints is not yet configurable.
    See [Soniox regions](https://soniox.com/docs/data-residency).
 3. Check your API balance in [Billing overview](https://console.soniox.com/org/billing/overview/)
@@ -261,7 +261,7 @@ directions: your voice and the inbound subtitles.
 Qwen notes:
 
 - **Spoken language is required.** Set it in Settings, on the Dashboard tab,
-  or on the SteamVR dashboard panel's bottom row. Empty is treated as English.
+  or on the SteamVR Dashboard's **Live** page. Empty is treated as English.
 - `zh-Hans`/`zh-Hant` targets are both sent to Qwen as `zh`.
 - If the chosen target has no Qwen voice support, vrclt automatically runs the
   session text-only (chatbox/subtitles keep working).
@@ -383,8 +383,9 @@ VRChat mode can use:
 - OSC chatbox output for translated text
 - Avatar OSC parameters such as `VRCLT_Enabled` and `VRCLT_Lang`
 - SteamVR subtitle overlay for inbound subtitles
-- SteamVR wrist menu for in-VR controls, including runtime restart, subtitle font size, and a connection/error status readout
-- SteamVR dashboard settings panel (open the SteamVR menu and pick the vrclt icon); includes mic and voice-output device pickers — changes apply shortly after the last click with a runtime restart — plus translated-voice volume, an error status line (reconnecting, quota exceeded, invalid API key), and a spoken-language row for the Qwen engine
+- SteamVR wrist menu with **Live** and **Settings** pages: translation, subtitles, languages, and connection status are separated from runtime restart, subtitle sizing, and panel positioning. Gaze/grip interactions remain available
+- SteamVR Dashboard with **Live**, **Audio**, and **Layout & app** pages (open the SteamVR menu and pick the vrclt icon). **Live** groups translation, subtitles, languages, and connection/error status; **Audio** contains microphone/voice-output selection and translated-voice volume; **Layout & app** groups panel positioning and app controls. Device changes apply shortly after the last click with a runtime restart
+- The SteamVR Dashboard offers spoken-language controls for Qwen and optional recognition hints for Soniox; the wrist menu selects translation output and subtitle languages. With Soniox selected, both VR panels show **Keep speaker context** and the effective silence timeout; the switch shares the saved setting with the PC UI. Speaker diarization stays enabled when the switch is off
 - Auto-start with SteamVR: the release exe registers itself in SteamVR Settings > Startup/Overlay Apps; toggle auto-launch there or in vrclt Settings
 - After updating to a new release, run the new exe once so auto-start points at the new file (the registration itself survives updates; only the recorded exe path needs that first run to refresh)
 - Visible VR subtitle edit laser/cursor with corner resize handles
@@ -592,14 +593,14 @@ dist\vrclt.exe
 Create release artifacts:
 
 ```powershell
-.\scripts\package_release.ps1 -Version 0.19.0
+.\scripts\package_release.ps1 -Version 0.19.1
 ```
 
 The release script creates:
 
 ```text
-release\vrclt-v0.19.0-windows-x64.exe
-release\vrclt-v0.19.0-windows-x64.exe.sha256
+release\vrclt-v0.19.1-windows-x64.exe
+release\vrclt-v0.19.1-windows-x64.exe.sha256
 ```
 
 ## Smoke Tests
@@ -608,7 +609,7 @@ release\vrclt-v0.19.0-windows-x64.exe.sha256
 .\.venv\Scripts\python.exe -m compileall vrclt
 .\.venv\Scripts\python.exe -m vrclt --help
 .\.venv\Scripts\pyinstaller.exe vrclt.spec --noconfirm
-.\scripts\package_release.ps1 -Version 0.19.0 -SkipBuild
+.\scripts\package_release.ps1 -Version 0.19.1 -SkipBuild
 ```
 
 For a real runtime test, run the exe, save settings in the native UI, confirm

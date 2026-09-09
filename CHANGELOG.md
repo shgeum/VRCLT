@@ -7,6 +7,23 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 Release artifacts are attached to [GitHub Releases](https://github.com/shgeum/VRCLT/releases)
 as `vrclt-v<version>-windows-x64.exe` plus a `.sha256` checksum.
 
+## [0.19.1] - 2026-09-09
+
+### Changed
+
+- SteamVR Dashboard controls are grouped into Live, Audio, and Layout & app
+  pages. Translation, subtitles, languages, and connection status stay together;
+  device selection and panel positioning have dedicated pages.
+- The wrist menu separates frequent Live controls from Settings, preserving
+  runtime restart, subtitle sizing, panel positioning, and gaze/grip interactions.
+- Both VR panels show Soniox's speaker-context switch and effective silence
+  timeout. The SteamVR Dashboard offers spoken-language controls for Qwen and
+  optional Soniox recognition hints; the wrist menu selects translation output
+  and subtitle languages. Speaker diarization remains enabled regardless of the
+  context switch.
+- English, Korean, Japanese, and Chinese README instructions describe the VR
+  controls and use the v0.19.1 release filenames.
+
 ## [0.19.0] - 2026-09-08
 
 ### Added

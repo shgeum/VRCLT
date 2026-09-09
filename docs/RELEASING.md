@@ -45,7 +45,7 @@ Expected release-related source files include:
 - `README.zh.md`
 - `CHANGELOG.md`
 - `docs/RELEASING.md`
-- `docs/releases/v0.19.0.md`
+- `docs/releases/v0.19.1.md`
 - `config.example.yaml`
 - `requirements.txt`
 - `vrclt.spec`
@@ -61,13 +61,17 @@ Run the lightweight checks first:
 .\.venv\Scripts\python.exe -m vrclt --help
 ```
 
-For v0.19.0, also run the regression scripts for Soniox, speaker displays,
-settings navigation, logs, reconnect waits, audio passthrough, and startup:
+For v0.19.1, also run the regression scripts for Soniox, speech activity,
+speaker displays/context controls, VR pages and interaction, settings navigation,
+logs, reconnect waits, audio passthrough, and startup:
 
 ```powershell
 $releaseChecks = @(
-  'smoke_soniox_session.py', 'smoke_subtitle_speakers.py',
+  'smoke_soniox_session.py', 'smoke_speech_activity.py',
+  'smoke_subtitle_speakers.py', 'smoke_speaker_context.py',
   'smoke_speaker_ui.py', 'smoke_vr_speakers.py',
+  'smoke_vr_render.py', 'test_vr_button_table.py',
+  'smoke_wrist_navigation.py', 'smoke_vr_navigation.py',
   'smoke_settings_navigation.py', 'smoke_logpanel.py',
   'smoke_session_wait.py', 'smoke_audio_passthrough.py',
   'smoke_pipeline_startup.py'
@@ -130,25 +134,25 @@ executable before copying it. Windows file and product versions also use the
 application version from the spec.
 
 ```powershell
-.\scripts\package_release.ps1 -Version 0.19.0
+.\scripts\package_release.ps1 -Version 0.19.1
 ```
 
 If `dist\vrclt.exe` has already been built and only the release copy needs to be
 refreshed:
 
 ```powershell
-.\scripts\package_release.ps1 -Version 0.19.0 -SkipBuild
+.\scripts\package_release.ps1 -Version 0.19.1 -SkipBuild
 ```
 
 Use `-SkipBuild` only when that executable was built from the exact source being
 released. Confirm `vrclt/__init__.py`, the changelog, and the artifact name all
-use `0.19.0`.
+use `0.19.1`.
 
 Expected output:
 
 ```text
-release\vrclt-v0.19.0-windows-x64.exe
-release\vrclt-v0.19.0-windows-x64.exe.sha256
+release\vrclt-v0.19.1-windows-x64.exe
+release\vrclt-v0.19.1-windows-x64.exe.sha256
 ```
 
 ## 5. Smoke Test The Executable
@@ -163,9 +167,9 @@ Repeat the launch check with the packaged release executable, which is the file
 users download:
 
 ```powershell
-.\release\vrclt-v0.19.0-windows-x64.exe
-Get-FileHash .\release\vrclt-v0.19.0-windows-x64.exe -Algorithm SHA256
-Get-Content .\release\vrclt-v0.19.0-windows-x64.exe.sha256
+.\release\vrclt-v0.19.1-windows-x64.exe
+Get-FileHash .\release\vrclt-v0.19.1-windows-x64.exe -Algorithm SHA256
+Get-Content .\release\vrclt-v0.19.1-windows-x64.exe.sha256
 ```
 
 The computed hash must match the checksum file. An existing process or a
@@ -226,13 +230,31 @@ Soniox release checks:
   `SONIOX_API_KEY` in the environment.
 - Use two speakers and confirm speaker numbers/colors, original/translated text
   association, and turn order in the Dashboard, desktop overlay, and VR overlay.
-- Confirm **Keep speaker context** is enabled by default and the billing note is
-  visible. Active recognition connections stay billable during silence, including
+- Confirm **Keep speaker context** is enabled by default, its effective silence
+  timeout appears on the PC and VR panels, and the billing note is visible on the
+  PC UI. With the default configuration, verify disconnect after 60 seconds of
+  silence and automatic reconnect when speech resumes. Check that transmitted
+  silence or keepalive data does not reset the speech-activity timer.
+  Active recognition connections stay billable during silence, including
   text-only use; see [Soniox keepalive billing](https://soniox.com/docs/stt/rt/connection-keepalive).
 - With context retention off, verify idle disconnect and a new speaker context
   after reconnecting. Speaker numbers are session-local, not persistent identities.
 - Verify text-only use and optional translated voice separately. Translated voice
   uses the selected TTS voice; speaker labels do not imply automatic voice cloning.
+
+VR page checks:
+
+- Open the SteamVR Dashboard and switch between Live, Audio, and Layout & app.
+  Confirm controls only respond on their visible page and language pickers close
+  cleanly when changing pages.
+- On the wrist menu, switch between Live and Settings and exercise translation,
+  subtitles, language selection, subtitle sizing, restart, and panel positioning.
+  Check gaze/grip behavior and controller pointer targets on a physical headset.
+- On the SteamVR Dashboard, confirm Qwen source-language choices and optional
+  Soniox recognition hints are available. Check translation output and subtitle
+  language choices on both VR panels. With Soniox, change the speaker-context
+  switch in either VR panel and confirm the
+  other panels and PC settings display the same saved value and timeout.
 
 If these live checks or headset checks have not been performed, leave that limit
 explicit in the release notes.
@@ -243,17 +265,17 @@ After validation, commit only source changes:
 
 ```powershell
 git status
-git add README.md README.ko.md README.en.md README.ja.md README.zh.md CHANGELOG.md docs/RELEASING.md docs/releases/v0.19.0.md config.example.yaml requirements.txt vrclt.spec scripts/package_release.ps1 vrclt tests
+git add README.md README.ko.md README.en.md README.ja.md README.zh.md CHANGELOG.md docs/RELEASING.md docs/releases/v0.19.1.md config.example.yaml requirements.txt vrclt.spec scripts/package_release.ps1 vrclt tests
 git status
-git commit -m "chore: prepare v0.19.0 release"
+git commit -m "chore: prepare v0.19.1 release"
 ```
 
 Create and push the tag:
 
 ```powershell
-git tag v0.19.0
+git tag v0.19.1
 git push origin main
-git push origin v0.19.0
+git push origin v0.19.1
 ```
 
 Use a new version number if the tag already exists.
@@ -263,18 +285,18 @@ Use a new version number if the tag already exists.
 Upload these files to a GitHub Release:
 
 ```text
-release\vrclt-v0.19.0-windows-x64.exe
-release\vrclt-v0.19.0-windows-x64.exe.sha256
+release\vrclt-v0.19.1-windows-x64.exe
+release\vrclt-v0.19.1-windows-x64.exe.sha256
 ```
 
 With GitHub CLI:
 
 ```powershell
-gh release create v0.19.0 `
-  .\release\vrclt-v0.19.0-windows-x64.exe `
-  .\release\vrclt-v0.19.0-windows-x64.exe.sha256 `
-  --title "vrclt v0.19.0" `
-  --notes-file .\docs\releases\v0.19.0.md
+gh release create v0.19.1 `
+  .\release\vrclt-v0.19.1-windows-x64.exe `
+  .\release\vrclt-v0.19.1-windows-x64.exe.sha256 `
+  --title "vrclt v0.19.1" `
+  --notes-file .\docs\releases\v0.19.1.md
 ```
 
 ## 9. Release Notes Checklist
@@ -285,8 +307,12 @@ Include these points in the release body:
 - VB-Audio Virtual Cable is required.
 - The selected engine's API key is configured in the Settings tab.
 - Soniox speaker labels preserve turn order and are local to the current session.
-- Soniox keeps speaker context by default; the full connected recognition stream
-  is billable, including silence. The option can be disabled in Settings.
+- SteamVR Dashboard pages group Live, Audio, and Layout & app controls; the wrist
+  menu separates Live controls from Settings.
+- Soniox keeps speaker context by default with a 60-second silence limit,
+  adjustable from 5 to 600 seconds. The context switch and effective timeout
+  appear in both VR panels. The full connected recognition stream remains
+  billable, including silence; existing saved switch choices are preserved.
 - State whether live Soniox calls, packaged-window launch, and physical VR/audio
   checks were completed; do not equate local mock tests with those checks.
 - User settings are stored in `%LOCALAPPDATA%\vrclt\config.yaml`.

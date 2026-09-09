@@ -90,7 +90,10 @@ def make_wrist_panel(cfg, state, get_status_info, on_text_only_toggle=lambda ena
                      on_transform_changed=lambda matrix, reset=False: None,
                      on_restart=lambda: None,
                      on_font_size=lambda size: None,
-                     get_font_size=lambda: 27):
+                     get_font_size=lambda: 27,
+                     get_provider=lambda: "gemini",
+                     get_speaker_context=lambda: (True, 60.0),
+                     set_speaker_context=lambda enabled, on_done: on_done(False)):
     from .vr.wrist_ui import WristPanel
     w = cfg.get("wrist_ui", {})
     try:
@@ -114,6 +117,9 @@ def make_wrist_panel(cfg, state, get_status_info, on_text_only_toggle=lambda ena
         on_restart=on_restart,
         on_font_size=on_font_size,
         get_font_size=get_font_size,
+        get_provider=get_provider,
+        get_speaker_context=get_speaker_context,
+        set_speaker_context=set_speaker_context,
     )
 
 
@@ -145,7 +151,8 @@ def make_dashboard_panel(cfg, state, get_status_info, on_text_only_toggle,
                          get_auto_launch, set_auto_launch, on_restart,
                          get_devices, get_mic_device, get_tts_device,
                          set_audio_devices, on_tts_gain, get_tts_gain,
-                         get_provider):
+                         get_provider, get_speaker_context=lambda: (True, 60.0),
+                         set_speaker_context=lambda enabled, on_done: on_done(False)):
     from .vr.dashboard_panel import DashboardPanel
     w = cfg.get("wrist_ui", {})
     return DashboardPanel(
@@ -167,6 +174,8 @@ def make_dashboard_panel(cfg, state, get_status_info, on_text_only_toggle,
         on_tts_gain=on_tts_gain,
         get_tts_gain=get_tts_gain,
         get_provider=get_provider,
+        get_speaker_context=get_speaker_context,
+        set_speaker_context=set_speaker_context,
     )
 
 
@@ -756,6 +765,25 @@ class AppController:
             force_profile=True, skip_if_restarting=True,
             on_error=lambda e: setattr(self.state, "text_only", not value))
 
+    def get_speaker_context(self) -> tuple[bool, float]:
+        with self._lock:
+            return (bool(self.cfg.get("soniox", {}).get("keep_speaker_context", True)),
+                    config_mod.soniox_idle_disconnect_sec(self.cfg))
+
+    def set_speaker_context(self, enabled: bool,
+                            on_done: Callable[[bool], None] = lambda ok: None) -> None:
+        """VR-safe context switch: persist/restart off the render thread."""
+        def mutate(cfg):
+            cfg.setdefault("soniox", {})["keep_speaker_context"] = bool(enabled)
+
+        def done(ok):
+            self._notify()
+            on_done(ok)
+
+        self._mutate_and_restart(
+            "Soniox speaker context", mutate, thread_name="vrclt-speaker-context",
+            on_done=done)
+
     def set_audio_devices(self, mic: str | None, tts: str | None,
                           on_done: Callable[[bool], None] = lambda ok: None) -> None:
         """Persist outbound.mic_device / outbound.tts_device (None = leave
@@ -1079,7 +1107,10 @@ class AppController:
                         on_restart=self.restart_async,
                         on_font_size=self.set_overlay_font_size,
                         get_font_size=lambda: int(
-                            self.cfg.get("overlay", {}).get("font_size", 27))))
+                            self.cfg.get("overlay", {}).get("font_size", 27)),
+                        get_provider=self.get_provider,
+                        get_speaker_context=self.get_speaker_context,
+                        set_speaker_context=self.set_speaker_context))
                 if cfg.get("steamvr", {}).get("dashboard_panel", True):
                     panels.append(make_dashboard_panel(
                         cfg, state,
@@ -1099,7 +1130,9 @@ class AppController:
                         set_audio_devices=self.set_audio_devices,
                         on_tts_gain=self.set_tts_gain,
                         get_tts_gain=self.tts_gain,
-                        get_provider=self.get_provider))
+                        get_provider=self.get_provider,
+                        get_speaker_context=self.get_speaker_context,
+                        set_speaker_context=self.set_speaker_context))
                 if panels:
                     from .vr.render import VrRenderer
                     renderer = created_renderer = VrRenderer(

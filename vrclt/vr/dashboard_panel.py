@@ -29,7 +29,7 @@ from .panel_common import (
     COL_BG, COL_BTN, COL_DIM, COL_DRAG, COL_INSET, COL_ON, COL_OFF,
     COL_PENDING, COL_SUB_ON, COL_TEXT,
     COL_ERR_RED as COL_ERR, COL_WARN_AMBER as COL_WARN,
-    cycle, draw_fit_text, lang_block, status_dot_color,
+    cycle, draw_fit_text, language_label, status_dot_color,
 )
 from .render import GlTexture, flip_bounds
 
@@ -44,104 +44,94 @@ ICON_PATH = APPDATA_DIR / "dashboard_icon.png"
 # apply this long after the last click
 DEVICE_APPLY_DELAY_SEC = 1.8
 
-STATUS_TEXT_BOX = (280, 18, 548, 70)  # header band between version and buttons
-
-# OpenVR overlay mouse coords use a bottom-left origin; our button rects are
-# top-left. Flip determined empirically - if rows ever hit mirrored, flip this.
+# Fixed pages share header/navigation positions; content controls are large
+# enough to hit with SteamVR's pointer without crowding unrelated settings.
 MOUSE_Y_BOTTOM_UP = True
-
-# header row
-STATUS_DOT = (24, 24, 56, 56)
-BTN_UILANG = (560, 14, 668, 74)
-BTN_AUTOSTART = (684, 14, 856, 74)
-BTN_RESTART = (872, 14, 1008, 74)
-# translation row
-BTN_TOGGLE = (16, 94, 500, 300)
-BTN_PREV = (516, 94, 596, 300)
-BTN_LANG = (604, 94, 924, 300)       # label only
-BTN_NEXT = (932, 94, 1008, 300)
-# subtitles row
-BTN_SUB_TOGGLE = (16, 320, 500, 526)
-BTN_SUB_PREV = (516, 320, 596, 526)
-BTN_SUB_LANG = (604, 320, 924, 526)  # label only
-BTN_SUB_NEXT = (932, 320, 1008, 526)
-# devices row (mic / voice output pickers)
-BTN_MIC_PREV = (16, 546, 80, 642)
-LBL_MIC_DEVICE = (88, 546, 424, 642)   # label only
-BTN_MIC_NEXT = (432, 546, 496, 642)
-BTN_OUT_PREV = (528, 546, 592, 642)
-LBL_OUT_DEVICE = (600, 546, 936, 642)  # label only
-BTN_OUT_NEXT = (944, 546, 1008, 642)
-# bottom row
-BTN_TEXT_ONLY = (16, 662, 240, 740)
-BTN_FONT_MINUS = (264, 662, 344, 740)
-LBL_FONT_SIZE = (352, 662, 452, 740)  # label only
-BTN_FONT_PLUS = (460, 662, 540, 740)
-BTN_SUB_EDIT = (564, 662, 724, 740)
-BTN_WRIST_EDIT = (748, 662, 908, 740)
-BTN_RESET = (924, 662, 1008, 740)
-# volume row (translated-voice gain)
-BTN_VOL_MINUS = (16, 760, 96, 838)
-LBL_VOL_GAIN = (104, 760, 244, 838)   # label only
-BTN_VOL_PLUS = (252, 760, 332, 838)
-# source-language row (Qwen has no auto-detect; Gemini renders a dim note
-# instead and the buttons are click-gated by provider)
-BTN_SRC_PREV = (16, 858, 80, 936)
-LBL_SRC_LANG = (88, 858, 424, 936)     # label only
-BTN_SRC_NEXT = (432, 858, 496, 936)
-BTN_INSRC_PREV = (528, 858, 592, 936)
-LBL_INSRC_LANG = (600, 858, 936, 936)  # label only
-BTN_INSRC_NEXT = (944, 858, 1008, 936)
-SRC_ROW_BOX = (16, 858, 1008, 936)     # gemini-mode note area
-
-# TTS gain clamp (mirrors app_controller.set_tts_gain)
+STATUS_DOT = (24, 32, 48, 56)
+STATUS_TEXT_BOX = (544, 20, 1000, 76)
+NAV_RECTS = {"main": (24, 110, 338, 180),
+             "audio": (354, 110, 668, 180),
+             "layout": (684, 110, 1000, 180)}
+NAV_KEYS = {"main": "vr_nav_live", "audio": "vr_nav_audio", "layout": "vr_nav_layout"}
+BTN_TOGGLE = (40, 286, 484, 392)
+BTN_LANG = (40, 412, 484, 550)
+BTN_SUB_TOGGLE = (540, 286, 984, 392)
+BTN_SUB_LANG = (540, 412, 984, 550)
+BTN_SRC_PREV = (40, 574, 104, 678)
+LBL_SRC_LANG = (112, 574, 412, 678)
+BTN_SRC_NEXT = (420, 574, 484, 678)
+BTN_INSRC_PREV = (540, 574, 604, 678)
+LBL_INSRC_LANG = (612, 574, 912, 678)
+BTN_INSRC_NEXT = (920, 574, 984, 678)
+BTN_SPEAKER_CONTEXT = (24, 734, 516, 830)
+CONTEXT_NOTE_BOX = (536, 734, 1000, 830)
+BTN_MIC_PREV = (24, 274, 112, 402)
+LBL_MIC_DEVICE = (128, 274, 896, 402)
+BTN_MIC_NEXT = (912, 274, 1000, 402)
+BTN_OUT_PREV = (24, 426, 112, 554)
+LBL_OUT_DEVICE = (128, 426, 896, 554)
+BTN_OUT_NEXT = (912, 426, 1000, 554)
+BTN_VOL_MINUS = (24, 616, 152, 730)
+LBL_VOL_GAIN = (168, 616, 856, 730)
+BTN_VOL_PLUS = (872, 616, 1000, 730)
+BTN_TEXT_ONLY = (24, 768, 1000, 854)
+BTN_FONT_MINUS = (24, 264, 152, 370)
+LBL_FONT_SIZE = (168, 264, 856, 370)
+BTN_FONT_PLUS = (872, 264, 1000, 370)
+BTN_SUB_EDIT = (24, 438, 500, 544)
+BTN_WRIST_EDIT = (524, 438, 1000, 544)
+BTN_RESET = (24, 568, 1000, 644)
+BTN_UILANG = (24, 726, 328, 822)
+BTN_AUTOSTART = (344, 726, 656, 822)
+BTN_RESTART = (672, 726, 1000, 822)
 GAIN_MIN, GAIN_MAX = 0.0, 2.0
-
-# language grid picker pages ("lang_out"/"lang_in"): header strip + 4x5 grid
-PICKER_CAPTION = (24, 18, 640, 74)
-PICKER_PGPREV = (656, 18, 736, 74)
-PICKER_PGNEXT = (752, 18, 832, 74)
-PICKER_CLOSE = (924, 18, 1008, 74)
-PICKER_GRID = (16, 94, 1008, 936)
+PICKER_CAPTION = (24, 18, 640, 86)
+PICKER_PGPREV = (656, 18, 744, 86)
+PICKER_PGNEXT = (760, 18, 848, 86)
+PICKER_CLOSE = (912, 18, 1000, 86)
+PICKER_GRID = (24, 110, 1000, 926)
 PICKER_COLS, PICKER_ROWS = 4, 5
 
 
 def _build_widgets() -> tuple:
-    """Hit-test + enabled table. Rendering stays in _render (SteamVR mouse
-    events, no hover), but disabled widgets are dead to clicks here and
-    rendered dim there via the same `enabled` functions."""
-    _qwen = lambda p: p._get_provider() == "qwen"
-    _devices_free = lambda p: not p._devices_applying
-    return (
-        Widget("toggle", BTN_TOGGLE), Widget("prev", BTN_PREV),
-        Widget("lang", BTN_LANG),          # opens the grid picker
-        Widget("next", BTN_NEXT),
-        Widget("sub_toggle", BTN_SUB_TOGGLE), Widget("sub_prev", BTN_SUB_PREV),
-        Widget("sub_lang", BTN_SUB_LANG),  # opens the grid picker
-        Widget("sub_next", BTN_SUB_NEXT), Widget("text_only", BTN_TEXT_ONLY),
-        Widget("font_minus", BTN_FONT_MINUS,
-               enabled=lambda p: int(p._get_font_size()) > OVERLAY_FONT_MIN),
-        Widget("font_plus", BTN_FONT_PLUS,
-               enabled=lambda p: int(p._get_font_size()) < OVERLAY_FONT_MAX),
-        Widget("sub_edit", BTN_SUB_EDIT), Widget("wrist_edit", BTN_WRIST_EDIT),
-        Widget("reset", BTN_RESET), Widget("uilang", BTN_UILANG),
-        Widget("autostart", BTN_AUTOSTART,
-               enabled=lambda p: p._get_auto_launch() is not None),
-        Widget("restart", BTN_RESTART,
-               enabled=lambda p: not p._restart_pending),
-        Widget("mic_prev", BTN_MIC_PREV, enabled=_devices_free),
-        Widget("mic_next", BTN_MIC_NEXT, enabled=_devices_free),
-        Widget("out_prev", BTN_OUT_PREV, enabled=_devices_free),
-        Widget("out_next", BTN_OUT_NEXT, enabled=_devices_free),
-        Widget("vol_minus", BTN_VOL_MINUS,
+    source_hints = lambda p: p._get_provider() in ("qwen", "soniox")
+    free = lambda p: not (p._devices_applying or p._context_applying or p._restart_pending)
+    settled = lambda p: free(p) and p._pending_mic is None and p._pending_out is None
+    widgets = []
+    for page in NAV_RECTS:
+        widgets.extend(Widget("nav_" + target, rect, page=page)
+                       for target, rect in NAV_RECTS.items())
+    widgets.extend((
+        Widget("toggle", BTN_TOGGLE), Widget("lang", BTN_LANG),
+        Widget("sub_toggle", BTN_SUB_TOGGLE), Widget("sub_lang", BTN_SUB_LANG),
+        Widget("src_prev", BTN_SRC_PREV, enabled=source_hints),
+        Widget("src_next", BTN_SRC_NEXT, enabled=source_hints),
+        Widget("insrc_prev", BTN_INSRC_PREV, enabled=source_hints),
+        Widget("insrc_next", BTN_INSRC_NEXT, enabled=source_hints),
+        Widget("speaker_context", BTN_SPEAKER_CONTEXT,
+               enabled=lambda p: p._get_provider() == "soniox" and settled(p)),
+        Widget("mic_prev", BTN_MIC_PREV, page="audio", enabled=free),
+        Widget("mic_next", BTN_MIC_NEXT, page="audio", enabled=free),
+        Widget("out_prev", BTN_OUT_PREV, page="audio", enabled=free),
+        Widget("out_next", BTN_OUT_NEXT, page="audio", enabled=free),
+        Widget("vol_minus", BTN_VOL_MINUS, page="audio",
                enabled=lambda p: float(p._get_tts_gain()) > GAIN_MIN),
-        Widget("vol_plus", BTN_VOL_PLUS,
+        Widget("vol_plus", BTN_VOL_PLUS, page="audio",
                enabled=lambda p: float(p._get_tts_gain()) < GAIN_MAX),
-        Widget("src_prev", BTN_SRC_PREV, enabled=_qwen),
-        Widget("src_next", BTN_SRC_NEXT, enabled=_qwen),
-        Widget("insrc_prev", BTN_INSRC_PREV, enabled=_qwen),
-        Widget("insrc_next", BTN_INSRC_NEXT, enabled=_qwen),
-    )
+        Widget("text_only", BTN_TEXT_ONLY, page="audio", enabled=settled),
+        Widget("font_minus", BTN_FONT_MINUS, page="layout",
+               enabled=lambda p: int(p._get_font_size()) > OVERLAY_FONT_MIN),
+        Widget("font_plus", BTN_FONT_PLUS, page="layout",
+               enabled=lambda p: int(p._get_font_size()) < OVERLAY_FONT_MAX),
+        Widget("sub_edit", BTN_SUB_EDIT, page="layout"),
+        Widget("wrist_edit", BTN_WRIST_EDIT, page="layout"),
+        Widget("reset", BTN_RESET, page="layout"),
+        Widget("uilang", BTN_UILANG, page="layout"),
+        Widget("autostart", BTN_AUTOSTART, page="layout",
+               enabled=lambda p: p._get_auto_launch() is not None),
+        Widget("restart", BTN_RESTART, page="layout", enabled=settled),
+    ))
+    return tuple(widgets)
 
 
 def _ensure_icon() -> bool:
@@ -185,7 +175,9 @@ class DashboardPanel:
                  set_audio_devices=lambda mic, tts, on_done: on_done(False),
                  on_tts_gain=lambda value: None,
                  get_tts_gain=lambda: 1.0,
-                 get_provider=lambda: "gemini"):
+                 get_provider=lambda: "gemini",
+                 get_speaker_context=lambda: (True, 60.0),
+                 set_speaker_context=lambda enabled, on_done: on_done(False)):
         self._state = state
         self._languages = languages or ["en"]
         self._inbound_languages = inbound_languages or ["ko", "en"]
@@ -203,6 +195,11 @@ class DashboardPanel:
         self._on_tts_gain = on_tts_gain
         self._get_tts_gain = get_tts_gain
         self._get_provider = get_provider
+        self._get_speaker_context = get_speaker_context
+        self._set_speaker_context = set_speaker_context
+        self._context_applying = False
+        self._context_error_until = 0.0
+        self._last_controls = None
         self._last_provider = None
         # device pickers: pending selections apply (save + runtime restart)
         # once, DEVICE_APPLY_DELAY_SEC after the last click
@@ -223,7 +220,6 @@ class DashboardPanel:
         self._restart_seen_transition = False
 
         font_path = resolve_font_path(font_path, "NotoSansCJKkr-Bold.otf")
-        self._font_big = load_fallback_font(font_path, 64, bold=True)
         self._font_mid = load_fallback_font(font_path, 40, bold=True)
         self._font_small = load_fallback_font(font_path, 28, bold=True)
         self._font_tiny = load_fallback_font(font_path, 22, bold=True)
@@ -327,6 +323,11 @@ class DashboardPanel:
             if provider != self._last_provider:
                 self._last_provider = provider
                 self._dirty.set()
+            controls = (self._get_speaker_context(), self._get_font_size(),
+                        self._get_tts_gain(), self._get_mic_device(), self._get_tts_device())
+            if controls != self._last_controls:
+                self._last_controls = controls
+                self._dirty.set()
             # events are authoritative, but resync visibility defensively
             try:
                 self._visible = bool(ovl.isOverlayVisible(self._h))
@@ -336,6 +337,9 @@ class DashboardPanel:
         self._maybe_apply_devices(now)
         if self._devices_error_until and now >= self._devices_error_until:
             self._devices_error_until = 0.0
+            self._dirty.set()
+        if self._context_error_until and now >= self._context_error_until:
+            self._context_error_until = 0.0
             self._dirty.set()
 
         if self._visible and self._dirty.is_set():
@@ -413,8 +417,9 @@ class DashboardPanel:
         self._dirty.set()
 
     def _active_widgets(self) -> tuple:
-        if self._page == "main":
-            return self._widgets
+        if self._page in NAV_RECTS:
+            return tuple(w for w in self._widgets if w.page == self._page
+                         and (w.name != "speaker_context" or self._get_provider() == "soniox"))
         key = (self._page, self._picker_idx)
         cached = self._picker_cache.get(key)
         if cached is None:
@@ -453,8 +458,16 @@ class DashboardPanel:
         return w is None or w.enabled is None or bool(w.enabled(self))
 
     def _on_click(self, button: str) -> None:
+        if not any(w.name == button and w.kind == "button"
+                   and (w.enabled is None or w.enabled(self)) for w in self._active_widgets()):
+            return
         log.info("dashboard panel click: %s", button)
         st = self._state
+        if button.startswith("nav_"):
+            self._page = button.removeprefix("nav_")
+            self._pressed = None
+            self._dirty.set()
+            return
         if button.startswith("pick_out:"):
             st.target_language = button.split(":", 1)[1]
             self._close_picker()
@@ -477,12 +490,6 @@ class DashboardPanel:
             st.translation_on = not st.translation_on
         elif button == "sub_toggle":
             st.subtitles_on = not st.subtitles_on
-        elif button in ("prev", "next"):
-            st.target_language = cycle(self._languages, st.target_language,
-                                       1 if button == "next" else -1)
-        elif button in ("sub_prev", "sub_next"):
-            st.inbound_language = cycle(self._inbound_languages, st.inbound_language,
-                                        1 if button == "sub_next" else -1)
         elif button == "text_only":
             self._on_text_only_toggle(not st.text_only)
         elif button == "font_minus":
@@ -515,15 +522,37 @@ class DashboardPanel:
             step = 0.1 if button == "vol_plus" else -0.1
             self._on_tts_gain(float(self._get_tts_gain()) + step)
         elif button in ("src_prev", "src_next"):
-            if self._get_provider() == "qwen":  # row is a dim note otherwise
+            if self._get_provider() in ("qwen", "soniox"):
                 st.source_language = cycle(
-                    self._languages, st.source_language,
+                    self._source_languages(self._languages), st.source_language,
                     1 if button == "src_next" else -1)
         elif button in ("insrc_prev", "insrc_next"):
-            if self._get_provider() == "qwen":
+            if self._get_provider() in ("qwen", "soniox"):
                 st.inbound_source_language = cycle(
-                    self._inbound_languages, st.inbound_source_language,
+                    self._source_languages(self._inbound_languages), st.inbound_source_language,
                     1 if button == "insrc_next" else -1)
+        elif button == "speaker_context":
+            self._context_applying = True
+            self._context_error_until = 0.0
+            try:
+                self._set_speaker_context(not self._get_speaker_context()[0], self._context_done)
+            except Exception:
+                log.exception("dashboard speaker context update failed")
+                self._context_done(False)
+        self._dirty.set()
+
+    def _source_languages(self, languages):
+        if self._get_provider() == "soniox":
+            from ..languages import SONIOX_LANGUAGES, soniox_language_code
+            # Soniox hints allow Auto, and only languages its model accepts.
+            return [""] + list(dict.fromkeys(code for code in languages
+                if soniox_language_code(code) in SONIOX_LANGUAGES))
+        return languages
+
+    def _context_done(self, ok: bool) -> None:
+        self._context_error_until = 0.0 if ok else time.time() + 5.0
+        self._context_applying = False
+        self._dirty.set()
 
     # ---------------- audio device pickers ----------------
     @staticmethod
@@ -566,7 +595,7 @@ class DashboardPanel:
         self._devices_error_until = 0.0
 
     def _maybe_apply_devices(self, now: float) -> None:
-        if self._devices_applying:
+        if self._devices_applying or self._context_applying or self._restart_pending:
             return
         if self._pending_mic is None and self._pending_out is None:
             return
@@ -619,28 +648,14 @@ class DashboardPanel:
                       fonts=fonts or (self._font_small, self._font_tiny),
                       fill=text_fill, max_lines=1, pad_x=8, pad_y=4)
 
-    def _lang_block(self, d, prev_box, lang_box, next_box, code: str,
-                    caption: str, prev_name: str = None,
-                    next_name: str = None) -> None:
-        lang_block(d, prev_box, lang_box, next_box, code, caption,
-                   fonts=(self._font_big, self._font_mid, self._font_small,
-                          self._font_tiny),
-                   arrow_font=self._font_mid, x_inset=6,
-                   label_top=26, label_bottom=66,
-                   caption_top=62, caption_bottom=12,
-                   label_pad=(4, 2), caption_pad=(4, 2),
-                   prev_fill=self._fill_for(prev_name),
-                   next_fill=self._fill_for(next_name))
-
     def _device_block(self, d, lang, prev_box, label_box, next_box,
                       names, cfg_value, pending, caption: str,
                       prev_name: str = None, next_name: str = None) -> None:
-        arrow_fill = COL_DIM if self._devices_applying else COL_TEXT
         for box, glyph, name in ((prev_box, "◀", prev_name),
                                  (next_box, "▶", next_name)):
             d.rounded_rectangle(box, 16, fill=self._fill_for(name))
             self._font_mid.draw(d, ((box[0] + box[2]) // 2, (box[1] + box[3]) // 2),
-                                glyph, fill=arrow_fill, anchor="mm")
+                                glyph, fill=COL_TEXT if self._enabled(name) else COL_DIM, anchor="mm")
         d.rounded_rectangle(label_box, 16, fill=COL_INSET)
         value = pending if pending is not None else cfg_value
         idx = self._resolve_device(names, value)
@@ -667,159 +682,138 @@ class DashboardPanel:
                       cap, fonts=(self._font_tiny,), fill=cap_fill, max_lines=1,
                       pad_x=4, pad_y=1, line_spacing=0)
 
+    def _caption(self, d, box, text, *, fill=COL_DIM, large=False):
+        draw_fit_text(d, box, text,
+                      fonts=(self._font_mid, self._font_small) if large
+                      else (self._font_small, self._font_tiny),
+                      fill=fill, max_lines=2, pad_x=8, pad_y=4)
+
+    def _value_button(self, d, box, value, caption, name, *, fill=COL_INSET):
+        self._btn(d, box, "", fill=fill, name=name)
+        x0, y0, x1, y1 = box
+        self._caption(d, (x0 + 8, y0 + 10, x1 - 8, y1 - 44), value,
+                      fill=COL_TEXT, large=True)
+        self._caption(d, (x0 + 8, y1 - 42, x1 - 8, y1 - 8), caption)
+
     def _render(self, info: tuple) -> Image.Image:
         connected, status_key, _detail = info
-        st = self._state
-        lang = st.ui_lang
+        st, lang = self._state, self._state.ui_lang
         img = Image.new("RGBA", (TEX_W, TEX_H), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
         d.rounded_rectangle((0, 0, TEX_W - 1, TEX_H - 1), 28, fill=COL_BG)
-
-        if self._page != "main":  # language grid picker page
+        if self._page.startswith("lang_"):
             draw_page(self, d, self._active_widgets(), lang,
                       page=self._page, pressed=self._pressed)
             return img
-
-        # header: status dot + version + (only when non-nominal) status text
         dot = status_dot_color(connected, status_key)
         d.ellipse(STATUS_DOT, fill=dot)
-        self._font_small.draw(d, (72, (STATUS_DOT[1] + STATUS_DOT[3]) // 2),
-                              f"vrclt v{__version__}", fill=COL_TEXT, anchor="lm")
-        if status_key != "status_running":
-            draw_fit_text(d, STATUS_TEXT_BOX, tr(lang, status_key),
-                          fonts=(self._font_small, self._font_tiny),
-                          fill=dot, max_lines=1, pad_x=4, pad_y=2)
-        self._btn(d, BTN_UILANG, UI_LANG_LABELS.get(lang, lang), name="uilang")
-        auto = self._get_auto_launch()
-        if auto is None:
-            self._btn(d, BTN_AUTOSTART, tr(lang, "btn_autostart_off"),
-                      text_fill=COL_DIM)
+        self._font_small.draw(d, (64, 44), f"VRCLT v{__version__}",
+                              fill=COL_TEXT, anchor="lm")
+        self._caption(d, (336, 20, 524, 76),
+                      {"gemini": "Gemini", "qwen": "Qwen", "openai": "OpenAI",
+                       "soniox": "Soniox"}.get(self._get_provider(), self._get_provider()),
+                      fill=COL_SUB_ON)
+        self._caption(d, STATUS_TEXT_BOX, tr(lang, status_key), fill=dot)
+        for page, rect in NAV_RECTS.items():
+            self._btn(d, rect, tr(lang, NAV_KEYS[page]),
+                      fill=COL_SUB_ON if page == self._page else COL_BTN,
+                      name="nav_" + page)
+        if self._page == "audio":
+            self._render_audio(d, lang)
+        elif self._page == "layout":
+            self._render_layout(d, lang)
         else:
-            self._btn(d, BTN_AUTOSTART,
-                      tr(lang, "btn_autostart_on" if auto else "btn_autostart_off"),
-                      fill=COL_SUB_ON if auto else COL_BTN, name="autostart")
-        self._btn(d, BTN_RESTART,
-                  tr(lang, "btn_restarting" if self._restart_pending
-                     else "btn_restart_runtime"),
-                  text_fill=COL_PENDING if self._restart_pending else COL_TEXT,
-                  name="restart")
-
-        # translation row
-        on = st.translation_on
-        d.rounded_rectangle(BTN_TOGGLE, 20,
-                            fill=self._fill_for("toggle", COL_ON if on else COL_OFF))
-        cy = (BTN_TOGGLE[1] + BTN_TOGGLE[3]) // 2
-        draw_fit_text(d, (BTN_TOGGLE[0] + 12, BTN_TOGGLE[1] + 34,
-                          BTN_TOGGLE[2] - 12, cy + 20),
-                      tr(lang, "btn_trans_on" if on else "btn_trans_off"),
-                      fonts=(self._font_big, self._font_mid, self._font_small),
-                      max_lines=1, pad_x=0, pad_y=0)
-        draw_fit_text(d, (BTN_TOGGLE[0] + 12, cy + 24,
-                          BTN_TOGGLE[2] - 12, BTN_TOGGLE[3] - 26),
-                      tr(lang, "my_to_other"),
-                      fonts=(self._font_small, self._font_tiny),
-                      max_lines=1, pad_x=0, pad_y=0, line_spacing=0)
-        self._lang_block(d, BTN_PREV, BTN_LANG, BTN_NEXT,
-                         st.target_language, tr(lang, "out_lang"),
-                         prev_name="prev", next_name="next")
-
-        # subtitles row
-        sub_on = st.subtitles_on
-        d.rounded_rectangle(BTN_SUB_TOGGLE, 20,
-                            fill=self._fill_for("sub_toggle",
-                                                COL_SUB_ON if sub_on else COL_BTN))
-        cy = (BTN_SUB_TOGGLE[1] + BTN_SUB_TOGGLE[3]) // 2
-        draw_fit_text(d, (BTN_SUB_TOGGLE[0] + 12, BTN_SUB_TOGGLE[1] + 34,
-                          BTN_SUB_TOGGLE[2] - 12, cy + 20),
-                      tr(lang, "btn_sub_on" if sub_on else "btn_sub_off"),
-                      fonts=(self._font_big, self._font_mid, self._font_small),
-                      max_lines=1, pad_x=0, pad_y=0)
-        draw_fit_text(d, (BTN_SUB_TOGGLE[0] + 12, cy + 24,
-                          BTN_SUB_TOGGLE[2] - 12, BTN_SUB_TOGGLE[3] - 26),
-                      tr(lang, "other_to_sub"),
-                      fonts=(self._font_small, self._font_tiny),
-                      max_lines=1, pad_x=0, pad_y=0, line_spacing=0)
-        self._lang_block(d, BTN_SUB_PREV, BTN_SUB_LANG, BTN_SUB_NEXT,
-                         st.inbound_language, tr(lang, "sub_lang"),
-                         prev_name="sub_prev", next_name="sub_next")
-
-        # devices row
-        self._device_block(d, lang, BTN_MIC_PREV, LBL_MIC_DEVICE, BTN_MIC_NEXT,
-                           self._dev_inputs, self._get_mic_device(),
-                           self._pending_mic, tr(lang, "label_mic_device"),
-                           prev_name="mic_prev", next_name="mic_next")
-        self._device_block(d, lang, BTN_OUT_PREV, LBL_OUT_DEVICE, BTN_OUT_NEXT,
-                           self._dev_outputs, self._get_tts_device(),
-                           self._pending_out, tr(lang, "label_voice_out_device"),
-                           prev_name="out_prev", next_name="out_next")
-
-        # bottom row
-        text_only = st.text_only
-        self._btn(d, BTN_TEXT_ONLY,
-                  tr(lang, "btn_text_only_on" if text_only else "btn_text_only_off"),
-                  fill=COL_SUB_ON if text_only else COL_BTN, name="text_only")
-        self._btn(d, BTN_FONT_MINUS, "−", fonts=(self._font_mid,),
-                  text_fill=COL_TEXT if self._enabled("font_minus") else COL_DIM,
-                  name="font_minus")
-        d.rounded_rectangle(LBL_FONT_SIZE, 16, fill=COL_INSET)
-        draw_fit_text(d, (LBL_FONT_SIZE[0], LBL_FONT_SIZE[1] + 6,
-                          LBL_FONT_SIZE[2], LBL_FONT_SIZE[1] + 46),
-                      str(int(self._get_font_size())),
-                      fonts=(self._font_small,), max_lines=1, pad_x=4, pad_y=2)
-        draw_fit_text(d, (LBL_FONT_SIZE[0], LBL_FONT_SIZE[3] - 34,
-                          LBL_FONT_SIZE[2], LBL_FONT_SIZE[3] - 6),
-                      tr(lang, "dash_font_size"),
-                      fonts=(self._font_tiny,), fill=COL_DIM, max_lines=1,
-                      pad_x=2, pad_y=1, line_spacing=0)
-        self._btn(d, BTN_FONT_PLUS, "+", fonts=(self._font_mid,),
-                  text_fill=COL_TEXT if self._enabled("font_plus") else COL_DIM,
-                  name="font_plus")
-        self._btn(d, BTN_SUB_EDIT, tr(lang, "sub_move"),
-                  fill=COL_DRAG if st.edit_mode else COL_BTN, name="sub_edit")
-        self._btn(d, BTN_WRIST_EDIT, tr(lang, "wrist_move"),
-                  fill=COL_DRAG if st.wrist_edit_mode else COL_BTN,
-                  name="wrist_edit")
-        self._btn(d, BTN_RESET, tr(lang, "pos_reset"), name="reset")
-
-        # volume row (mirrors the font-size triple)
-        self._btn(d, BTN_VOL_MINUS, "−", fonts=(self._font_mid,),
-                  text_fill=COL_TEXT if self._enabled("vol_minus") else COL_DIM,
-                  name="vol_minus")
-        d.rounded_rectangle(LBL_VOL_GAIN, 16, fill=COL_INSET)
-        draw_fit_text(d, (LBL_VOL_GAIN[0], LBL_VOL_GAIN[1] + 6,
-                          LBL_VOL_GAIN[2], LBL_VOL_GAIN[1] + 46),
-                      f"{round(float(self._get_tts_gain()) * 100)}%",
-                      fonts=(self._font_small,), max_lines=1, pad_x=4, pad_y=2)
-        draw_fit_text(d, (LBL_VOL_GAIN[0], LBL_VOL_GAIN[3] - 34,
-                          LBL_VOL_GAIN[2], LBL_VOL_GAIN[3] - 6),
-                      tr(lang, "dash_voice_volume"),
-                      fonts=(self._font_tiny,), fill=COL_DIM, max_lines=1,
-                      pad_x=2, pad_y=1, line_spacing=0)
-        self._btn(d, BTN_VOL_PLUS, "+", fonts=(self._font_mid,),
-                  text_fill=COL_TEXT if self._enabled("vol_plus") else COL_DIM,
-                  name="vol_plus")
-
-        # source-language row (Qwen only; Gemini auto-detects)
-        if self._get_provider() == "qwen":
-            self._source_block(d, BTN_SRC_PREV, LBL_SRC_LANG, BTN_SRC_NEXT,
-                               st.source_language, tr(lang, "dash_src_out"))
-            self._source_block(d, BTN_INSRC_PREV, LBL_INSRC_LANG, BTN_INSRC_NEXT,
-                               st.inbound_source_language,
-                               tr(lang, "dash_src_in"))
-        else:
-            d.rounded_rectangle(SRC_ROW_BOX, 16, fill=COL_INSET)
-            draw_fit_text(d, (SRC_ROW_BOX[0] + 12, SRC_ROW_BOX[1] + 8,
-                              SRC_ROW_BOX[2] - 12, SRC_ROW_BOX[3] - 8),
-                          tr(lang, "dash_src_auto"),
-                          fonts=(self._font_small, self._font_tiny),
-                          fill=COL_DIM, max_lines=1, pad_x=4, pad_y=2)
+            self._render_live(d, lang)
         return img
 
-    def _source_block(self, d, prev_box, lang_box, next_box, code: str,
-                      caption: str) -> None:
-        lang_block(d, prev_box, lang_box, next_box, code or "—", caption,
-                   fonts=(self._font_mid, self._font_small, self._font_tiny),
-                   arrow_font=self._font_mid, x_inset=6,
-                   label_top=4, label_bottom=36,
-                   caption_top=34, caption_bottom=6,
-                   label_pad=(4, 1), caption_pad=(4, 1))
+    def _render_live(self, d, lang):
+        st = self._state
+        for box, caption, accent in (
+                ((24, 210, 500, 704), "my_to_other", COL_ON),
+                ((524, 210, 1000, 704), "other_to_sub", COL_SUB_ON)):
+            d.rounded_rectangle(box, 20, fill=COL_INSET)
+            self._caption(d, (box[0]+12, 222, box[2]-12, 270),
+                          tr(lang, caption), fill=accent)
+        self._btn(d, BTN_TOGGLE, tr(lang, "btn_trans_on" if st.translation_on else "btn_trans_off"),
+                  fill=COL_ON if st.translation_on else COL_OFF,
+                  fonts=(self._font_mid, self._font_small), name="toggle")
+        self._btn(d, BTN_SUB_TOGGLE, tr(lang, "btn_sub_on" if st.subtitles_on else "btn_sub_off"),
+                  fill=COL_SUB_ON if st.subtitles_on else COL_BTN,
+                  fonts=(self._font_mid, self._font_small), name="sub_toggle")
+        self._value_button(d, BTN_LANG, language_label(st.target_language),
+                           tr(lang, "out_lang"), "lang", fill=COL_BTN)
+        self._value_button(d, BTN_SUB_LANG, language_label(st.inbound_language),
+                           tr(lang, "sub_lang"), "sub_lang", fill=COL_BTN)
+        for prev, label, next_, code, caption, prefix in (
+                (BTN_SRC_PREV, LBL_SRC_LANG, BTN_SRC_NEXT, st.source_language,
+                 "dash_src_out", "src"),
+                (BTN_INSRC_PREV, LBL_INSRC_LANG, BTN_INSRC_NEXT, st.inbound_source_language,
+                 "dash_src_in", "insrc")):
+            if self._get_provider() in ("qwen", "soniox"):
+                self._btn(d, prev, "◀", fonts=(self._font_mid,), name=prefix+"_prev")
+                self._btn(d, next_, "▶", fonts=(self._font_mid,), name=prefix+"_next")
+                value = (tr(lang, "vr_auto_language") if not code and self._get_provider() == "soniox"
+                         else language_label(code or "en"))
+                self._value_button(d, label, value, tr(lang, caption), None)
+            else:
+                self._value_button(d, (prev[0], prev[1], next_[2], next_[3]),
+                                   tr(lang, "vr_auto_language"), tr(lang, caption), None)
+        if self._get_provider() == "soniox":
+            keep, seconds = self._get_speaker_context()
+            self._btn(d, BTN_SPEAKER_CONTEXT,
+                      tr(lang, "dash_applying" if self._context_applying else
+                         "vr_speaker_context_on" if keep else "vr_speaker_context_off"),
+                      fill=COL_SUB_ON if keep else COL_BTN,
+                      text_fill=COL_TEXT if self._enabled("speaker_context") else COL_DIM,
+                      name="speaker_context")
+            self._caption(d, CONTEXT_NOTE_BOX,
+                          tr(lang, "soniox_idle_timeout_status").format(seconds=f"{seconds:g}")
+                          if seconds > 0 else tr(lang, "soniox_idle_timeout_disabled"))
+        note = ("msg_saved_start_failed" if time.time() < self._context_error_until
+                else "vr_hint_languages")
+        self._caption(d, (24, 860, 1000, 926), tr(lang, note))
+
+    def _render_audio(self, d, lang):
+        self._caption(d, (24, 214, 1000, 256), tr(lang, "grp_dev"))
+        self._device_block(d, lang, BTN_MIC_PREV, LBL_MIC_DEVICE, BTN_MIC_NEXT,
+                           self._dev_inputs, self._get_mic_device(), self._pending_mic,
+                           tr(lang, "f.outbound.mic_device"), "mic_prev", "mic_next")
+        self._device_block(d, lang, BTN_OUT_PREV, LBL_OUT_DEVICE, BTN_OUT_NEXT,
+                           self._dev_outputs, self._get_tts_device(), self._pending_out,
+                           tr(lang, "f.outbound.tts_device"), "out_prev", "out_next")
+        for name, box, glyph in (("vol_minus", BTN_VOL_MINUS, "−"),
+                                 ("vol_plus", BTN_VOL_PLUS, "+")):
+            self._btn(d, box, glyph, fonts=(self._font_mid,), name=name,
+                      text_fill=COL_TEXT if self._enabled(name) else COL_DIM)
+        self._value_button(d, LBL_VOL_GAIN, f"{round(float(self._get_tts_gain())*100)}%",
+                           tr(lang, "dash_voice_volume"), None)
+        self._btn(d, BTN_TEXT_ONLY,
+                  tr(lang, "btn_text_only_on" if self._state.text_only else "btn_text_only_off"),
+                  fill=COL_SUB_ON if self._state.text_only else COL_BTN, name="text_only",
+                  text_fill=COL_TEXT if self._enabled("text_only") else COL_DIM)
+        note = "dash_applying" if self._devices_applying else "vr_hint_audio_apply"
+        self._caption(d, (24, 874, 1000, 932), tr(lang, note))
+
+    def _render_layout(self, d, lang):
+        self._caption(d, (24, 210, 1000, 250), tr(lang, "vr_section_subtitles"))
+        for name, box, glyph in (("font_minus", BTN_FONT_MINUS, "−"),
+                                 ("font_plus", BTN_FONT_PLUS, "+")):
+            self._btn(d, box, glyph, fonts=(self._font_mid,), name=name,
+                      text_fill=COL_TEXT if self._enabled(name) else COL_DIM)
+        self._value_button(d, LBL_FONT_SIZE, str(int(self._get_font_size())),
+                           tr(lang, "dash_font_size"), None)
+        self._caption(d, (24, 386, 1000, 426), tr(lang, "vr_section_position"))
+        self._btn(d, BTN_SUB_EDIT, tr(lang, "vr_move_subtitles"),
+                  fill=COL_DRAG if self._state.edit_mode else COL_BTN, name="sub_edit")
+        self._btn(d, BTN_WRIST_EDIT, tr(lang, "vr_move_wrist"),
+                  fill=COL_DRAG if self._state.wrist_edit_mode else COL_BTN, name="wrist_edit")
+        self._btn(d, BTN_RESET, tr(lang, "vr_reset_positions"), name="reset")
+        self._caption(d, (24, 666, 1000, 712), tr(lang, "vr_section_app"))
+        self._btn(d, BTN_UILANG, UI_LANG_LABELS.get(lang, lang), name="uilang")
+        auto = self._get_auto_launch()
+        self._btn(d, BTN_AUTOSTART, tr(lang, "btn_autostart_on" if auto else "btn_autostart_off"),
+                  fill=COL_SUB_ON if auto else COL_BTN, name="autostart",
+                  text_fill=COL_TEXT if auto is not None else COL_DIM)
+        self._btn(d, BTN_RESTART, tr(lang, "btn_restarting" if self._restart_pending else "btn_restart_runtime"),
+                  name="restart", text_fill=COL_TEXT if self._enabled("restart") else COL_DIM)
+        self._caption(d, (24, 856, 1000, 926), tr(lang, "vr_hint_position"))
