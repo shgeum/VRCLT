@@ -86,6 +86,10 @@ class SonioxConfigTests(unittest.TestCase):
         self.assertEqual(cfg["translation"], {"type": "one_way", "target_language": "en"})
         self.assertEqual(cfg["language_hints"], ["ko"])
         self.assertTrue(cfg["enable_speaker_diarization"])
+        self.assertEqual(cfg["max_endpoint_delay_ms"], 3000)
+        self.assertEqual(cfg["endpoint_sensitivity"], -0.3)
+        self.assertGreater(sx.GAP_FILL_MAX_SEC, cfg["max_endpoint_delay_ms"] / 1000)
+        self.assertNotIn("endpoint_sensitivity", make_session(model="stt-rt-v4")._session_config("en"))
         self.assertEqual(cfg["context"]["translation_terms"], [
             {"source": "VRChat", "target": "브이알챗"}, {"source": "X", "target": "Y"}])
         self.assertNotIn("language_hints", make_session()._session_config("en"))
@@ -227,8 +231,7 @@ class SonioxConfigTests(unittest.TestCase):
         try:
             self.assertIsInstance(pipeline.session, sx.SonioxLiveTranslateSession)
             self.assertIsNone(pipeline.session._on_audio)
-            self.assertEqual(pipeline.session._idle_disconnect,
-                             config.DEFAULTS["audio"]["mic_idle_disconnect_sec"])
+            self.assertEqual(pipeline.session._idle_disconnect, 60)
             pipeline.session._consume_tokens([
                 token("hello", status="original", speaker="1"),
                 token("goodbye", status="original", speaker="2"),
@@ -242,14 +245,7 @@ class SonioxConfigTests(unittest.TestCase):
             self.assertTrue(pipeline.session._restart)
         finally:
             pipeline.detach()
-        cfg["soniox"]["keep_speaker_context"] = True
-        with patch("vrclt.pipeline.GameAudioTap", return_value=FakeSource()):
-            pipeline = InboundPipeline(cfg, "test-soniox-key", store, state)
-        try:
-            self.assertEqual(pipeline.session._idle_disconnect, 0)
-        finally:
-            pipeline.detach()
-        del cfg["soniox"]["keep_speaker_context"]
+        cfg["soniox"]["keep_speaker_context"] = False
         with patch("vrclt.pipeline.GameAudioTap", return_value=FakeSource()):
             pipeline = InboundPipeline(cfg, "test-soniox-key", store, state)
         try:
@@ -257,6 +253,28 @@ class SonioxConfigTests(unittest.TestCase):
                              config.DEFAULTS["audio"]["mic_idle_disconnect_sec"])
         finally:
             pipeline.detach()
+        del cfg["soniox"]["keep_speaker_context"]
+        with patch("vrclt.pipeline.GameAudioTap", return_value=FakeSource()):
+            pipeline = InboundPipeline(cfg, "test-soniox-key", store, state)
+        try:
+            self.assertEqual(pipeline.session._idle_disconnect, 60)
+        finally:
+            pipeline.detach()
+
+    def test_keep_context_always_has_a_finite_silence_limit(self):
+        cfg = copy.deepcopy(config.DEFAULTS)
+        self.assertEqual(config.soniox_idle_disconnect_sec(cfg), 60)
+        cfg["soniox"]["speaker_context_idle_sec"] = 120
+        self.assertEqual(config.soniox_idle_disconnect_sec(cfg), 120)
+        for value in (0, -5, None, "bad", float("inf"), float("nan")):
+            cfg["soniox"]["speaker_context_idle_sec"] = value
+            self.assertEqual(config.soniox_idle_disconnect_sec(cfg), 60, repr(value))
+        cfg["soniox"]["keep_speaker_context"] = False
+        self.assertEqual(config.soniox_idle_disconnect_sec(cfg), 15)
+        cfg["audio"]["mic_idle_disconnect_sec"] = 0
+        self.assertEqual(config.soniox_idle_disconnect_sec(cfg), 0)
+        cfg["soniox"]["keep_speaker_context"] = True
+        self.assertEqual(config.soniox_idle_disconnect_sec(cfg), 60)
 
 
 class SonioxWireTests(unittest.IsolatedAsyncioTestCase):
@@ -467,6 +485,87 @@ class SonioxWireTests(unittest.IsolatedAsyncioTestCase):
         stop.set()
         await asyncio.wait_for(task, 1)
         self.assertEqual(sent, [""])
+
+    async def test_silent_pcm_closes_once_and_only_new_speech_reconnects(self):
+        class UngatedSource(FakeSource):
+            has_speech = False
+
+            def drain(self):
+                return [b"\x00" * 1600]
+
+            def speech_active(self, timeout=2.0):
+                return self.has_speech
+
+        source = UngatedSource()
+        stop = asyncio.Event()
+        first_connected, first_closed, second_connected = (
+            asyncio.Event(), asyncio.Event(), asyncio.Event())
+        connections, closes, final_text = [], [], []
+
+        async def server(ws):
+            await ws.recv()
+            connections.append(True)
+            (first_connected if len(connections) == 1 else second_connected).set()
+            async for raw in ws:
+                if raw == "":
+                    closes.append(True)
+                    # Pending text must still drain when the idle deadline hits.
+                    await ws.send(json.dumps({"tokens": [token("last words", speaker="1"),
+                                                          token("<end>")], "finished": True}))
+                    first_closed.set()
+                    return
+
+        async with websockets.serve(server, "127.0.0.1", 0) as ws_server:
+            url = f"ws://127.0.0.1:{ws_server.sockets[0].getsockname()[1]}"
+            with patch.object(sx, "TRANSCRIBE_URL", url):
+                session = make_session(source=source, idle_disconnect_sec=60,
+                                       on_dst=final_text.append)
+                task = asyncio.create_task(session.run(stop))
+                try:
+                    # active() is True even for this source's continuous zeros.
+                    await asyncio.sleep(0.25)
+                    self.assertEqual(connections, [])
+                    source.has_speech = True
+                    await asyncio.wait_for(first_connected.wait(), 2)
+                    source.has_speech = False
+                    await asyncio.wait_for(first_closed.wait(), 2)
+                    await asyncio.sleep(0.45)
+                    self.assertEqual(len(connections), 1)
+                    self.assertEqual(final_text, ["last words"])
+                    self.assertFalse(session.connected)
+                    source.has_speech = True
+                    await asyncio.wait_for(second_connected.wait(), 2)
+                    stop.set()
+                    await asyncio.wait_for(task, 2)
+                    self.assertEqual(len(closes), 2)
+                finally:
+                    stop.set()
+                    if not task.done():
+                        task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+
+    async def test_watchdog_uses_configured_speech_timeout(self):
+        source = FakeSource()
+        source.speech_active = lambda timeout=2.0: timeout > 30
+        session = make_session(source=source, idle_disconnect_sec=60)
+        sent = []
+
+        class Socket:
+            async def send(self, raw):
+                sent.append(raw)
+                session._finished.set()
+
+        task = asyncio.create_task(session._watchdog(Socket(), asyncio.Event()))
+        try:
+            await asyncio.sleep(0.25)
+            self.assertFalse(task.done(), "short pause ended retained context")
+            source.speech_active = lambda timeout=2.0: False
+            await asyncio.wait_for(task, 1)
+            self.assertEqual(sent, [""])
+        finally:
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
 
 if __name__ == "__main__":

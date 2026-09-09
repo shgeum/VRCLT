@@ -24,6 +24,9 @@ log = logging.getLogger(__name__)
 
 SRC_RATE = 48000
 DST_RATE = 16000
+# With VAD disabled/unavailable, distinguish silent PCM flow from energy.
+# This is a fallback, not a speech classifier: audible music can pass it.
+SPEECH_FALLBACK_RMS = 90.0 / 32768.0
 
 
 def _process_name_matches(process_name: str | None, exe_name: str) -> bool:
@@ -185,6 +188,7 @@ class GameAudioTap:
         self._vad = None
         self._vad_buf = np.zeros(0, dtype=np.float32)
         self._last_speech = 0.0
+        self._last_speech_at: float | None = None
         self.buffer: collections.deque[bytes] = collections.deque(maxlen=400)
         self.last_chunk_time = 0.0
         # Rolling counters for the periodic stats line. ProcTap is a native
@@ -224,6 +228,7 @@ class GameAudioTap:
         return line
 
     def start(self, pid: int | None = None) -> None:
+        self._last_speech_at = None
         from proctap import ProcessAudioCapture
         pid = pid if pid is not None else find_pid(self._exe)
         if pid is None:
@@ -354,6 +359,8 @@ class GameAudioTap:
             if not y.size:
                 return
             if vad is None:
+                if float(np.sqrt(np.mean(y * y))) >= SPEECH_FALLBACK_RMS:
+                    self._last_speech_at = time.monotonic()
                 pcm16 = (np.clip(y, -1.0, 1.0) * 32767.0).astype(np.int16).tobytes()
                 self.buffer.append(pcm16)
                 self.last_chunk_time = time.time()
@@ -368,6 +375,7 @@ class GameAudioTap:
                 self._st_frames += 1
                 if vad.prob(frame) >= self._vad_threshold:
                     self._last_speech = now
+                    self._last_speech_at = time.monotonic()
                     self._st_speech += 1
                 if (now - self._last_speech) < self._vad_hangover:
                     pcm16 = (np.clip(frame, -1.0, 1.0) * 32767.0).astype(np.int16).tobytes()
@@ -390,6 +398,12 @@ class GameAudioTap:
 
     def active(self, timeout: float = 2.0) -> bool:
         return (time.time() - self.last_chunk_time) < timeout
+
+    def speech_active(self, timeout: float = 2.0) -> bool:
+        """Recent VAD speech, or audio energy when no VAD is available."""
+        last = self._last_speech_at
+        return (self._rs is not None and last is not None
+                and time.monotonic() - last < timeout)
 
     def drain(self) -> list[bytes]:
         chunks = []
@@ -427,3 +441,4 @@ class GameAudioTap:
             self._pid = None
             self.process_scoped = True
             log.info("game tap stopped")
+        self._last_speech_at = None

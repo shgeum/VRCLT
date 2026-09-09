@@ -142,7 +142,8 @@ soniox:
   model: stt-rt-v5
   tts_model: tts-rt-v2
   voice: Daniel
-  keep_speaker_context: false
+  keep_speaker_context: true
+  speaker_context_idle_sec: 60.0
 ```
 
 Soniox는 양방향 음성 인식·번역을 처리하며, 번역 음성을 켜면 별도의 TTS도 사용합니다.
@@ -153,15 +154,19 @@ Soniox는 양방향 음성 인식·번역을 처리하며, 번역 음성을 켜�
 이 번호는 인식 세션 안에서만 유효하며 VRChat 계정이나 실제 이름을 식별하지 않습니다.
 번역 음성은 모든 화자에게 설정한 하나의 TTS 음성을 사용합니다.
 
-**무음 중 화자 구분 유지**는 기본으로 꺼져 있습니다(`soniox.keep_speaker_context: false`).
-Soniox를 선택하면 대시보드에서도 상태를 확인하고 변경할 수 있으며 설정 화면과 같은 값을 사용합니다.
-화자 분리 자체는 계속 켜져 있습니다. 이 옵션을 켜면 연결된 인식 세션을 침묵 중에도 유지해
-화자 번호를 이어갑니다. Soniox는 텍스트 전용 모드에서도 침묵·keepalive를 포함한
-전체 연결 시간에 과금합니다.
+**무음 중 화자 구분 유지**는 기본으로 켜져 있습니다(`soniox.keep_speaker_context: true`).
+짧은 대화 공백에는 인식 세션을 유지하고 **60초 동안 무음이면 연결을 닫습니다**
+(`soniox.speaker_context_idle_sec: 60.0`). 설정에서 5~600초로 조절할 수 있습니다.
+시간을 늘리면 재연결은 줄어들지만 과금되는 연결도 더 오래 유지됩니다.
+Soniox 대시보드에는 체크 상태와 현재 적용되는 무음 종료 시간이 표시되며,
+체크박스는 설정 화면과 같은 값을 사용합니다. 기존에 저장한 선택은 유지됩니다.
+화자 분리 자체는 어느 쪽이든 켜져 있습니다. Soniox는 텍스트 전용 모드에서도
+침묵·keepalive를 포함한 전체 연결 시간에 과금합니다.
 [공식 keepalive 과금 안내](https://soniox.com/docs/stt/rt/connection-keepalive)를 참고하세요.
-이 설정이 꺼져 있으면 `audio.mic_idle_disconnect_sec`만큼 침묵한 뒤 연결을 닫습니다.
+이 설정을 끄면 `audio.mic_idle_disconnect_sec`(기본 15초)를 무음 종료 시간으로 사용합니다.
 파이프라인 중지·비활성화 또는 캡처 대상 프로세스 종료 시에도 연결을 닫으며,
-재연결하면 화자 구분은 새 세션에서 시작합니다.
+재연결하면 화자 구분은 새 세션에서 시작합니다. 연결을 유지해도 한 사람에게 항상 같은
+번호가 붙는다고 보장하지는 않으며, Soniox가 서로 다른 화자 ID를 반환하면 구분해서 표시합니다.
 
 로컬 모의 서버 테스트로 검증했으며, 실제 유료 Soniox API 호출은 아직 검증하지 않았습니다.
 
@@ -395,7 +400,8 @@ VRChat 모드에서는 다음 기능을 사용할 수 있습니다.
 | `soniox.model` | `stt-rt-v5` | 실시간 음성 인식·번역 모델. |
 | `soniox.tts_model` | `tts-rt-v2` | 번역 음성을 켰을 때만 사용하는 TTS 모델. |
 | `soniox.voice` | `Daniel` | 기본 제공 음성 이름 또는 기존 커스텀/복제 음성 ID. 마이크 자동 복제 없음. |
-| `soniox.keep_speaker_context` | `false` | 켜면 침묵 중에도 연결을 유지해 화자 번호를 보존하며 연결 시간에 과금됩니다. 꺼져 있으면 `audio.mic_idle_disconnect_sec`에 따라 연결을 닫습니다. 재연결 시 화자 구분은 새로 시작합니다. Soniox 대시보드에서도 변경할 수 있습니다. |
+| `soniox.keep_speaker_context` | `true` | 짧은 공백에는 인식 세션을 유지하고 `soniox.speaker_context_idle_sec`만큼 무음이면 연결을 닫습니다. 연결 시간에는 과금됩니다. 끄면 `audio.mic_idle_disconnect_sec`를 사용합니다. Soniox 대시보드에 체크 상태와 적용 시간이 표시되며, 재연결 시 화자 구분은 새로 시작합니다. |
+| `soniox.speaker_context_idle_sec` | `60.0` | 화자 구분 유지가 켜져 있을 때의 무음 종료 시간. 설정에서 5~600초로 조절할 수 있으며, 0 이하 또는 유한하지 않은 값은 60초로 처리합니다. |
 | `log_level` | `INFO` | Python 로그 레벨. |
 | `meta.last_version` | `""` | 현재 설정에서 확인한 마지막 앱 버전. 업데이트 후 1회 리셋 확인에 사용합니다. |
 | `app.mode` | `vrchat` | 활성 프로필: `vrchat`, `discord`, `custom`. |
@@ -489,7 +495,7 @@ PC 핫키:
 | --- | --- | --- |
 | `audio.send_interval_ms` | `50` | 마이크 오디오를 Gemini로 보내는 주기. 낮을수록 번역 지연이 줄지만 네트워크 전송량은 조금 늘어납니다. |
 | `audio.finalize_silence_sec` | `2.0` | 이만큼 침묵하면 세그먼트를 확정합니다. |
-| `audio.mic_idle_disconnect_sec` | `15.0` | 마이크 입력이 없을 때 Gemini 세션을 끊는 시간. |
+| `audio.mic_idle_disconnect_sec` | `15.0` | 마이크 무음 연결 종료 시간. Soniox는 `soniox.keep_speaker_context`가 꺼져 있을 때 이 값을 사용합니다. |
 | `audio.voice_rms_threshold` | `90.0` | 마이크 음성 감지 에너지 임계값. |
 | `audio.voice_hangover_sec` | `2.5` | 짧은 멈춤 동안 마이크 턴을 유지하는 시간. |
 | `audio.turn_end_silence_sec` | `0.55` | 실제 마이크 침묵이 이만큼 이어지면 게이트로 잘려나간 무음을 채워 보내, 서버 음성 감지가 턴을 끝내고 모델이 문장을 끝맺도록 합니다. 낮출수록 번역 음성 지연이 줄 수 있습니다. |

@@ -1,5 +1,6 @@
 """Configuration: yaml file + env fallback + defaults."""
 import logging
+import math
 import os
 import sys
 import copy
@@ -116,8 +117,9 @@ DEFAULTS = {
         "model": "stt-rt-v5",
         "tts_model": "tts-rt-v2",        # only used when translated voice is enabled
         "voice": "Daniel",              # multilingual stock voice or cloned voice ID
-        "keep_speaker_context": False,   # opt in to retain speaker IDs through pauses;
-                                        # Soniox bills the full connected stream duration
+        "keep_speaker_context": True,    # preserve speaker IDs through short pauses
+        "speaker_context_idle_sec": 60.0, # close after long silence, including in keep mode;
+                                         # connected silence is still billed
     },
     "app": {
         "mode": "vrchat",              # vrchat | discord | custom
@@ -529,6 +531,18 @@ def qwen_api_key(cfg: dict) -> str:
 def openai_api_key(cfg: dict) -> str:
     oa = cfg.get("openai") or {}
     return (oa.get("api_key") or os.environ.get("OPENAI_API_KEY", "")).strip()
+
+
+def soniox_idle_disconnect_sec(cfg: dict) -> float:
+    """Keep speaker context through short pauses, with a finite idle limit."""
+    sx = cfg.get("soniox") or {}
+    if not sx.get("keep_speaker_context", True):
+        return float(cfg.get("audio", {}).get("mic_idle_disconnect_sec", 15.0))
+    try:
+        seconds = float(sx.get("speaker_context_idle_sec", 60.0))
+    except (TypeError, ValueError):
+        return 60.0
+    return seconds if math.isfinite(seconds) and seconds > 0 else 60.0
 
 
 def soniox_api_key(cfg: dict) -> str:

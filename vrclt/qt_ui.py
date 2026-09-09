@@ -653,7 +653,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self._tr("f.soniox.keep_speaker_context")))
         self._tip(self._keep_speaker_context, "f.soniox.keep_speaker_context.tip")
         self._keep_speaker_context.toggled.connect(self._apply_speaker_context)
-        root.addWidget(self._keep_speaker_context)
+        context_row = QtWidgets.QHBoxLayout()
+        context_row.addWidget(self._keep_speaker_context)
+        context_row.addStretch(1)
+        self._soniox_idle_hint = QtWidgets.QLabel()
+        self._soniox_idle_hint.setObjectName("noteText")
+        self._soniox_idle_hint.setWordWrap(True)
+        context_row.addWidget(self._soniox_idle_hint)
+        root.addLayout(context_row)
         self._subtitle_view = QtWidgets.QTextEdit()
         self._subtitle_view.setObjectName("subtitleView")
         self._subtitle_view.setReadOnly(True)
@@ -1292,11 +1299,21 @@ class MainWindow(QtWidgets.QMainWindow):
     def _sync_speaker_context(self) -> None:
         self._keep_speaker_context.setVisible(
             config_mod.provider(self._controller.cfg) == "soniox")
+        self._soniox_idle_hint.setVisible(
+            config_mod.provider(self._controller.cfg) == "soniox")
+        seconds = config_mod.soniox_idle_disconnect_sec(self._controller.cfg)
+        self._soniox_idle_hint.setToolTip(self._tr(
+            "f.soniox.speaker_context_idle_sec.tip" if _get_path(
+                self._controller.cfg, "soniox.keep_speaker_context", True)
+            else "f.audio.mic_idle_disconnect_sec.tip"))
+        self._soniox_idle_hint.setText(
+            self._tr("soniox_idle_timeout_status").format(seconds=f"{seconds:g}")
+            if seconds > 0 else self._tr("soniox_idle_timeout_disabled"))
         if not self._speaker_context_applying:
             blocked = self._keep_speaker_context.blockSignals(True)
             try:
                 self._keep_speaker_context.setChecked(bool(_get_path(
-                    self._controller.cfg, "soniox.keep_speaker_context", False)))
+                    self._controller.cfg, "soniox.keep_speaker_context", True)))
             finally:
                 self._keep_speaker_context.blockSignals(blocked)
         self._keep_speaker_context.setEnabled(
@@ -1314,7 +1331,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._sync_speaker_context()
             return
         if enabled == bool(_get_path(
-                self._controller.cfg, "soniox.keep_speaker_context", False)):
+                self._controller.cfg, "soniox.keep_speaker_context", True)):
             return
 
         def build():

@@ -29,7 +29,7 @@ _wire_log.setLevel(logging.WARNING)
 TRANSCRIBE_URL = "wss://stt-rt.soniox.com/transcribe-websocket"
 TRANSCRIBE_MODEL = "stt-rt-v5"
 GAP_FILL_GRACE_SEC = 0.25
-GAP_FILL_MAX_SEC = 2.5
+GAP_FILL_MAX_SEC = 4.0
 KEEPALIVE_SEC = 5.0
 
 
@@ -133,9 +133,13 @@ class SonioxLiveTranslateSession:
             "enable_speaker_diarization": True,
             "enable_endpoint_detection": True,
             # Avoid aggressive endpointing: it reduces speaker accuracy.
-            "max_endpoint_delay_ms": 2000,
+            "max_endpoint_delay_ms": 3000,
             "translation": {"type": "one_way", "target_language": target},
         }
+        if self._model == "stt-rt-v5":
+            # Give short hesitations more context before speaker IDs become
+            # final. Keep semantic endpoints for subtitle/TTS turn completion.
+            cfg["endpoint_sensitivity"] = -0.3
         if source:
             cfg["language_hints"] = [source]
         if self._terms:
@@ -146,7 +150,7 @@ class SonioxLiveTranslateSession:
         self._stop = stop
         backoff = RECONNECT_MIN_BACKOFF
         while not stop.is_set():
-            if not (self._enabled() and self._source.active()):
+            if not (self._enabled() and self._speech_active()):
                 await asyncio.sleep(0.2)
                 continue
             self._source.trim_to(1.0)
@@ -177,6 +181,12 @@ class SonioxLiveTranslateSession:
     def _can_play(self) -> bool:
         return (self._enabled() and not self._restart
                 and not (self._stop and self._stop.is_set()))
+
+    def _speech_active(self, timeout: float = 2.0) -> bool:
+        # Ungated sources also deliver silent PCM. Use speech activity for
+        # both idle closure and resuming, so silence cannot reopen the socket.
+        active = getattr(self._source, "speech_active", self._source.active)
+        return active(timeout)
 
     async def _session_once(self, stop: asyncio.Event) -> None:
         target = soniox_language_code(self._get_target())
@@ -331,9 +341,14 @@ class SonioxLiveTranslateSession:
     async def _watchdog(self, ws, stop: asyncio.Event) -> None:
         while True:
             await asyncio.sleep(0.2)
+            idle = (self._idle_disconnect > 0
+                    and not self._speech_active(self._idle_disconnect))
             if (stop.is_set() or self._restart or not self._enabled()
-                    or (self._idle_disconnect > 0
-                        and not self._source.active(self._idle_disconnect))):
+                    or idle):
+                reason = ("stop" if stop.is_set() else "restart" if self._restart
+                          else "disabled" if not self._enabled() else "silence")
+                log.info("[%s] Soniox closing (reason=%s idle_limit=%.1fs)",
+                         self.name, reason, self._idle_disconnect)
                 self._closing = True
                 await ws.send("")
                 try:

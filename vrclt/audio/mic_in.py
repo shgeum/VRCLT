@@ -87,6 +87,10 @@ class MicCapture:
         self._raw_taps: list[collections.deque[bytes]] = []
         self._preroll: collections.deque[bytes] = collections.deque(maxlen=PREROLL_CHUNKS)
         self.last_voice_time = 0.0
+        # Session idling must follow voice energy even when the PCM gate is
+        # disabled for passthrough. Keep it independent of the legacy flow
+        # timestamp, which deliberately advances on every ungated frame.
+        self._last_speech_at: float | None = None
         self._in_voice = False
         self._swap_lock = threading.Lock()
         self._upgrade_stop = threading.Event()
@@ -204,6 +208,11 @@ class MicCapture:
             threshold = min(threshold, barge_threshold)
         if not gemini_data:
             return
+        recent_speech = (self._last_speech_at is not None
+                         and mono_now - self._last_speech_at < self._hangover)
+        speech_threshold = max(1.0, threshold * (0.4 if recent_speech else 1.0))
+        if rms >= speech_threshold:
+            self._last_speech_at = mono_now
         if not self._gate_enabled():
             # passthrough / gate off: stream everything continuously
             self.buffer.append(gemini_data)
@@ -245,6 +254,7 @@ class MicCapture:
         return s
 
     def start(self) -> None:
+        self._last_speech_at = None
         candidates = devices.find_input_candidates(self._device_substr)
         if not candidates:
             raise RuntimeError(f"input device not found: {self._device_substr!r}")
@@ -409,6 +419,12 @@ class MicCapture:
     def active(self, timeout: float = 2.0) -> bool:
         return (time.time() - self.last_voice_time) < timeout
 
+    def speech_active(self, timeout: float = 2.0) -> bool:
+        """Recent unsuppressed voice energy, independent of PCM flow."""
+        last = self._last_speech_at
+        return (self._rs is not None and last is not None
+                and time.monotonic() - last < timeout)
+
     def drain(self) -> list[bytes]:
         chunks = []
         while True:
@@ -457,3 +473,4 @@ class MicCapture:
             except Exception:
                 pass
             log.info("mic capture stopped")
+        self._last_speech_at = None

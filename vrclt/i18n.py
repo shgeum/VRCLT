@@ -347,13 +347,33 @@ STRINGS = {
         "ja": "無音中も話者情報を維持", "zh": "静音时保留说话人信息"},
     "f.soniox.keep_speaker_context.tip": {
         "ko": "잠시 대화가 없어도 연결을 유지해 화자 번호를 보존합니다. Soniox는 무음을 포함한 "
-              "전체 연결 시간에 과금합니다. 끄면 오디오 설정의 무음 연결 종료 시간을 사용합니다.",
+              "전체 연결 시간에 과금합니다. 켜도 화자 유지 무음 제한(기본 60초)이 지나면 종료하며, "
+              "끄면 오디오 설정의 무음 연결 종료 시간을 사용합니다.",
         "en": "Keep the connection open during pauses to preserve speaker numbers. Soniox bills "
-              "the entire connection duration, including silence. Turn off to use the audio idle-disconnect timeout.",
+              "the entire connection duration, including silence. Even when enabled, the speaker-context idle "
+              "limit (60 seconds by default) closes the connection. Turn off to use the audio idle timeout.",
         "ja": "会話が途切れても接続を維持し、話者番号を保持します。Sonioxは無音を含む接続時間全体に"
-              "課金します。オフにすると音声設定の無音時切断タイムアウトを使用します。",
+              "課金します。有効でも話者維持の無音制限（既定60秒）で切断します。"
+              "オフにすると音声設定の無音時切断タイムアウトを使用します。",
         "zh": "暂停对话时保持连接以保留说话人编号。Soniox 按包括静音在内的完整连接时长计费。"
-              "关闭后使用音频设置中的静音断开超时。"},
+              "即使开启，也会在说话人保留静音限制（默认60秒）后断开。关闭后使用音频设置中的静音断开超时。"},
+    "f.soniox.speaker_context_idle_sec": {
+        "ko": "화자 유지 무음 제한", "en": "Speaker-context silence limit",
+        "ja": "話者維持の無音制限", "zh": "说话人保留静音限制"},
+    "f.soniox.speaker_context_idle_sec.tip": {
+        "ko": "화자 구분 유지가 켜져 있을 때 이 시간만큼 음성이 없으면 연결을 종료합니다. "
+              "다시 말하면 자동 연결되며 화자 번호는 새로 시작합니다. 기본 60초입니다.",
+        "en": "When speaker context is kept, disconnect after this many seconds without speech. "
+              "Speech resumes the connection with new speaker numbering. Default: 60 seconds.",
+        "ja": "話者情報の維持中も、この秒数だけ音声がなければ切断します。発話で自動再接続し、"
+              "話者番号はリセットされます。既定は60秒です。",
+        "zh": "保留说话人信息时，连续无语音达到此秒数后断开。再次说话时自动连接，说话人编号重新开始。默认60秒。"},
+    "soniox_idle_timeout_status": {
+        "ko": "무음 {seconds}초 후 연결 종료", "en": "Disconnect after {seconds}s of silence",
+        "ja": "無音{seconds}秒で切断", "zh": "静音{seconds}秒后断开"},
+    "soniox_idle_timeout_disabled": {
+        "ko": "무음 자동 종료 꺼짐", "en": "Silence auto-disconnect off",
+        "ja": "無音時の自動切断オフ", "zh": "静音自动断开已关闭"},
     "soniox_context_billing_note": {
         "ko": "화자 구분 유지가 켜지면 무음 중에도 연결 시간에 과금됩니다.",
         "en": "Keeping speaker context also bills connection time during silence.",

@@ -142,7 +142,8 @@ soniox:
   model: stt-rt-v5
   tts_model: tts-rt-v2
   voice: Daniel
-  keep_speaker_context: false
+  keep_speaker_context: true
+  speaker_context_idle_sec: 60.0
 ```
 
 Soniox は両方向の音声認識・翻訳を行い、翻訳音声が有効な場合は別の TTS も使用します。
@@ -153,15 +154,19 @@ Soniox は両方向の音声認識・翻訳を行い、翻訳音声が有効な�
 番号は認識セッション内だけで有効で、VRChat アカウントや実名を識別するものではありません。
 翻訳音声には、すべての話者で選択した同じ TTS ボイスを使用します。
 
-**話者コンテキストの維持**は既定で無効です（`soniox.keep_speaker_context: false`）。
-Soniox 選択時はダッシュボードでも確認・変更でき、設定画面と同じ値を使用します。
-話者分離自体は引き続き有効です。このオプションを有効にすると、無音中も認識接続を
-維持して話者番号を引き継ぎます。Soniox はテキストのみでも、
+**話者コンテキストの維持**は既定で有効です（`soniox.keep_speaker_context: true`）。
+短い会話の間は認識セッションを維持し、**60 秒間の無音で切断します**
+（`soniox.speaker_context_idle_sec: 60.0`）。設定で 5〜600 秒に調整できます。
+時間を長くすると再接続は減りますが、課金される接続時間も長くなります。
+Soniox のダッシュボードにはチェック状態と適用中の無音タイムアウトが表示され、
+チェックボックスは設定画面と同じ値を使用します。保存済みの選択は維持されます。
+話者分離自体はどちらの場合も有効です。Soniox はテキストのみでも、
 無音・keepalive を含む接続時間全体に課金します。
 [公式 keepalive 課金案内](https://soniox.com/docs/stt/rt/connection-keepalive)を参照してください。
-無効の場合は `audio.mic_idle_disconnect_sec` の無音後に切断します。
+無効の場合は `audio.mic_idle_disconnect_sec`（既定 15 秒）で無音後に切断します。
 パイプラインの停止・無効化やキャプチャ対象プロセスの終了でも接続を閉じます。
-再接続時には新しい話者コンテキストが始まります。
+再接続時には新しい話者コンテキストが始まります。接続を維持しても同じ人に必ず同じ
+番号が付くとは限らず、Soniox が返す異なる話者 ID は別々に表示します。
 
 ローカルの模擬サーバーで検証済みですが、有料の実 Soniox API 呼び出しは未検証です。
 
@@ -396,7 +401,8 @@ VR オーバーレイを強制的に有効にするには `ui.mode: vr`、無効
 | `soniox.model` | `stt-rt-v5` | リアルタイム音声認識・翻訳モデル。 |
 | `soniox.tts_model` | `tts-rt-v2` | 翻訳音声が有効な場合だけ使用する TTS モデル。 |
 | `soniox.voice` | `Daniel` | 標準ボイス名または既存のカスタム/クローン音声 ID。マイクの自動クローンなし。 |
-| `soniox.keep_speaker_context` | `false` | 有効にすると無音中も接続して話者番号を保持し、その間も課金されます。無効の場合は `audio.mic_idle_disconnect_sec` 後に切断。再接続時には新しい話者コンテキストになります。Soniox のダッシュボードでも変更できます。 |
+| `soniox.keep_speaker_context` | `true` | 短い会話の間はセッションを維持し、`soniox.speaker_context_idle_sec` の無音後に切断します。接続中は課金されます。無効の場合は `audio.mic_idle_disconnect_sec` を使用。Soniox のダッシュボードにチェック状態と適用時間が表示され、再接続時には話者コンテキストが更新されます。 |
+| `soniox.speaker_context_idle_sec` | `60.0` | 話者コンテキスト維持が有効な場合の無音タイムアウト。設定で 5〜600 秒に調整でき、0 以下や非有限値は 60 秒として扱います。 |
 | `log_level` | `INFO` | Python ログレベル。 |
 | `meta.last_version` | `""` | 現在の設定で確認済みの最後のアプリバージョン。更新後の 1 回限りのリセット確認に使います。 |
 | `app.mode` | `vrchat` | 有効なプロファイル: `vrchat`、`discord`、`custom`。 |
@@ -490,7 +496,7 @@ PC ホットキー:
 | --- | --- | --- |
 | `audio.send_interval_ms` | `50` | マイク音声を Gemini へ送る間隔。低くすると翻訳遅延を減らせますが、ネットワーク送信量は少し増えます。 |
 | `audio.finalize_silence_sec` | `2.0` | この秒数だけ無音ならセグメントを確定します。 |
-| `audio.mic_idle_disconnect_sec` | `15.0` | マイク入力がない Gemini セッションを切断するまでの秒数。 |
+| `audio.mic_idle_disconnect_sec` | `15.0` | マイクの無音後に切断するまでの秒数。Soniox は `soniox.keep_speaker_context` が無効な場合に使用します。 |
 | `audio.voice_rms_threshold` | `90.0` | マイク音声検出のエネルギーしきい値。 |
 | `audio.voice_hangover_sec` | `2.5` | 短い間の沈黙中もマイクターンを維持する時間。 |
 | `audio.turn_end_silence_sec` | `0.55` | 実際のマイク無音がこの秒数続いたら、ゲートで削られた無音を補って送り、サーバー側の音声検出がターンを終了してモデルが文を言い切れるようにします。低くすると翻訳音声の遅延を減らせる場合があります。 |

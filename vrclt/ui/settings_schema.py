@@ -56,6 +56,7 @@ GROUPS: tuple = (
         F("soniox.tts_model", "text"),
         F("soniox.voice", "text"),
         F("soniox.keep_speaker_context", "bool"),
+        _sec("soniox.speaker_context_idle_sec", 5.0, 600.0, 5.0),
     )),
     ("grp_app", (
         F("app.mode", "appmode"),

@@ -142,7 +142,8 @@ soniox:
   model: stt-rt-v5
   tts_model: tts-rt-v2
   voice: Daniel
-  keep_speaker_context: false
+  keep_speaker_context: true
+  speaker_context_idle_sec: 60.0
 ```
 
 Soniox 提供双向语音识别和翻译；启用翻译语音时，还会使用单独的 TTS。
@@ -152,12 +153,16 @@ Soniox 提供双向语音识别和翻译；启用翻译语音时，还会使用�
 编号仅在当前识别会话中有效，不代表 VRChat 账号或真实姓名。
 所有说话人的翻译语音均使用设置中选择的同一个 TTS 音色。
 
-**保持说话人上下文**默认关闭（`soniox.keep_speaker_context: false`）。选择 Soniox 后，
-也可在仪表盘查看和切换此选项，与设置页面共用同一个保存值。说话人分离仍保持开启。
-启用此选项后，静音时继续保持识别连接和说话人编号。Soniox 按整个连接时长计费，包括静音和 keepalive，
+**保持说话人上下文**默认开启（`soniox.keep_speaker_context: true`）。短暂的交谈间隔会
+保留识别会话，**静音 60 秒后断开连接**（`soniox.speaker_context_idle_sec: 60.0`）。
+可在设置中调整为 5～600 秒；时间越长，重连越少，但计费的连接也会保留更久。
+Soniox 仪表盘显示勾选状态和当前生效的静音超时时间，开关与设置页面共用同一个保存值。
+已保存的选择会保留。无论开关状态如何，说话人分离都保持开启。
+Soniox 按整个连接时长计费，包括静音和 keepalive，
 仅文本模式也一样。参见[官方 keepalive 计费说明](https://soniox.com/docs/stt/rt/connection-keepalive)。
-此设置关闭时，静音达到 `audio.mic_idle_disconnect_sec` 时断开连接。
+关闭此设置后，改用 `audio.mic_idle_disconnect_sec`（默认 15 秒）作为静音断开时间。
 停止或禁用管线、结束捕获的进程也会关闭连接。重新连接会开始新的说话人上下文。
+保持连接不能保证同一人始终获得相同编号；Soniox 返回不同说话人 ID 时仍分别显示。
 
 已通过本地模拟服务器测试，尚未验证实际付费 Soniox API 调用。
 
@@ -384,7 +389,8 @@ VRChat 模式可使用:
 | `soniox.model` | `stt-rt-v5` | 实时语音识别和翻译模型。 |
 | `soniox.tts_model` | `tts-rt-v2` | 仅在启用翻译语音时使用的 TTS 模型。 |
 | `soniox.voice` | `Daniel` | 预设语音名称或已有自定义/克隆语音 ID；不自动克隆麦克风声音。 |
-| `soniox.keep_speaker_context` | `false` | 开启时在静音期间保持连接和说话人编号，并继续计费。关闭时按 `audio.mic_idle_disconnect_sec` 断开空闲连接；重连后说话人上下文重新开始。也可在 Soniox 仪表盘切换。 |
+| `soniox.keep_speaker_context` | `true` | 短暂间隔保留识别会话，静音达到 `soniox.speaker_context_idle_sec` 后断开；连接期间继续计费。关闭时使用 `audio.mic_idle_disconnect_sec`。Soniox 仪表盘显示勾选状态和生效时间；重连后说话人上下文重新开始。 |
+| `soniox.speaker_context_idle_sec` | `60.0` | 开启说话人上下文保持时的静音超时时间。可在设置中调整为 5～600 秒；非正值或非有限值按 60 秒处理。 |
 | `log_level` | `INFO` | Python 日志级别。 |
 | `meta.last_version` | `""` | 当前配置已确认的最后应用版本。用于更新后的一次性重置确认。 |
 | `app.mode` | `vrchat` | 当前配置: `vrchat`、`discord` 或 `custom`。 |
@@ -478,7 +484,7 @@ PC 热键:
 | --- | --- | --- |
 | `audio.send_interval_ms` | `50` | 将麦克风音频发送到 Gemini 的间隔。数值越低翻译延迟越小，但网络发送量会略增。 |
 | `audio.finalize_silence_sec` | `2.0` | 静音达到此秒数后确认一个片段。 |
-| `audio.mic_idle_disconnect_sec` | `15.0` | 麦克风空闲达到此秒数后断开 Gemini 会话。 |
+| `audio.mic_idle_disconnect_sec` | `15.0` | 麦克风静音后断开连接的时间。Soniox 在 `soniox.keep_speaker_context` 关闭时使用此值。 |
 | `audio.voice_rms_threshold` | `90.0` | 麦克风语音检测能量阈值。 |
 | `audio.voice_hangover_sec` | `2.5` | 在短暂停顿期间保持麦克风回合的时间。 |
 | `audio.turn_end_silence_sec` | `0.55` | 实际麦克风静音达到此秒数后，补回被门限裁掉的静音，让服务端语音检测结束回合、模型把句子说完。降低它可能减少翻译语音延迟。 |

@@ -149,7 +149,8 @@ soniox:
   model: stt-rt-v5
   tts_model: tts-rt-v2
   voice: Daniel
-  keep_speaker_context: false
+  keep_speaker_context: true
+  speaker_context_idle_sec: 60.0
 ```
 
 Soniox streams speech recognition and translation for both directions. When
@@ -167,17 +168,23 @@ do not repeatedly rewrite chatbox text or speech. The selected TTS voice applies
 to all speakers. See [Soniox speaker diarization](https://soniox.com/docs/stt/concepts/speaker-diarization)
 and [available voices](https://soniox.com/docs/tts/concepts/voices).
 
-**Keep speaker context** is off by default (`soniox.keep_speaker_context:
-false`). When Soniox is selected, you can check and change it on the Dashboard
-or in Settings; both controls use the same saved value. Speaker diarization
-remains enabled. Turning this option on keeps an active recognition connection
-open through pauses to preserve speaker labels. Soniox bills the full connected
-stream, including silence and keepalive periods, even in text-only mode.
+**Keep speaker context** is on by default (`soniox.keep_speaker_context:
+true`). It keeps the recognition session through short pauses and disconnects
+after **60 seconds of silence** (`soniox.speaker_context_idle_sec: 60.0`).
+Adjust this timeout in Settings (5–600 seconds). A longer timeout avoids more
+reconnections but keeps a billable connection open longer. When Soniox is
+selected, the Dashboard shows the checkbox and effective silence timeout;
+the checkbox uses the same saved value as Settings. Existing saved choices
+are preserved. Speaker diarization remains enabled with either choice.
+Soniox bills the full connected stream, including silence and keepalive
+periods, even in text-only mode.
 See [Soniox keepalive billing](https://soniox.com/docs/stt/rt/connection-keepalive).
-With this setting off, the connection closes after
-`audio.mic_idle_disconnect_sec` of silence. Stopping/disabling the pipeline or
+With this setting off, the connection instead uses
+`audio.mic_idle_disconnect_sec` (15 seconds by default). Stopping/disabling the pipeline or
 ending the captured process also closes its connection. Reconnecting starts a
-new speaker context.
+new speaker context. Keeping a session open does not guarantee that one person
+always receives the same speaker number; different IDs returned by Soniox are
+kept separate.
 
 This integration has local mock-server coverage; paid live Soniox calls have
 not been verified.
@@ -426,7 +433,8 @@ Top-level and app profile settings:
 | `soniox.model` | `stt-rt-v5` | Streaming speech recognition and translation model. |
 | `soniox.tts_model` | `tts-rt-v2` | TTS model, used only when translated voice is enabled. |
 | `soniox.voice` | `Daniel` | Stock voice name or an existing custom/cloned voice ID; no automatic microphone voice cloning. |
-| `soniox.keep_speaker_context` | `false` | When enabled, keeps an active recognition connection through silence to preserve speaker labels; the connected stream remains billable. When off, uses `audio.mic_idle_disconnect_sec` for idle disconnect; reconnecting resets speaker context. Also available on the Soniox Dashboard. |
+| `soniox.keep_speaker_context` | `true` | Keeps recognition sessions through short pauses, up to `soniox.speaker_context_idle_sec` of silence; the connection remains billable. When off, uses `audio.mic_idle_disconnect_sec`. The Soniox Dashboard shows this switch and the effective timeout. Reconnecting resets speaker context. |
+| `soniox.speaker_context_idle_sec` | `60.0` | Silence timeout while speaker context is enabled. Adjustable from 5 to 600 seconds in Settings; nonpositive or nonfinite values fall back to 60 seconds. |
 | `log_level` | `INFO` | Python logging level. |
 | `meta.last_version` | `""` | Last app version that acknowledged the current config. Used for one-time update reset prompts. |
 | `app.mode` | `vrchat` | Active profile: `vrchat`, `discord`, or `custom`. |
@@ -520,7 +528,7 @@ Audio, control, UI, and wrist menu:
 | --- | --- | --- |
 | `audio.send_interval_ms` | `50` | Microphone audio flush interval to Gemini. Lower values reduce translation latency at a small network overhead cost. |
 | `audio.finalize_silence_sec` | `2.0` | Silence duration before a segment is finalized. |
-| `audio.mic_idle_disconnect_sec` | `15.0` | Disconnects idle Gemini mic sessions after this many seconds. |
+| `audio.mic_idle_disconnect_sec` | `15.0` | Mic idle disconnect timeout. Soniox uses this when `soniox.keep_speaker_context` is off. |
 | `audio.voice_rms_threshold` | `90.0` | Microphone energy gate threshold. |
 | `audio.voice_hangover_sec` | `2.5` | Keeps the mic turn open through short pauses. |
 | `audio.turn_end_silence_sec` | `0.55` | After this much real microphone silence the gated stream is padded with silence so the server voice-activity detector ends the turn and the model finishes the sentence. Lower values can reduce translated voice delay. |

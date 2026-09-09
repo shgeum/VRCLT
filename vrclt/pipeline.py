@@ -305,10 +305,9 @@ class _TranslationPipeline:
         prov = config_mod.provider(cfg)
         if prov == "soniox":
             sx = cfg.get("soniox", {})
-            if sx.get("keep_speaker_context", False):
-                # Speaker numbering is session-local. Keep the same session
-                # across pauses, until the pipeline is disabled or stopped.
-                common["idle_disconnect_sec"] = 0
+            # Preserve session-local speaker IDs through short pauses, but
+            # close a long-idle session rather than billing silence forever.
+            common["idle_disconnect_sec"] = config_mod.soniox_idle_disconnect_sec(cfg)
             self.session = SonioxLiveTranslateSession(
                 model=sx.get("model", "stt-rt-v5"),
                 tts_model=sx.get("tts_model", "tts-rt-v2"),

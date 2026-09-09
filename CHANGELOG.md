@@ -24,12 +24,12 @@ as `vrclt-v<version>-windows-x64.exe` plus a `.sha256` checksum.
   associated with their speaker. Subtitle metadata and speaker labels reach the
   PC preview, desktop overlay, and VR overlay; legacy subtitle snapshots remain
   compatible. Speaker numbers are local to each recognition session.
-- `soniox.keep_speaker_context` defaults to `false`, using
-  `audio.mic_idle_disconnect_sec` for idle disconnects. A synchronized checkbox
-  appears on the Dashboard when Soniox is selected and is also available in
-  Settings. Enabling it keeps active recognition connections open through pauses
-  so speaker labels persist within the session. A visible billing note explains
-  the tradeoff: Soniox
+- `soniox.keep_speaker_context` defaults to `true`, retaining recognition sessions
+  through short pauses and disconnecting after 60 seconds of silence via the new
+  `soniox.speaker_context_idle_sec` setting (adjustable from 5 to 600 seconds).
+  A synchronized checkbox and effective silence timeout appear on the Soniox
+  Dashboard. Turning it off uses `audio.mic_idle_disconnect_sec` instead (15
+  seconds by default). A visible billing note explains the tradeoff: Soniox
   [bills the full connected stream, including silence](https://soniox.com/docs/stt/rt/connection-keepalive).
   Speaker diarization stays enabled with either choice; reconnecting starts a
   new speaker context. Existing saved choices are preserved.
@@ -43,6 +43,10 @@ as `vrclt-v<version>-windows-x64.exe` plus a `.sha256` checksum.
   with search available across the relevant settings.
 - Localized Soniox setup guides cover account signup, US-project API keys,
   billing balance, app and language settings, and first-use troubleshooting.
+- Soniox uses more conservative turn boundaries to reduce premature
+  finalization: up to 3,000 ms endpoint delay, v5 endpoint sensitivity
+  `-0.3`, and up to 4 seconds of end-of-turn silence padding. Different speaker IDs
+  returned by Soniox remain separate; live speaker accuracy has not been verified.
 - Log bursts update the Qt document once per poll. Returning to the tab reads
   at most 256 KiB, keeps 2,000 recent lines, and bounds incomplete lines to 64 KiB.
 - Reconnect delays await the stop event using a monotonic timeout, eliminating

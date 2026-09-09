@@ -11,7 +11,9 @@ language selection, and first-run troubleshooting, see
 [Soniox API Key](README.md#3c-soniox-api-key). The updated dashboard and
 settings navigation are described in [Native UI](README.md#native-ui).
 
-Soniox's `soniox.keep_speaker_context` option is off by default and can be checked
-or changed on the Dashboard when Soniox is selected, as well as in Settings.
-Enabling it keeps the connected stream billable during silence. Speaker
-diarization remains enabled with either choice; see the setup section for details.
+Soniox's `soniox.keep_speaker_context` option is on by default and retains the
+session through short pauses, disconnecting after 60 seconds of silence.
+Adjust `soniox.speaker_context_idle_sec` in Settings (5–600 seconds). The Soniox
+Dashboard shows the synchronized checkbox and effective timeout. Connections
+remain billable during silence; speaker diarization stays enabled with either
+choice. See the setup section for details.

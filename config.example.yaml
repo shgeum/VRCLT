@@ -38,8 +38,9 @@ soniox:                      # Soniox streaming speech recognition + translation
                              # source_language is an optional recognition hint
                              # glossary source=target pairs are supported
                              # speaker diarization is enabled; IDs are session-local
-  keep_speaker_context: false # opt in to retain the session/IDs through pauses;
-                             # full session duration, including silence, is billed
+  keep_speaker_context: true # preserve the session/IDs through short pauses
+  speaker_context_idle_sec: 60.0 # disconnect after this much silence even in keep mode;
+                                # connected silence is billed; reconnect resets IDs
 
 app:
   mode: vrchat                 # vrchat | discord | custom; override with: python -m vrclt run --app vrchat
